@@ -25,6 +25,7 @@ virtualenv/
 *.key
 secrets.json
 credentials.json
+*.bin
 
 # Build and distribution
 build/
