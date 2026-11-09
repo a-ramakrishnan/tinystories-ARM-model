@@ -258,23 +258,33 @@ def estimate_loss(model):
 learning_rate = 1e-4 #more stable training, earlier 1e-4
 max_iters = 20000 #increase from 25000
 warmup_steps = 1000 #smoother initial train, earlier 100
-min_lr = 5e-4 #lower rate, earlier 5e-4
+min_lr = 1e-5 #cosine decays down to this; must be below learning_rate (was 5e-4, which made LR rise)
 eval_iters = 500 # increased from 100
 batch_size = 32 # changed from 16, better gradient estimate
 block_size = 128 #changed from 64, capture longer range dependencies
 
 gradient_accumulation_steps = 32 # reduced from 50
 
-device =  "cuda" if torch.cuda.is_available() else "cpu"
-device_type = 'cuda' if 'cuda' in device else 'cpu' # for later use in torch.autocast
+# Pick the fastest available device: Nvidia GPU (cuda), Apple Silicon GPU (mps), else CPU
+if torch.cuda.is_available():
+    device = "cuda"
+elif torch.backends.mps.is_available():
+    device = "mps"
+else:
+    device = "cpu"
+device_type = device # for later use in torch.autocast and pin_memory
 # note: float16 data type will automatically use a GradScaler
 
 # How to use autocast https://wandb.ai/wandb_fc/tips/reports/How-To-Use-Autocast-in-PyTorch--VmlldzoyMTk4NTky
-#dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
-dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
+# Mixed precision only on CUDA; MPS and CPU train in float32 (no GradScaler needed)
+if device_type == 'cuda':
+    dtype = 'bfloat16' if torch.cuda.is_bf16_supported() else 'float16'
+else:
+    dtype = 'float32'
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
 
-ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype) if device_type == 'cuda' else nullcontext()
+print(f"Training on device: {device} ({dtype})")
 
 torch.set_default_device(device)
 torch.manual_seed(42)
@@ -340,17 +350,16 @@ plt.legend()
 plt.show()
 
 #Load the model
-model = GPT(config)  # re-create the model with same config
-device =  "cuda" if torch.cuda.is_available() else "cpu"
+model = GPT(config)  # re-create the model with same config (on the training device)
 best_model_params_path = "best_model_params.pt"
 model.load_state_dict(torch.load(best_model_params_path, map_location=torch.device(device))) # load best model states
 
-sentence = "Once upon a time there was a pumpkin."
+sentence = "Once upon a time there was a lady who ."
 context = (torch.tensor(enc.encode_ordinary(sentence)).unsqueeze(dim = 0))
 y = model.generate(context, 200)
 print(enc.decode(y.squeeze().tolist()))
 
-sentence = "A little girl went to the woods"
+sentence = "A monster lay lurking in the woods "
 context = (torch.tensor(enc.encode_ordinary(sentence)).unsqueeze(dim = 0))
 y = model.generate(context, 200)
 print(enc.decode(y.squeeze().tolist()))
