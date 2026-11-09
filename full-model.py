@@ -89,16 +89,33 @@ def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=None, text_colu
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Train a small GPT on a Hugging Face text dataset. Made for Apple Silicon.")
+    p = argparse.ArgumentParser(description="Train a small GPT on a text dataset. Made for Apple Silicon.")
     p.add_argument("--dataset", default=DEFAULT_DATASET,
-                   help=f"Hugging Face dataset name (default: {DEFAULT_DATASET})")
+                   help="Hugging Face dataset name or link, or a link to a .txt/.jsonl/.json/.csv/.parquet file "
+                        f"(default: {DEFAULT_DATASET})")
     p.add_argument("--dataset-config", default=None,
                    help="Dataset subset/config name, if it has one (e.g. wikitext-2-raw-v1)")
     p.add_argument("--text-column", default="text",
                    help="Column that holds the text (default: text)")
+    p.add_argument("--list-datasets", action="store_true",
+                   help="List public text datasets that work out of the box, then exit")
     return p.parse_args()
+
+
+def list_datasets():
+    from catalog import DATASET_CATALOG
+    for c in DATASET_CATALOG:
+        args = f"--dataset {c['dataset']}"
+        if c["config"]:
+            args += f" --dataset-config {c['config']}"
+        if c["text_column"] != "text":
+            args += f" --text-column {c['text_column']}"
+        print(f"{c['title']}  ({c['rows']}, {c['size']})\n  {c['description']}\n  python3 full-model.py {args}\n")
 
 
 if __name__ == "__main__":
     args = parse_args()
-    main(dataset=args.dataset, dataset_config=args.dataset_config, text_column=args.text_column)
+    if args.list_datasets:
+        list_datasets()
+    else:
+        main(dataset=args.dataset, dataset_config=args.dataset_config, text_column=args.text_column)

@@ -28,9 +28,11 @@ from fastapi.responses import FileResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
-from data import DEFAULT_DATASET, BatchLoader, dataset_paths, get_dataset  # noqa: E402
+from catalog import DATASET_CATALOG  # noqa: E402
+from data import (DEFAULT_DATASET, BatchLoader, SubsetNeeded, dataset_paths, get_dataset,  # noqa: E402
+                  inspect_source, resolve_source)
 from inference import generate_text, load_model, load_model_config, save_model_config  # noqa: E402
-from model import GPT, GPTConfig  # noqa: E402
+from model import GPT, GPTConfig, param_breakdown  # noqa: E402
 from pretrain import pretrain  # noqa: E402
 from tokenization import bin_files_exist, get_tokenizer, tokenize_and_save  # noqa: E402
 from train_config import TrainConfig, setup_device  # noqa: E402
@@ -119,8 +121,9 @@ def checkpoint_info(paths):
         cfg, info = load_model_config(paths.model_config)
     except Exception:
         return None
-    return {"model": asdict(cfg), "steps": info.get("steps"), "best_val": info.get("best_val"),
-            "trained_at": info.get("trained_at"), "stopped_early": info.get("stopped_early", False)}
+    return {"model": asdict(cfg), "params": param_breakdown(cfg), "steps": info.get("steps"),
+            "best_val": info.get("best_val"), "trained_at": info.get("trained_at"),
+            "stopped_early": info.get("stopped_early", False)}
 
 
 def dataset_info():
@@ -191,18 +194,54 @@ def status():
         "torch": torch.__version__, "default_dataset": DEFAULT_DATASET,
         "dataset": dataset_info(),
         "batch": S.batch,
-        "model": {"config": asdict(S.model_config),
-                  "params": sum(p.numel() for p in S.model.parameters())} if S.model is not None else None,
+        "model": {"config": asdict(S.model_config), "params": sum(p.numel() for p in S.model.parameters()),
+                  "breakdown": param_breakdown(S.model_config)} if S.model is not None else None,
         "job": S.job,
         "train": S.train,
     }
 
 
-@app.post("/api/dataset")
-def load_dataset_endpoint(req: DatasetReq):
+@app.get("/api/catalog")
+def catalog():
+    """Public text datasets known to work, with whether each is already downloaded, tokenized or trained."""
+    out = []
+    for item in DATASET_CATALOG:
+        p = dataset_paths(item["dataset"], item["config"], DATA_ROOT)
+        out.append({**item, "downloaded": os.path.isdir(p.hf_dir), "tokenized": bin_files_exist(p.root),
+                    "trained": checkpoint_info(p) is not None})
+    return out
+
+
+def _clean_request(req):
     name = req.name.strip() or DEFAULT_DATASET
     config_name = (req.config_name or "").strip() or None
     text_column = req.text_column.strip() or "text"
+    try:
+        src = resolve_source(name)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if src["kind"] == "url" and src["builder"] == "text":
+        text_column = "text"  # plain text files have a single 'text' column
+    return name, config_name, text_column
+
+
+@app.post("/api/dataset/check")
+def check_dataset(req: DatasetReq):
+    """Validate a dataset (name or link) without downloading it."""
+    name, config_name, text_column = _clean_request(req)
+    try:
+        info = inspect_source(name, config_name, text_column)
+    except SubsetNeeded as e:
+        return {"ok": False, "error": str(e), "configs": e.configs}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    p = dataset_paths(name, config_name, DATA_ROOT)
+    return {"ok": True, **info, "downloaded": os.path.isdir(p.hf_dir), "path": os.path.relpath(p.root, PROJECT_DIR)}
+
+
+@app.post("/api/dataset")
+def load_dataset_endpoint(req: DatasetReq):
+    name, config_name, text_column = _clean_request(req)
     paths = dataset_paths(name, config_name, DATA_ROOT)
 
     def job():
@@ -260,6 +299,11 @@ def batch_endpoint(req: BatchReq):
     d = require_tokenized()
     if not (8 <= req.block_size <= 1024 and 1 <= req.batch_size <= 512):
         raise HTTPException(400, "block_size must be 8–1024 and batch_size 1–512.")
+    for f in (d["paths"].train_bin, d["paths"].val_bin):
+        n_tokens = os.path.getsize(f) // 2
+        if n_tokens <= req.block_size + 1:
+            raise HTTPException(400, f"{os.path.basename(f)} has only {n_tokens:,} tokens, fewer than one "
+                                     f"{req.block_size}-token window. Use a smaller context window or a bigger dataset.")
     if S.model_config is not None and S.model_config.block_size != req.block_size:
         S.model, S.model_config = None, None  # model was built for another context size
     S.batch = req.model_dump()
@@ -284,7 +328,7 @@ def model_endpoint(req: ModelReq):
     S.model, S.model_config, S.train = model, config, None
 
     result = {"params": sum(p.numel() for p in model.parameters()), "config": asdict(config),
-              "random_loss": math.log(S.enc.n_vocab), "initial_loss": None}
+              "breakdown": param_breakdown(config), "random_loss": math.log(S.enc.n_vocab), "initial_loss": None}
     model.eval()
     if S.dataset and bin_files_exist(S.dataset["paths"].root):
         loader = BatchLoader(S.dataset["paths"].root, config.block_size, S.batch["batch_size"], S.dev.device)
@@ -390,6 +434,15 @@ def generate_endpoint(req: GenerateReq):
 
 
 # ---------- static front end ----------
+
+@app.middleware("http")
+async def no_stale_frontend(request, call_next):
+    """Make browsers recheck the page and its files, so a `git pull` shows up on the next reload."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

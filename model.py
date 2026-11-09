@@ -158,6 +158,47 @@ class GPT(nn.Module):
         return idx
 
 
+def param_breakdown(config):
+    """Count the model's parameters part by part from its config, with the formula for each part.
+
+    The total equals sum(p.numel() for p in GPT(config).parameters()). The output layer reuses the
+    token embedding matrix (weight tying), so it adds no parameters of its own.
+    """
+    V, T, d, L = config.vocab_size, config.block_size, config.n_embd, config.n_layer
+    b = 1 if config.bias else 0
+    ln = (1 + b) * d                         # LayerNorm: weight (+ bias)
+    qkv = d * 3 * d + b * 3 * d              # c_attn
+    attn_out = d * d + b * d                 # attention c_proj
+    mlp_in = d * 4 * d + b * 4 * d           # c_fc
+    mlp_out = 4 * d * d + b * d              # MLP c_proj
+    block = 2 * ln + qkv + attn_out + mlp_in + mlp_out
+    linear_terms = "13·n_embd" if config.bias else "2·n_embd"
+
+    def row(name, formula, expr, count, note=""):
+        return {"name": name, "formula": formula, "expr": expr, "count": count, "note": note}
+
+    parts = [
+        row("Token embeddings", "vocab_size × n_embd", f"{V:,} × {d}", V * d,
+            "Also used as the output layer (weight tying)"),
+        row("Position embeddings", "block_size × n_embd", f"{T} × {d}", T * d),
+        row("Transformer blocks", f"n_layer × (12·n_embd² + {linear_terms})", f"{L} × {block:,}", L * block),
+        row("Final LayerNorm", "2 × n_embd" if config.bias else "n_embd", f"{1 + b} × {d}", ln),
+        row("Output layer", "shares the token embeddings", "0", 0),
+    ]
+    per_block = [
+        row("Attention: query, key, value", "n_embd × 3·n_embd" + (" + 3·n_embd" if b else ""),
+            f"{d} × {3 * d}" + (f" + {3 * d}" if b else ""), qkv),
+        row("Attention: output projection", "n_embd × n_embd" + (" + n_embd" if b else ""),
+            f"{d} × {d}" + (f" + {d}" if b else ""), attn_out),
+        row("MLP: expand", "n_embd × 4·n_embd" + (" + 4·n_embd" if b else ""),
+            f"{d} × {4 * d}" + (f" + {4 * d}" if b else ""), mlp_in),
+        row("MLP: project back", "4·n_embd × n_embd" + (" + n_embd" if b else ""),
+            f"{4 * d} × {d}" + (f" + {d}" if b else ""), mlp_out),
+        row("Two LayerNorms", "2 × 2·n_embd" if b else "2 × n_embd", f"2 × {ln}", 2 * ln),
+    ]
+    return {"total": sum(p["count"] for p in parts), "parts": parts, "per_block": per_block, "block": block}
+
+
 def estimate_loss(model, loader, eval_iters, ctx):
     """Mean loss over `eval_iters` random batches for the train and val splits."""
     out = {}

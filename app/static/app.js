@@ -89,6 +89,7 @@ function stepBlocker(id) {
 function go(id) {
   ui.step = id;
   try { localStorage.setItem("lmstudio.step", id); } catch (e) { /* ignore */ }
+  history.replaceState(null, "", `#${id}`);
   $$(".panel").forEach((p) => p.classList.toggle("active", p.dataset.step === id));
   window.scrollTo({ top: 0, behavior: "smooth" });
   render();
@@ -245,10 +246,27 @@ function renderModelHint(s) {
     (ok ? `Each head works on ${embd / head} dimensions.` : `<span style="color:var(--bad)">Embedding size must be divisible by the number of heads.</span>`);
 }
 
+function renderParams(b) {
+  const head = `<thead><tr><th>Part</th><th>Formula</th><th>Calculation</th><th class="num">Parameters</th></tr></thead>`;
+  const row = (r) => `<tr class="${r.count === 0 ? "zero" : ""}"><td>${esc(r.name)}${r.note ? `<span class="pnote">${esc(r.note)}</span>` : ""}</td>` +
+    `<td class="f">${esc(r.formula)}</td><td class="e">${esc(r.expr)}</td><td class="num">${fmt(r.count)}</td></tr>`;
+  const table = (rows, label, total) => `<div class="ptable-scroll"><table class="ptable">${head}<tbody>${rows.map(row).join("")}` +
+    `<tr class="total"><td>${label}</td><td></td><td></td><td class="num">${fmt(total)}</td></tr></tbody></table></div>`;
+  return table(b.parts, "Total", b.total) +
+    `<details class="pblock"><summary>Inside one transformer block: ${fmt(b.block)} parameters</summary>` +
+    table(b.per_block, "One block", b.block) +
+    `<p class="formula-line">A linear layer with <code>a</code> inputs and <code>b</code> outputs has <code>a × b</code> weights plus <code>b</code> biases. ` +
+    `A LayerNorm learns a scale and a shift for each of the <code>n_embd</code> features. The MLP widens to <code>4 × n_embd</code> and back.</p></details>`;
+}
+
+const paramsShort = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${(n / 1e3).toFixed(0)}K`);
+
 function renderModel(r) {
   const c = r.config;
+  $("#m-params-total").textContent = `${fmt(r.breakdown.total)} parameters`;
+  $("#m-params").innerHTML = renderParams(r.breakdown);
   $("#m-stats").innerHTML = [
-    stat("Parameters", `${(r.params / 1e6).toFixed(1)}M`),
+    stat("Parameters", paramsShort(r.params), `${fmt(r.params)} exactly`),
     stat("Loss before training", fmtLoss(r.initial_loss), "on one batch"),
     stat("Random guessing", fmtLoss(r.random_loss), `ln(${fmt(c.vocab_size)})`),
   ].join("");
@@ -352,7 +370,14 @@ function drawChart(tr) {
 // --- generate ---
 function renderGenerate(s) {
   const c = s.dataset?.checkpoint, el = $("#g-model");
+  $("#g-params-wrap").classList.toggle("hidden", !c?.params);
   if (!c) { el.className = "note warn"; el.textContent = "No trained model for this dataset yet. Train one in step 5."; return; }
+  const key = JSON.stringify([s.dataset.path, c.model, c.trained_at]);
+  if (c.params && ui.genParamsKey !== key) {  // only re-render when the model changes, so an open <details> stays open
+    ui.genParamsKey = key;
+    $("#g-params-total").textContent = `${paramsShort(c.params.total)} (${fmt(c.params.total)})`;
+    $("#g-params").innerHTML = renderParams(c.params);
+  }
   el.className = "note";
   const m = c.model;
   el.innerHTML = `Using the model trained on <b>${esc(s.dataset.name)}</b>: ${m.n_layer} layers, ${m.n_embd}-dim, ` +
@@ -372,13 +397,80 @@ document.addEventListener("click", (e) => {
   if (g) go(g.dataset.go);
 });
 
-$$("[data-ds-preset]").forEach((b) => b.addEventListener("click", () => {
-  const [name, config, col] = b.dataset.dsPreset.split("|");
-  $("#ds-name").value = name; $("#ds-config").value = config; $("#ds-column").value = col;
-}));
+// --- dataset check + gallery ---
+const dsBody = () => ({ name: $("#ds-name").value.trim(), config_name: $("#ds-config").value.trim() || null, text_column: $("#ds-column").value.trim() || "text" });
+const bytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
 
+async function checkDataset() {
+  const el = $("#ds-check-result");
+  el.className = "check";
+  el.innerHTML = '<span class="spinner"></span> Checking the dataset…';
+  const r = await api("/api/dataset/check", dsBody());
+  if (!r.ok) {
+    el.className = "check bad";
+    el.innerHTML = `<div class="title">✕ Can't use this dataset</div><div class="row">${esc(r.error)}</div>` +
+      (r.configs ? `<div class="configs">${r.configs.map((c) => `<button class="chip-btn" data-config="${esc(c)}">${esc(c)}</button>`).join("")}</div>` : "");
+    return r;
+  }
+  const cols = r.columns
+    ? Object.entries(r.columns).map(([k, v]) => `<span class="col ${k === r.text_column ? "chosen" : ""}" title="${esc(v)}">${esc(k)}</span>`).join("")
+    : "<span>read after download</span>";
+  const rows = r.rows ? Object.entries(r.rows).map(([k, v]) => `${esc(k)} ${fmt(v)}`).join(" · ") : "";
+  el.className = "check ok";
+  el.innerHTML = `<div class="title">✓ Text dataset${r.kind === "url" ? " (file link)" : ""}: ready to load</div>` +
+    `<div class="row"><span>Columns:</span>${cols}</div>` +
+    `<div class="row">${r.download_size ? `<span>Download <b>${bytes(r.download_size)}</b></span>` : ""}${rows ? `<span>${rows}</span>` : ""}` +
+    `<span>${r.downloaded ? "Already downloaded" : `Will be saved to <code>${esc(r.path)}</code>`}</span></div>`;
+  return r;
+}
+
+const shortUrl = (u) => { try { const x = new URL(u); return `${x.hostname} / ${x.pathname.split("/").pop()}`; } catch (e) { return u; } };
+
+let catalog = [], galleryTag = "All", galleryKey = null;
+async function loadCatalog() {
+  try { catalog = await api("/api/catalog"); galleryKey = null; renderGallery(); } catch (e) { /* server not ready */ }
+}
+
+function renderGallery() {
+  const cur = ui.status?.dataset;
+  const key = JSON.stringify([galleryTag, cur?.path, catalog.length]);
+  if (key === galleryKey) return;
+  galleryKey = key;
+  const tags = ["All", ...new Set(catalog.flatMap((c) => c.tags))];
+  $("#gallery-tags").innerHTML = tags.map((t) => `<button class="chip-btn ${t === galleryTag ? "on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("");
+  $("#gallery-grid").innerHTML = catalog.map((c, i) => {
+    if (galleryTag !== "All" && !c.tags.includes(galleryTag)) return "";
+    const id = c.dataset.startsWith("http") ? shortUrl(c.dataset) : c.dataset + (c.config ? ` · ${c.config}` : "");
+    const status = c.trained ? "Trained" : c.tokenized ? "Tokenized" : c.downloaded ? "Downloaded" : "";
+    const isCur = cur && cur.name === c.dataset && (cur.config_name || null) === (c.config || null);
+    return `<div class="ds-card ${isCur ? "current" : ""}">
+      <div class="top"><div><h4>${esc(c.title)}</h4><div class="id">${esc(id)}</div></div>${isCur ? '<span class="tag status">In use</span>' : status ? `<span class="tag status">${status}</span>` : ""}</div>
+      <div class="tags">${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+      <p>${esc(c.description)}</p>
+      <div class="meta"><span><b>${esc(c.rows)}</b></span><span><b>${esc(c.size)}</b></span>${c.text_column !== "text" ? `<span>column <b>${esc(c.text_column)}</b></span>` : ""}</div>
+      <div class="btns"><button class="btn primary" data-use="${i}">Use</button><a class="btn" href="${esc(c.url)}" target="_blank" rel="noopener">View ↗</a></div>
+    </div>`;
+  }).join("");
+}
+
+document.addEventListener("click", (e) => {
+  const use = e.target.closest("[data-use]");
+  if (use) {
+    const c = catalog[+use.dataset.use];
+    $("#ds-name").value = c.dataset; $("#ds-config").value = c.config || ""; $("#ds-column").value = c.text_column;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    action(null, checkDataset);
+  }
+  const tag = e.target.closest("[data-tag]");
+  if (tag) { galleryTag = tag.dataset.tag; renderGallery(); }
+  const cfg = e.target.closest("[data-config]");
+  if (cfg) { $("#ds-config").value = cfg.dataset.config; action(null, checkDataset); }
+});
+
+$$("#ds-name, #ds-config, #ds-column").forEach((i) => i.addEventListener("input", () => $("#ds-check-result").className = "check hidden"));
+$("#ds-check").addEventListener("click", (e) => action(e.target, checkDataset));
 $("#ds-load").addEventListener("click", (e) => action(e.target, async () => {
-  await api("/api/dataset", { name: $("#ds-name").value, config_name: $("#ds-config").value || null, text_column: $("#ds-column").value });
+  await api("/api/dataset", dsBody());
   await poll();
 }));
 $$("#ds-split button").forEach((b) => b.addEventListener("click", () => { ui.sample.split = b.dataset.split; loadSample(0); }));
@@ -444,13 +536,22 @@ async function poll() {
     else if (j.kind === "dataset") toast("Dataset ready.");
     else if (j.kind === "tokenize") toast("Dataset tokenized.");
     else if (j.kind === "train") toast(j.message);
+    loadCatalog();  // refresh Downloaded / Tokenized / Trained badges
   }
   ui.prevJob = j;
   render();
+  renderGallery();
 }
 
+const hashStep = location.hash.slice(1);
+if (STEPS.some((s) => s.id === hashStep)) ui.step = hashStep;  // e.g. http://127.0.0.1:8000/#train
+window.addEventListener("hashchange", () => {
+  const id = location.hash.slice(1);
+  if (STEPS.some((s) => s.id === id) && id !== ui.step) go(id);
+});
 go(STEPS.some((s) => s.id === ui.step) ? ui.step : "dataset");
 syncSliders();
 previewTokens();
+loadCatalog();
 poll();
 setInterval(poll, 1000);

@@ -40,24 +40,22 @@
         <header class="panel-head">
           <span class="eyebrow">Step 1</span>
           <h1>Choose a dataset</h1>
-          <p>Any Hugging Face text dataset works. It's downloaded once and kept in <code>data/</code>, so later runs start instantly.</p>
+          <p>Use any text dataset: a Hugging Face dataset name, a Hugging Face link, or a link to a text file. It's downloaded once and kept in <code>data/</code>, so later runs start instantly. <a href="#gallery" class="link">Browse public datasets ↓</a></p>
         </header>
 
         <div class="card">
-          <div class="presets">
-            <span class="muted small">Presets</span>
-            <button class="chip-btn" data-ds-preset="roneneldan/TinyStories||text">TinyStories</button>
-            <button class="chip-btn" data-ds-preset="Salesforce/wikitext|wikitext-2-raw-v1|text">WikiText-2</button>
-          </div>
-          <div class="fields three">
-            <label>Dataset <input id="ds-name" spellcheck="false" placeholder="owner/name"></label>
+          <div class="fields ds-fields">
+            <label>Dataset name or link <input id="ds-name" spellcheck="false" placeholder="owner/name, or https://… (.txt, .jsonl, .csv, .parquet)"></label>
             <label>Subset <span class="opt">optional</span> <input id="ds-config" spellcheck="false" placeholder="e.g. wikitext-2-raw-v1"></label>
             <label>Text column <input id="ds-column" spellcheck="false" value="text"></label>
           </div>
+          <p class="hint">Only text datasets are accepted: the text column must hold text, and image, audio or video datasets are rejected. Plain <code>.txt</code> files are split into documents at blank lines.</p>
           <div class="actions">
+            <button id="ds-check" class="btn">Check</button>
             <button id="ds-load" class="btn primary">Load dataset</button>
             <div class="job" data-job="dataset"></div>
           </div>
+          <div id="ds-check-result" class="check hidden"></div>
         </div>
 
         <div id="ds-info" class="hidden">
@@ -78,6 +76,15 @@
             </div>
             <div id="ds-text" class="doc"></div>
           </div>
+        </div>
+
+        <div id="gallery" class="gallery-wrap">
+          <div class="section-head">
+            <h2>Explore public datasets</h2>
+            <p class="muted">Text datasets that are checked to work here. <b>Use</b> fills in the form; <b>View</b> opens the dataset's page.</p>
+          </div>
+          <div id="gallery-tags" class="tag-filter"></div>
+          <div id="gallery-grid" class="gallery"></div>
         </div>
         <footer class="panel-foot"><button class="btn next" data-go="tokenize">Next: Tokenize →</button></footer>
       </section>
@@ -154,6 +161,10 @@
 
         <div id="m-result" class="hidden">
           <div id="m-stats" class="stats"></div>
+          <div class="card">
+            <div class="card-head"><h3>How the parameters add up</h3><span id="m-params-total" class="pill soft mono"></span></div>
+            <div id="m-params"></div>
+          </div>
           <div class="two-col">
             <div class="card">
               <div class="card-head"><h3>Architecture</h3></div>
@@ -229,6 +240,10 @@
         </header>
 
         <div id="g-model" class="note"></div>
+        <details id="g-params-wrap" class="card details hidden">
+          <summary><span>Trained model: <b id="g-params-total"></b> parameters</span><span class="muted small">How is this calculated?</span></summary>
+          <div id="g-params"></div>
+        </details>
 
         <div class="card">
           <label class="block">Prompt <textarea id="g-prompt" rows="2" spellcheck="false">Once upon a time there was a little girl who</textarea></label>
