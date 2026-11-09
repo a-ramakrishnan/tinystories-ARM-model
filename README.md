@@ -5,8 +5,9 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/a-ramakrishnan/tinystories-ARM-model/blob/main/train_step_by_step.ipynb)
 
-**Built for Apple Silicon.** Build a small GPT-style language model (~30M parameters) from scratch in PyTorch
-and train it on your Mac's own GPU, step by step, in a local web app. No cloud, no Nvidia card.
+**Built for Apple Silicon.** Build a small GPT-style language model from scratch in PyTorch and train it on
+your Mac's own GPU, step by step, in a local web app. See inside the transformer as it works: attention
+weights, context vectors and next-token probabilities. No cloud, no Nvidia card.
 
 ![Training a language model on an Apple M5 in the TinyStories LM Studio web app](docs/screenshots/train.png)
 
@@ -15,16 +16,21 @@ and train it on your Mac's own GPU, step by step, in a local web app. No cloud, 
 **TinyStories ARM** is an open-source, beginner-friendly project for **training a small language model (SLM)
 from scratch on a Mac with Apple Silicon** (M1, M2, M3, M4 and M5). It implements a **GPT-style decoder-only
 transformer** in **PyTorch**, trains it on the Mac's GPU through **Metal Performance Shaders (MPS)**, and
-shows every stage of the **LLM training pipeline** in a local web app:
+explains every stage of the **LLM training pipeline** in a local web app:
 
-1. **Data**: download a text dataset from **Hugging Face** (or any text file link) and keep it locally.
-2. **Tokenization**: convert text to token IDs with the **GPT-2 BPE tokenizer** (`tiktoken`).
-3. **Batching**: cut the token stream into fixed-length context windows for **next-token prediction**.
-4. **Model**: a **transformer** with **causal self-attention**, MLP blocks, LayerNorm and weight tying, with a
-   line-by-line **parameter count**.
-5. **Pre-training**: **AdamW**, linear warmup and **cosine learning-rate decay**, gradient accumulation and
-   gradient clipping, with live **training and validation loss curves**.
-6. **Inference**: **text generation** with temperature and top-k sampling.
+1. **Data**: pick one or more text datasets from **Hugging Face** (or any text file link) and keep them locally.
+2. **Tokenization**: convert text to token IDs with the **GPT-2 BPE tokenizer** (`tiktoken`), with examples.
+3. **Batching**: cut the token stream into context windows for **next-token prediction**, with a worked example.
+4. **Model**: a **transformer** with **multi-head causal self-attention**, feed-forward (MLP) blocks, LayerNorm
+   and weight tying, from 16M to 124M parameters, with an architecture diagram and a line-by-line
+   **parameter count**.
+5. **Inside the transformer**: a step-by-step **attention visualization** with **Q, K and V matrices**,
+   attention scores, the causal mask, softmax, **context vectors** and **next-token prediction**, plus
+   heatmaps of the trained model's real attention.
+6. **Pre-training**: **AdamW**, warmup and **cosine learning-rate decay**, gradient accumulation and clipping,
+   with live **loss curves**, optimizer updates, parameter updates and tokens processed.
+7. **Inference**: streamed **text generation** with temperature and top-k sampling, showing tokens used,
+   **time to first token**, tokens per second and the model's confidence in every token.
 
 The default dataset is [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories), 2.1 million
 short stories in simple English. The research behind it showed that even very small models can learn to
@@ -34,15 +40,15 @@ doubles as a hands-on **machine learning tutorial**: learn how **large language 
 building and training one yourself, locally and privately on your own **MacBook, Mac mini, iMac or
 Mac Studio**.
 
-**Keywords:** small language model · train LLM from scratch · GPT from scratch · PyTorch MPS · Apple Silicon
-machine learning · M1/M2/M3/M4/M5 GPU training · local LLM training on Mac · transformer tutorial ·
-TinyStories · nanoGPT · tokenization · Hugging Face datasets · deep learning on macOS
+**Keywords:** small language model · train LLM from scratch · GPT from scratch · transformer attention
+visualization · PyTorch MPS · Apple Silicon machine learning · M1/M2/M3/M4/M5 GPU training · local LLM training
+on Mac · TinyStories · nanoGPT · tokenization · Hugging Face datasets · deep learning on macOS
 
 ## Three ways to use it
 
 | | What it is | Best for |
 |---|---|---|
-| **Web app** · `python3 app/server.py` | A local, step-by-step studio in your browser with live training charts | Learning how it works, experimenting |
+| **Web app** · `python3 app/server.py` | A local, step-by-step studio in your browser with explanations and live charts | Learning how it works, experimenting |
 | **Command line** · `python3 full-model.py` | Runs the whole pipeline in one go | Long training runs |
 | **Colab notebook** · badge above | The same steps as a notebook on Colab's free GPU | Trying it without a Mac |
 
@@ -54,10 +60,12 @@ TinyStories · nanoGPT · tokenization · Hugging Face datasets · deep learning
 - **No extra setup.** The standard `pip install torch` already includes Metal support on macOS.
 - **Full precision on MPS.** Training uses float32 on the Mac. Mixed precision is only switched on for CUDA,
   where it's well supported.
-- **Unified memory.** The default model and batch size train comfortably on a 16 GB Mac.
+- **Unified memory.** Even the Large preset (124M parameters, about 2 GB to train) fits comfortably on a
+  16 GB Mac. The app checks the memory before building a model that wouldn't fit.
 - **Measured speed.** On an M5 with 16 GB, the default model trains at about **2 steps per second**
   (32 × 128 tokens per step). The *Quick* preset (2,000 steps) takes roughly 20 minutes and brings the
-  validation loss from 10.8 down to about 4.6. The full run (20,000 steps) takes several hours.
+  validation loss from 10.8 down to about 4.6. The full run (20,000 steps) takes several hours. Generation
+  runs at about 55–65 tokens per second, with roughly 70–130 ms to the first token.
 
 It also runs on an Nvidia GPU (CUDA, with mixed precision) or the CPU, but the Mac is what it's built and
 tested on.
@@ -84,21 +92,28 @@ pip install -r requirements.txt
 python3 app/server.py
 ```
 
-It opens http://127.0.0.1:8000 in your browser. The sidebar walks through six steps:
+It opens http://127.0.0.1:8000 in your browser. The sidebar walks through seven steps:
 
-1. **Dataset**: type a Hugging Face dataset name, paste a link, or pick one from the gallery of public
-   datasets. **Check** validates it before anything is downloaded. Then browse its documents.
-2. **Tokenize**: type text and see it split into tokens live, then tokenize the whole dataset with a
-   progress bar.
-3. **Batches**: sample a batch and see how each target is the input shifted by one token.
-4. **Model**: choose layers, heads and embedding size; see the parameter count with the formula behind
-   every part, the architecture, and the untrained model's gibberish.
-5. **Train**: pick *Quick*, *Full* or custom settings and watch loss, speed, time left and learning rate
-   update live. You can stop at any time and keep what's been learned.
-6. **Generate**: write a prompt and tune temperature, top-k and length.
+1. **Dataset**: add one or more datasets by name or link, or from the gallery of public datasets. **Check**
+   validates a dataset before anything is downloaded. With several, choose whether batches mix them by size
+   or equally.
+2. **Tokenize**: see how BPE works through examples (common words, rare words, numbers, capitals, emoji),
+   try your own text, then tokenize your training data.
+3. **Batches**: a worked example shows how one window becomes many next-token exercises; then sample a real
+   batch (and see which datasets it came from).
+4. **Model**: pick a size preset (Tiny 16M, Small 30M, Medium 51M, Large 124M) or set layers, heads and
+   embedding size yourself, with a live parameter estimate. Building shows the architecture diagram, the
+   input and output token counts, and how every parameter adds up.
+5. **Inside the transformer**: walk a prompt through attention in nine stages, then explore your model's
+   real attention heatmaps by layer and head.
+6. **Train**: see what one training step does, how loss relates to probability, and the learning-rate
+   schedule; then train and watch loss, speed, optimizer updates, parameters updated and tokens processed.
+   Every run is kept in a history table.
+7. **Generate**: text streams in token by token, colored by the model's confidence, with tokens used, time
+   to first token, total time, speed and a per-token timing chart.
 
 Options: `--port 8080` to use another port, `--no-browser` to skip opening a browser tab. A step can be
-opened directly with a link such as http://127.0.0.1:8000/#train.
+opened directly with a link such as http://127.0.0.1:8000/#attention.
 
 ### Command line
 
@@ -116,17 +131,44 @@ The loss plot window **pauses the script** until you close it; generation runs a
 
 ## Screenshots
 
-| Choose and validate a dataset | Explore public datasets |
+| Choose one or more datasets | Tokenization, explained with examples |
 |---|---|
-| ![Dataset step: Hugging Face dataset check with columns, size and row counts](docs/screenshots/dataset.png) | ![Gallery of public text datasets with Use and View buttons](docs/screenshots/gallery.png) |
-| **See how 29,995,392 parameters add up** | **Generate a story after a 20-minute Quick run** |
-| ![Parameter breakdown table with the formula for every part of the transformer](docs/screenshots/model-parameters.png) | ![Generated TinyStories text in the Generate step](docs/screenshots/generate.png) |
-| **Live tokenizer (dark mode)** | **Live training chart** |
-| ![GPT-2 tokenizer splitting a sentence into colored tokens, dark mode](docs/screenshots/tokenize-dark.png) | ![Training and validation loss falling over 2,000 steps](docs/screenshots/train.png) |
+| ![Two datasets in the training data, mixed equally](docs/screenshots/dataset.png) | ![Tokenizer examples with colored tokens](docs/screenshots/tokenize.png) |
+| **Batches: a worked example** | **Pick a model size and see its parameter count** |
+| ![One window of tokens turned into next-token training examples](docs/screenshots/batches.png) | ![Model size presets with a live parameter estimate of 123,751,680](docs/screenshots/model-size.png) |
+| **The architecture, drawn from your settings** | **How every parameter adds up** |
+| ![Transformer architecture diagram with 12 attention heads and feed-forward network](docs/screenshots/model-architecture.png) | ![Parameter breakdown table with formulas](docs/screenshots/model-parameters.png) |
+| **Attention weights after softmax, with the real model's heatmap** | **How a context vector is computed** |
+| ![Toy attention weights and real attention heatmap for one layer and head](docs/screenshots/attention-weights.png) | ![Context vector as a weighted sum of value vectors](docs/screenshots/attention-context.png) |
+| **How the next token is chosen** | **Generation with inference metrics** |
+| ![Top 10 next-token probabilities from the trained model](docs/screenshots/attention-next-token.png) | ![Streamed generation with time to first token, speed and confidence colors](docs/screenshots/generate.png) |
+| **What one training step does** | **Training on a mix: updates, parameters updated, tokens** |
+| ![Loss and perplexity examples, learning-rate schedule and the plan for a run](docs/screenshots/train-explained.png) | ![Live training stats on two datasets mixed equally](docs/screenshots/train.png) |
 
-## Choosing a dataset
+## Inside the transformer
 
-TinyStories is the default, but any text dataset works. A dataset can be given as:
+The web app's fifth step follows a short prompt through one attention head in nine stages. It uses
+**small made-up numbers** (4 dimensions instead of 384) so every value can be checked by hand, and every
+number on screen is actually computed from the ones before it:
+
+1. **Tokens become IDs.**
+2. **Embeddings**: each token's vector plus a position vector gives `x`.
+3. **Queries, keys and values**: `Q = x·W_Q`, `K = x·W_K`, `V = x·W_V`.
+4. **Attention scores**: `Q·Kᵀ / √d_k`, with one score worked out term by term.
+5. **Causal mask**: future positions set to `−∞`, so a token can't see what comes after it.
+6. **Softmax**: each row becomes attention weights that add up to 100%.
+7. **Context vector**: each token's weighted sum of value vectors, shown term by term.
+8. **Multi-head attention and the feed-forward network**, using your model's real sizes.
+9. **Next-token prediction** from your **real trained model**: its top 10 candidates and their
+   probabilities. Click one to append it and run the walkthrough again; that loop is text generation.
+
+Below the walkthrough, a heatmap shows your trained model's **real attention weights** for the same
+prompt, for any layer and head (or averaged over heads).
+
+## Choosing datasets
+
+TinyStories is the default, but any text dataset works, and you can **train on several at once**. A dataset
+can be given as:
 
 | Form | Example |
 |---|---|
@@ -134,9 +176,8 @@ TinyStories is the default, but any text dataset works. A dataset can be given a
 | Hugging Face link | `https://huggingface.co/datasets/roneneldan/TinyStories` |
 | Link to a text file | `https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt` |
 
-File links can point to `.txt`, `.jsonl`, `.json`, `.csv` or `.parquet` files. GitHub
-page links are converted to the raw file automatically. Plain `.txt` files are split into documents at
-blank lines.
+File links can point to `.txt`, `.jsonl`, `.json`, `.csv` or `.parquet` files. GitHub page links are
+converted to the raw file automatically. Plain `.txt` files are split into documents at blank lines.
 
 From the command line:
 
@@ -148,12 +189,27 @@ python3 full-model.py --list-datasets
 
 | Option | Meaning | Default |
 |---|---|---|
-| `--dataset` | Hugging Face name or link, or a link to a text file | `roneneldan/TinyStories` |
+| `--dataset` | Hugging Face name or link, or a link to a text file. Repeat it to train on several | `roneneldan/TinyStories` |
 | `--dataset-config` | Subset name, for datasets that have them | none |
 | `--text-column` | Column holding the text | `text` |
+| `--mix` | With several datasets: `size` (in proportion to their tokens) or `equal` | `size` |
 | `--list-datasets` | Print the public datasets below with ready-to-run commands | |
 
 In the web app, enter the same values in step 1. In the notebook, they're the form fields in Step 1.
+
+### Training on several datasets
+
+Each window in a batch is drawn from one dataset. **By size** picks datasets in proportion to their
+tokens; **equally** gives each the same share, so a small dataset isn't drowned out (mixed by size, Tiny
+Shakespeare would get only 0.07% of the batches next to TinyStories). In the command line, write a
+dataset's subset and column as `name@subset#column`:
+
+```bash
+python3 full-model.py --mix equal \
+  --dataset roneneldan/TinyStories \
+  --dataset Salesforce/wikitext@wikitext-2-raw-v1 \
+  --dataset https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
+```
 
 ### Text-only validation
 
@@ -168,19 +224,19 @@ Datasets are checked before anything is downloaded, using the dataset's metadata
 
 ### Public datasets that work out of the box
 
-Each of these was checked with the validation above. The web app shows them as a gallery with **Use** and
+Each of these was checked with the validation above. The web app shows them as a gallery with **Add** and
 **View** buttons.
 
 | Dataset | What it is | Size | Use with |
 |---|---|---|---|
 | [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) | Simple short stories (the default) | 2.1M stories · 1.0 GB | `--dataset roneneldan/TinyStories` |
 | [Tiny Shakespeare](https://github.com/karpathy/char-rnn/tree/master/data/tinyshakespeare) | A 1 MB selection of Shakespeare's plays | 1 text file · 1.1 MB | `--dataset https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt` |
-| [WikiText-2](https://huggingface.co/datasets/Salesforce/wikitext) | Good and featured Wikipedia articles | 37K lines · 7.7 MB | `--dataset Salesforce/wikitext --dataset-config wikitext-2-raw-v1` |
-| [WikiText-103](https://huggingface.co/datasets/Salesforce/wikitext) | Over 100M tokens of Wikipedia | 1.8M lines · 315 MB | `--dataset Salesforce/wikitext --dataset-config wikitext-103-raw-v1` |
-| [Simple English Wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia) | Every Simple English Wikipedia article | 242K articles · 157 MB | `--dataset wikimedia/wikipedia --dataset-config 20231101.simple` |
-| [WritingPrompts](https://huggingface.co/datasets/euclaise/writingprompts) | Stories written for Reddit writing prompts | 273K stories · 605 MB | `--dataset euclaise/writingprompts --text-column story` |
+| [WikiText-2](https://huggingface.co/datasets/Salesforce/wikitext) | Good and featured Wikipedia articles | 37K lines · 7.7 MB | `--dataset Salesforce/wikitext@wikitext-2-raw-v1` |
+| [WikiText-103](https://huggingface.co/datasets/Salesforce/wikitext) | Over 100M tokens of Wikipedia | 1.8M lines · 315 MB | `--dataset Salesforce/wikitext@wikitext-103-raw-v1` |
+| [Simple English Wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia) | Every Simple English Wikipedia article | 242K articles · 157 MB | `--dataset wikimedia/wikipedia@20231101.simple` |
+| [WritingPrompts](https://huggingface.co/datasets/euclaise/writingprompts) | Stories written for Reddit writing prompts | 273K stories · 605 MB | `--dataset euclaise/writingprompts#story` |
 | [TinyStories Instruct](https://huggingface.co/datasets/roneneldan/TinyStoriesInstruct) | TinyStories with instructions | 21.8M lines · 2.7 GB | `--dataset roneneldan/TinyStoriesInstruct` |
-| [CNN / DailyMail](https://huggingface.co/datasets/abisee/cnn_dailymail) | News articles | 287K articles · 837 MB | `--dataset abisee/cnn_dailymail --dataset-config 3.0.0 --text-column article` |
+| [CNN / DailyMail](https://huggingface.co/datasets/abisee/cnn_dailymail) | News articles | 287K articles · 837 MB | `--dataset abisee/cnn_dailymail@3.0.0#article` |
 | [AG News](https://huggingface.co/datasets/fancyzhx/ag_news) | News headlines and descriptions | 120K articles · 20 MB | `--dataset fancyzhx/ag_news` |
 | [IMDB Reviews](https://huggingface.co/datasets/stanfordnlp/imdb) | Movie reviews | 25K reviews · 83 MB | `--dataset stanfordnlp/imdb` |
 | [Rotten Tomatoes](https://huggingface.co/datasets/cornell-movie-review-data/rotten_tomatoes) | One-sentence review snippets | 8.5K sentences · 0.5 MB | `--dataset cornell-movie-review-data/rotten_tomatoes` |
@@ -196,21 +252,24 @@ validation; if there isn't one, a small slice of `train` is held out.
 
 ```
 data/
-└── roneneldan__tinystories/
-    ├── dataset/               local copy of the downloaded dataset (~1.8 GB for TinyStories)
-    ├── train.bin              token IDs for training (~900 MB for TinyStories)
-    ├── validation.bin         token IDs for validation
-    ├── best_model_params.pt   best weights from training
-    └── model_config.json      model settings and training summary for those weights
+├── roneneldan__tinystories/
+│   ├── dataset/               local copy of the downloaded dataset (~1.8 GB for TinyStories)
+│   ├── train.bin              token IDs for training (~900 MB for TinyStories)
+│   ├── validation.bin         token IDs for validation
+│   ├── best_model_params.pt   best weights from training on this dataset
+│   ├── model_config.json      model settings and training summary for those weights
+│   └── runs.jsonl             history of every training run
+└── mix-<datasets>-<hash>/     a model trained on several datasets (their tokens stay in their own folders)
 ```
 
 `data/` is git-ignored, so none of this is committed.
 
 ## How many parameters?
 
-The default model has **29,995,392** parameters. The web app shows this table for whatever size you build:
+The default (Small) model has **29,995,392** parameters. The web app shows this table for whatever size you
+build:
 
-| Part | Formula | Default model |
+| Part | Formula | Small model |
 |---|---|---|
 | Token embeddings | `vocab_size × n_embd` | 50,257 × 384 = 19,298,688 |
 | Position embeddings | `block_size × n_embd` | 128 × 384 = 49,152 |
@@ -220,39 +279,80 @@ The default model has **29,995,392** parameters. The web app shows this table fo
 | **Total** | | **29,995,392** |
 
 Inside each block: query/key/value projection `n_embd × 3·n_embd + 3·n_embd`, attention output
-`n_embd² + n_embd`, MLP expand `n_embd × 4·n_embd + 4·n_embd`, MLP project back `4·n_embd × n_embd + n_embd`,
-and two LayerNorms `2 × 2·n_embd`. These add up to `12·n_embd² + 13·n_embd`. The calculation is in
-`param_breakdown()` in [model.py](model.py), and it matches PyTorch's own count.
+`n_embd² + n_embd`, feed-forward expand `n_embd × 4·n_embd + 4·n_embd`, feed-forward project back
+`4·n_embd × n_embd + n_embd`, and two LayerNorms `2 × 2·n_embd`. The calculation is in `param_breakdown()`
+in [model.py](model.py), and it matches PyTorch's own count.
 
-Almost two thirds of the parameters are the token embeddings: with a 50,257-word vocabulary, a small model
-spends most of its size on knowing words.
+### Bigger models
+
+Add layers or widen the embedding to get a bigger model. **Adding attention heads doesn't add
+parameters**: the heads split the embedding into smaller pieces (`n_embd / n_head` each).
+
+| Preset | Layers | Heads | Embedding | Parameters | Memory to train* |
+|---|---|---|---|---|---|
+| Tiny | 4 | 4 | 256 | 16,058,112 | 0.26 GB |
+| Small (default) | 6 | 6 | 384 | 29,995,392 | 0.48 GB |
+| Medium | 8 | 8 | 512 | 51,017,216 | 0.82 GB |
+| Large (GPT-2 small size) | 12 | 12 | 768 | 123,751,680 | 1.98 GB |
+
+\*Weights, gradients and AdamW state at 16 bytes per parameter, plus activations. Any combination up to 48
+layers, 32 heads and an embedding size of 2,048 can be set by hand, as long as it fits in memory.
+
+## Training: what gets updated
+
+Each step runs a batch forward, measures the loss (the average of `−ln(p)`, where `p` is the probability
+the model gave the correct next token), and computes gradients. Every `gradient_accumulation_steps` steps,
+AdamW updates **every parameter**. The app shows, live and for every past run:
+
+- **Optimizer updates**: `steps ÷ gradient_accumulation_steps` (the *Quick* preset: 2,000 ÷ 8 = 250).
+- **Parameters updated**: `parameters × updates` (Small, *Quick*: 29,995,392 × 250 ≈ 7.5 billion).
+- **Tokens processed**: `steps × batch_size × block_size` (*Quick*: 2,000 × 32 × 128 ≈ 8.2 million).
+
+Every run is appended to `runs.jsonl` in the model's folder and listed in the Train step's history table.
+The command line prints the same summary at the end of a run.
+
+## Inference metrics
+
+The Generate step streams tokens as they are produced and reports:
+
+| Metric | What it means |
+|---|---|
+| Prompt tokens / generated tokens | Tokens in and out |
+| Context used | How many tokens the model could see at the end (at most the context window, 128) |
+| Time to first token | Reading the prompt (prefill) and picking the first token |
+| Total time, tokens per second | Speed of the decode loop: one forward pass per new token |
+| Average confidence | The model's average probability for the tokens it picked |
+| Per-token timing chart | Time for each token; the first one is the slowest |
+
+Each generated token is colored by the model's probability for it, and hovering shows its top alternatives.
+This simple model has no KV cache, so every new token re-reads the whole context (up to 128 tokens).
 
 ## What happens on each run
 
 | Step | Module | First run | Later runs |
 |---|---|---|---|
-| 1. Get the dataset | `data.py` | Validates, downloads and saves a local copy | Loads the local copy |
+| 1. Get the data | `data.py` | Validates, downloads and saves a local copy of each dataset | Loads the local copies |
 | 2. Tokenize | `tokenization.py` | Converts every document to GPT-2 token IDs | Skipped |
-| 3. Batches | `data.py` | Samples random 128-token windows | Same (fresh batches every run) |
-| 4. Train | `pretrain.py` | Trains and saves the best weights | Same |
+| 3. Batches | `data.py` | Samples random 128-token windows (from several datasets if mixed) | Same (fresh batches every run) |
+| 4. Train | `pretrain.py` | Trains, saves the best weights and logs the run | Same |
 | 5. Plot | `plots.py` | Training and validation loss | Same |
 | 6. Generate | `inference.py` | Writes text from the prompts | Same |
 
 ## Project structure
 
 ```
-full-model.py              Command-line entry point: model config, --dataset options, runs every step
+full-model.py              Command-line entry point: model config, --dataset/--mix options, runs every step
 app/
-  server.py                Web app backend (FastAPI): runs the steps and reports live progress
+  server.py                Web app backend (FastAPI): runs the steps, streams generation, reports progress
   static/                  Web app front end (HTML, CSS, JavaScript; no build step)
-data.py                    Dataset sources (names, links, files), text-only validation, local caching, BatchLoader
+data.py                    Dataset sources, text-only validation, local caching, multi-dataset BatchLoader
 catalog.py                 Public text datasets shown in the gallery and by --list-datasets
 tokenization.py            GPT-2 tokenizer and writing train.bin / validation.bin
 model.py                   GPT architecture, param_breakdown() and estimate_loss()
 train_config.py            TrainConfig hyperparameters and setup_device() (MPS / CUDA / CPU)
 pretrain.py                Training loop: AdamW, warmup + cosine LR schedule, gradient accumulation
 plots.py                   Loss curves
-inference.py               Load a checkpoint and generate text
+inference.py               Checkpoints, text generation (streamed), attention maps, next-token probabilities
 train_step_by_step.ipynb   Notebook version for Google Colab
 docs/screenshots/          Screenshots used in this README
 ```
@@ -313,11 +413,14 @@ print(generate_text(model, get_tokenizer(), "Once upon a time there was a dragon
 - `temperature`: lower is more predictable, higher is more varied.
 - `top_k`: only sample from the `k` most likely next tokens (`None` for no limit).
 
+For a model trained on several datasets, use `mix_paths([...dataset folders...])` from `data.py` instead of
+`dataset_paths`.
+
 ## No Mac? Use Colab
 
 Click the **Open in Colab** badge, choose *Runtime → Change runtime type → T4 GPU*, and run the cells from
-top to bottom. The notebook clones this repository, installs the dependencies, and walks through the same
-steps as the web app, with form fields for the settings and the dataset.
+top to bottom. The notebook clones this repository, installs the dependencies, and walks through the main
+steps with form fields for the settings and the dataset.
 
 ## Credits
 

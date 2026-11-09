@@ -17,13 +17,15 @@
 # Web front end: python3 app/server.py
 
 import argparse
+import json
+import math
 import os
 import time
 from dataclasses import asdict
 
 import torch
 
-from data import DEFAULT_DATASET, BatchLoader, dataset_paths, get_dataset
+from data import DEFAULT_DATASET, BatchLoader, dataset_paths, get_dataset, mix_paths, parse_dataset_spec
 from inference import generate_text, load_model, save_model_config
 from model import GPT, GPTConfig
 from plots import plot_losses
@@ -51,33 +53,50 @@ PROMPTS = [
 ]
 
 
-def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=None, text_column="text"):
-    paths = dataset_paths(dataset, dataset_config, DATA_ROOT)
+def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=None, text_column="text", datasets=None, mix="size"):
+    """Run the pipeline. `datasets` is an optional list of (name, subset, text_column) to train on a mix;
+    otherwise the single `dataset` is used. `mix` is "size" (in proportion to tokens) or "equal"."""
+    specs = datasets or [(dataset, dataset_config, text_column)]
+    enc = get_tokenizer()
+
+    # 1-2. Each dataset: downloaded once and kept locally, then tokenized once (skipped if the .bin files exist)
+    roots = []
+    for name, subset, column in specs:
+        dpaths = dataset_paths(name, subset, DATA_ROOT)
+        ds = get_dataset(dpaths.hf_dir, name, config_name=subset, text_column=column)
+        if not bin_files_exist(dpaths.root):
+            tokenize_and_save(ds, dpaths.root)
+        roots.append(dpaths.root)
+    paths = mix_paths(roots, DATA_ROOT)  # one dataset: its own folder; several: data/mix-.../
+    os.makedirs(paths.root, exist_ok=True)
     if train_cfg is None:
         train_cfg = TrainConfig(best_model_path=paths.checkpoint)
-
-    # 1. Dataset: downloaded once, then loaded from the local copy
-    ds = get_dataset(paths.hf_dir, dataset, config_name=dataset_config, text_column=text_column)
-
-    # 2. Tokenize (only if the .bin files are missing)
-    enc = get_tokenizer()
-    if not bin_files_exist(paths.root):
-        tokenize_and_save(ds, paths.root)
 
     # 3. Device and batches (sampled fresh every run)
     dev = setup_device()
     print(f"Training on device: {dev.device} ({dev.dtype})")
+    if len(roots) > 1:
+        print(f"Training on {len(roots)} datasets, mixed {'equally' if mix == 'equal' else 'by size'}")
     torch.manual_seed(train_cfg.seed)
-    loader = BatchLoader(paths.root, config.block_size, train_cfg.batch_size, dev.device)
+    loader = BatchLoader(roots, config.block_size, train_cfg.batch_size, dev.device, mix=mix)
 
     # 4. Model + pretraining
     model = GPT(config).to(dev.device)
-    run_info = {"dataset": dataset, "dataset_config": dataset_config}
+    run_info = {"datasets": [s[0] for s in specs], "mix": mix if len(specs) > 1 else None}
     save_model_config(paths.model_config, config, run_info)
+    t0 = time.time()
     train_losses, val_losses = pretrain(model, loader, train_cfg, dev)
-    save_model_config(paths.model_config, config, {
-        **run_info, "steps": train_cfg.max_iters, "best_val": min(val_losses) if val_losses else None,
-        "trained_at": time.strftime("%Y-%m-%d %H:%M"), "train_config": asdict(train_cfg)})
+    updates = math.ceil(train_cfg.max_iters / train_cfg.gradient_accumulation_steps)
+    n_params = sum(p.numel() for p in model.parameters())
+    summary = {**run_info, "steps": train_cfg.max_iters, "updates": updates, "params": n_params,
+               "param_updates": n_params * updates, "tokens": train_cfg.max_iters * train_cfg.batch_size * config.block_size,
+               "best_val": min(val_losses) if val_losses else None, "seconds": round(time.time() - t0, 1),
+               "trained_at": time.strftime("%Y-%m-%d %H:%M"), "device": dev.device}
+    save_model_config(paths.model_config, config, {**summary, "train_config": asdict(train_cfg)})
+    with open(os.path.join(paths.root, "runs.jsonl"), "a") as f:
+        f.write(json.dumps({**summary, "model": {k: getattr(config, k) for k in ("n_layer", "n_head", "n_embd", "block_size")},
+                            "max_iters": train_cfg.max_iters}) + "\n")
+    print(f"{updates:,} optimizer updates × {n_params:,} parameters = {n_params * updates:,} parameter updates")
 
     # 5. Plots
     plot_losses(train_losses, val_losses, train_cfg.eval_interval)
@@ -90,13 +109,16 @@ def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=None, text_colu
 
 def parse_args():
     p = argparse.ArgumentParser(description="Train a small GPT on a text dataset. Made for Apple Silicon.")
-    p.add_argument("--dataset", default=DEFAULT_DATASET,
+    p.add_argument("--dataset", action="append",
                    help="Hugging Face dataset name or link, or a link to a .txt/.jsonl/.json/.csv/.parquet file "
-                        f"(default: {DEFAULT_DATASET})")
+                        f"(default: {DEFAULT_DATASET}). Repeat to train on several; each may be written "
+                        "name@subset#column, e.g. Salesforce/wikitext@wikitext-2-raw-v1")
     p.add_argument("--dataset-config", default=None,
                    help="Dataset subset/config name, if it has one (e.g. wikitext-2-raw-v1)")
     p.add_argument("--text-column", default="text",
                    help="Column that holds the text (default: text)")
+    p.add_argument("--mix", choices=["size", "equal"], default="size",
+                   help="With several datasets: draw batches in proportion to their size (default) or equally")
     p.add_argument("--list-datasets", action="store_true",
                    help="List public text datasets that work out of the box, then exit")
     return p.parse_args()
@@ -117,5 +139,9 @@ if __name__ == "__main__":
     args = parse_args()
     if args.list_datasets:
         list_datasets()
+    elif args.dataset and len(args.dataset) > 1:
+        main(datasets=[parse_dataset_spec(s) for s in args.dataset], mix=args.mix)
     else:
-        main(dataset=args.dataset, dataset_config=args.dataset_config, text_column=args.text_column)
+        name, subset, column = parse_dataset_spec(args.dataset[0] if args.dataset else DEFAULT_DATASET)
+        main(dataset=name, dataset_config=args.dataset_config or subset,
+             text_column=args.text_column if args.text_column != "text" else column)

@@ -251,30 +251,81 @@ def get_dataset(local_dir, name=DEFAULT_DATASET, config_name=None, text_column="
     return ds
 
 
+def parse_dataset_spec(spec):
+    """Parse 'name[@subset][#column]' into (name, subset, column), e.g.
+    'Salesforce/wikitext@wikitext-2-raw-v1' or 'euclaise/writingprompts#story'. Links may end in '#column' too."""
+    column = None
+    if "#" in spec:
+        spec, column = spec.rsplit("#", 1)
+    config = None
+    if "@" in spec and not re.match(r"^https?://", spec, re.I):
+        spec, config = spec.rsplit("@", 1)
+    return spec.strip(), (config or None), (column or "text")
+
+
+def mix_paths(dataset_roots, data_root="data"):
+    """Where the trained model for a set of datasets lives.
+
+    One dataset: its own folder. Several: data/mix-<names>-<hash>/ (holds only the checkpoint and its config;
+    the tokens stay in each dataset's folder).
+    """
+    roots = sorted(dict.fromkeys(dataset_roots))
+    if len(roots) == 1:
+        return DatasetPaths(roots[0])
+    names = "+".join(os.path.basename(r)[:18] for r in roots)
+    digest = hashlib.sha1("|".join(os.path.basename(r) for r in roots).encode()).hexdigest()[:8]
+    return DatasetPaths(os.path.join(data_root, re.sub(r"[^A-Za-z0-9._+-]+", "_", f"mix-{names}-{digest}")))
+
+
+def token_count(path):
+    return os.path.getsize(path) // 2 if os.path.exists(path) else 0
+
+
 class BatchLoader:
     """Samples random (input, target) blocks from the tokenized train/validation .bin files.
 
     Some functions from https://github.com/karpathy/nanoGPT/blob/master/train.py with slight modifications.
     block_size = context window.
+
+    data_dir can be one dataset folder or a list of them. With several, each window in a batch is drawn from
+    one dataset, picked at random with probability `weights` (default: in proportion to each dataset's size;
+    mix="equal" gives every dataset the same share).
     """
 
-    def __init__(self, data_dir, block_size, batch_size, device):
-        self.paths = {
-            "train": os.path.join(data_dir, "train.bin"),
-            "val": os.path.join(data_dir, "validation.bin"),
-        }
+    def __init__(self, data_dir, block_size, batch_size, device, mix="size"):
+        dirs = [data_dir] if isinstance(data_dir, str) else list(data_dir)
+        self.sources = [{"train": os.path.join(d, "train.bin"), "val": os.path.join(d, "validation.bin")} for d in dirs]
+        self.paths = self.sources[0]
         self.block_size = block_size
         self.batch_size = batch_size
         self.device = device
         self.device_type = "cuda" if "cuda" in str(device) else str(device)
+        self.weights = {}
+        for split in ("train", "val"):
+            sizes = torch.tensor([float(token_count(s[split])) for s in self.sources])
+            w = torch.ones(len(dirs)) if mix == "equal" else sizes
+            self.weights[split] = w / w.sum()
+        self.last_sources = None  # which dataset each row of the last batch came from
+
+    def _windows(self, split):
+        """Pick (source index, start offset) for every row of a batch."""
+        src = torch.multinomial(self.weights[split], self.batch_size, replacement=True) if len(self.sources) > 1 \
+            else torch.zeros(self.batch_size, dtype=torch.long)
+        data = {}
+        rows = []
+        for s in src.tolist():
+            if s not in data:
+                # We recreate np.memmap every batch to avoid a memory leak, as per
+                # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
+                data[s] = np.memmap(self.sources[s][split], dtype=np.uint16, mode="r")
+            rows.append((s, int(torch.randint(len(data[s]) - self.block_size, (1,)))))
+        return data, rows
 
     def get_batch(self, split):
-        # We recreate np.memmap every batch to avoid a memory leak, as per
-        # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
-        data = np.memmap(self.paths[split], dtype=np.uint16, mode="r")
-        ix = torch.randint(len(data) - self.block_size, (self.batch_size,))
-        x = torch.stack([torch.from_numpy((data[i:i + self.block_size]).astype(np.int64)) for i in ix])
-        y = torch.stack([torch.from_numpy((data[i + 1:i + 1 + self.block_size]).astype(np.int64)) for i in ix])
+        data, rows = self._windows(split)
+        self.last_sources = [s for s, _ in rows]
+        x = torch.stack([torch.from_numpy((data[s][i:i + self.block_size]).astype(np.int64)) for s, i in rows])
+        y = torch.stack([torch.from_numpy((data[s][i + 1:i + 1 + self.block_size]).astype(np.int64)) for s, i in rows])
         if self.device_type == "cuda":
             # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
             x, y = x.pin_memory().to(self.device, non_blocking=True), y.pin_memory().to(self.device, non_blocking=True)

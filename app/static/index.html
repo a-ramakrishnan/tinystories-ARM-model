@@ -35,12 +35,12 @@
     <main>
       <div id="blocked" class="blocked hidden"></div>
 
-      <!-- Step 1: Dataset -->
+      <!-- ============ Step 1: Dataset ============ -->
       <section class="panel" data-step="dataset">
         <header class="panel-head">
           <span class="eyebrow">Step 1</span>
-          <h1>Choose a dataset</h1>
-          <p>Use any text dataset: a Hugging Face dataset name, a Hugging Face link, or a link to a text file. It's downloaded once and kept in <code>data/</code>, so later runs start instantly. <a href="#gallery" class="link">Browse public datasets ↓</a></p>
+          <h1>Choose your training data</h1>
+          <p>Add one or more text datasets: Hugging Face names, Hugging Face links, or links to text files. Each is downloaded once and kept in <code>data/</code>. <a href="#gallery" class="link" data-scroll="gallery">Browse public datasets ↓</a></p>
         </header>
 
         <div class="card">
@@ -52,36 +52,49 @@
           <p class="hint">Only text datasets are accepted: the text column must hold text, and image, audio or video datasets are rejected. Plain <code>.txt</code> files are split into documents at blank lines.</p>
           <div class="actions">
             <button id="ds-check" class="btn">Check</button>
-            <button id="ds-load" class="btn primary">Load dataset</button>
+            <button id="ds-load" class="btn primary">Add to training data</button>
             <div class="job" data-job="dataset"></div>
           </div>
           <div id="ds-check-result" class="check hidden"></div>
         </div>
 
-        <div id="ds-info" class="hidden">
-          <div id="ds-stats" class="stats"></div>
-          <div class="card">
-            <div class="card-head">
-              <h3>Browse documents</h3>
-              <div class="toolbar">
-                <div class="seg" id="ds-split">
-                  <button data-split="train" class="on">train</button>
-                  <button data-split="validation">validation</button>
-                </div>
-                <button class="icon-btn" id="ds-prev" aria-label="Previous">‹</button>
-                <span id="ds-pos" class="muted small mono"></span>
-                <button class="icon-btn" id="ds-next" aria-label="Next">›</button>
-                <button class="btn ghost small" id="ds-rand">Random</button>
+        <div id="ds-selection" class="card hidden">
+          <div class="card-head">
+            <h3>Training data <span id="ds-count" class="muted small"></span></h3>
+            <div id="ds-mix-wrap" class="toolbar hidden">
+              <span class="muted small">Mix batches</span>
+              <div class="seg" id="ds-mix">
+                <button data-mix="size">By size</button>
+                <button data-mix="equal">Equally</button>
               </div>
             </div>
-            <div id="ds-text" class="doc"></div>
           </div>
+          <div id="ds-list" class="ds-list"></div>
+          <p id="ds-mix-hint" class="hint"></p>
+        </div>
+
+        <div id="ds-browse" class="card hidden">
+          <div class="card-head">
+            <h3>Browse documents</h3>
+            <div class="toolbar">
+              <select id="ds-browse-which" class="select hidden"></select>
+              <div class="seg" id="ds-split">
+                <button data-split="train" class="on">train</button>
+                <button data-split="validation">validation</button>
+              </div>
+              <button class="icon-btn" id="ds-prev" aria-label="Previous">‹</button>
+              <span id="ds-pos" class="muted small mono"></span>
+              <button class="icon-btn" id="ds-next" aria-label="Next">›</button>
+              <button class="btn ghost small" id="ds-rand">Random</button>
+            </div>
+          </div>
+          <div id="ds-text" class="doc"></div>
         </div>
 
         <div id="gallery" class="gallery-wrap">
           <div class="section-head">
             <h2>Explore public datasets</h2>
-            <p class="muted">Text datasets that are checked to work here. <b>Use</b> fills in the form; <b>View</b> opens the dataset's page.</p>
+            <p class="muted">Text datasets checked to work here. <b>Add</b> puts one in your training data; <b>View</b> opens its page. Add several to train on a mix.</p>
           </div>
           <div id="gallery-tags" class="tag-filter"></div>
           <div id="gallery-grid" class="gallery"></div>
@@ -89,13 +102,24 @@
         <footer class="panel-foot"><button class="btn next" data-go="tokenize">Next: Tokenize →</button></footer>
       </section>
 
-      <!-- Step 2: Tokenize -->
+      <!-- ============ Step 2: Tokenize ============ -->
       <section class="panel" data-step="tokenize">
         <header class="panel-head">
           <span class="eyebrow">Step 2</span>
           <h1>Turn text into tokens</h1>
-          <p>Models read numbers, not letters. The GPT-2 tokenizer splits text into <b>tokens</b> (whole words or pieces of words) and maps each one to an ID from a vocabulary of 50,257.</p>
+          <p>Models read numbers, not letters. The GPT-2 tokenizer splits text into <b>tokens</b> and maps each one to an ID from a vocabulary of 50,257.</p>
         </header>
+
+        <div class="card learn">
+          <div class="card-head"><h3>How tokenization works</h3><span class="tag">Explained</span></div>
+          <div class="learn-grid">
+            <div><b>Byte-pair encoding (BPE).</b> The vocabulary was built by starting from single bytes and repeatedly merging the most common pairs. Frequent words end up as one token; rare words are spelled out in pieces.</div>
+            <div><b>Spaces belong to the next word.</b> <code>" upon"</code> (with its space) is a different token from <code>"upon"</code>. That's why most tokens start with <span class="tok-legend">·</span>.</div>
+            <div><b>About 4 characters per token</b> in English. Fewer tokens means the model sees more text in its context window and trains faster.</div>
+          </div>
+          <p class="muted small">Examples (click one to try it below):</p>
+          <div id="tok-examples" class="examples"></div>
+        </div>
 
         <div class="card">
           <div class="card-head"><h3>Try the tokenizer</h3><span id="tok-meta" class="muted small"></span></div>
@@ -105,23 +129,34 @@
         </div>
 
         <div class="card">
-          <div class="card-head"><h3>Tokenize the whole dataset</h3></div>
-          <p id="tok-status" class="muted"></p>
+          <div class="card-head"><h3>Tokenize your training data</h3></div>
+          <div id="tok-status"></div>
           <div class="actions">
-            <button id="tok-run" class="btn primary">Tokenize dataset</button>
+            <button id="tok-run" class="btn primary">Tokenize</button>
             <div class="job" data-job="tokenize"></div>
           </div>
         </div>
         <footer class="panel-foot"><button class="btn next" data-go="batches">Next: Batches →</button></footer>
       </section>
 
-      <!-- Step 3: Batches -->
+      <!-- ============ Step 3: Batches ============ -->
       <section class="panel" data-step="batches">
         <header class="panel-head">
           <span class="eyebrow">Step 3</span>
           <h1>Cut training batches</h1>
-          <p>Each batch is a stack of random windows of <code>block_size</code> consecutive tokens. The target is the same window shifted one token to the right: at every position the model learns to predict the <b>next</b> token.</p>
+          <p>The model learns one thing: given some tokens, predict the next one. Batches turn the token stream into lots of those little exercises at once.</p>
         </header>
+
+        <div class="card learn">
+          <div class="card-head"><h3>A worked example</h3><span class="tag">Explained</span></div>
+          <p class="muted small">With a context window of 6 tokens, one window of the sentence below becomes these training examples:</p>
+          <div id="b-example"></div>
+          <div class="learn-grid">
+            <div><b>Input and target.</b> The target is the input shifted one token to the left. So one window of <code>block_size</code> tokens holds <code>block_size</code> examples, each with a longer context.</div>
+            <div><b>Random windows.</b> Each window starts at a random place in <code>train.bin</code>, so every batch is different and a window can cross from one document into the next.</div>
+            <div><b>A batch is a stack.</b> <code>batch_size</code> windows are processed in parallel on the GPU. 32 windows × 128 tokens = 4,096 next-token predictions per step.</div>
+          </div>
+        </div>
 
         <div class="card">
           <div class="fields three">
@@ -136,25 +171,31 @@
           <div class="card-head"><h3>First window of the batch</h3><span id="b-shape" class="pill soft mono"></span></div>
           <div class="table-scroll"><table class="shift"><tbody id="b-table"></tbody></table></div>
           <p class="hint">Same color = same token. Each target is the token that comes right after the input above it.</p>
+          <div id="b-composition"></div>
         </div>
         <footer class="panel-foot"><button class="btn next" data-go="model">Next: Model →</button></footer>
       </section>
 
-      <!-- Step 4: Model -->
+      <!-- ============ Step 4: Model ============ -->
       <section class="panel" data-step="model">
         <header class="panel-head">
           <span class="eyebrow">Step 4</span>
           <h1>Build the transformer</h1>
-          <p>A decoder-only transformer, like a miniature GPT-2. Bigger numbers mean a more capable model, but slower training and more memory.</p>
+          <p>A decoder-only transformer, like a miniature GPT-2. Add layers or widen the embeddings for a bigger, more capable model; it trains more slowly and needs more memory.</p>
         </header>
 
         <div class="card">
+          <div class="card-head">
+            <h3>Model size</h3>
+            <div class="seg" id="m-preset"></div>
+          </div>
           <div class="fields four">
             <label>Layers <span class="opt">n_layer</span> <input id="m-layer" type="number" min="1" max="48"></label>
             <label>Attention heads <span class="opt">n_head</span> <input id="m-head" type="number" min="1" max="32"></label>
             <label>Embedding size <span class="opt">n_embd</span> <input id="m-embd" type="number" min="16" max="2048" step="16"></label>
             <label>Dropout <input id="m-drop" type="number" min="0" max="0.9" step="0.05"></label>
           </div>
+          <div id="m-estimate" class="estimate"></div>
           <p class="hint" id="m-hint"></p>
           <div class="actions"><button id="m-run" class="btn primary">Build model</button></div>
         </div>
@@ -162,31 +203,94 @@
         <div id="m-result" class="hidden">
           <div id="m-stats" class="stats"></div>
           <div class="card">
+            <div class="card-head"><h3>Architecture</h3><span class="muted small">Data flows top to bottom</span></div>
+            <div id="m-arch"></div>
+          </div>
+          <div class="card">
             <div class="card-head"><h3>How the parameters add up</h3><span id="m-params-total" class="pill soft mono"></span></div>
             <div id="m-params"></div>
           </div>
-          <div class="two-col">
-            <div class="card">
-              <div class="card-head"><h3>Architecture</h3></div>
-              <div id="m-arch" class="arch"></div>
-            </div>
-            <div class="card">
-              <div class="card-head"><h3>Before training</h3></div>
-              <p class="muted small">The weights are random, so this is gibberish. Training fixes that.</p>
-              <div id="m-sample" class="doc gen"></div>
+          <div class="card">
+            <div class="card-head"><h3>Before training</h3></div>
+            <p class="muted small">The weights are random, so this is gibberish. Training fixes that.</p>
+            <div id="m-sample" class="doc gen"></div>
+          </div>
+        </div>
+        <footer class="panel-foot"><button class="btn next" data-go="attention">Next: Inside the transformer →</button></footer>
+      </section>
+
+      <!-- ============ Step 5: Inside the transformer ============ -->
+      <section class="panel" data-step="attention">
+        <header class="panel-head">
+          <span class="eyebrow">Step 5</span>
+          <h1>Inside the transformer</h1>
+          <p>Follow one prompt through attention, step by step, to see how each token's <b>context vector</b> is computed and how the next token is chosen. The matrices use small made-up numbers (4 dimensions instead of 384) so you can check every calculation; the last step uses your real model.</p>
+        </header>
+
+        <div class="card">
+          <div class="fields prompt-row">
+            <label>Prompt <span class="opt">up to 6 tokens are walked through</span> <input id="a-prompt" spellcheck="false" value="The little cat sat on the"></label>
+            <div class="actions tight"><button id="a-run" class="btn primary">Walk through</button></div>
+          </div>
+        </div>
+
+        <div id="a-walk" class="card hidden">
+          <div class="stage-nav">
+            <div id="a-dots" class="stage-dots"></div>
+            <div class="stage-btns">
+              <button id="a-prev" class="btn small">← Back</button>
+              <button id="a-next" class="btn small primary">Next →</button>
             </div>
           </div>
+          <div id="a-stage"></div>
+        </div>
+
+        <div id="a-real" class="card hidden">
+          <div class="card-head">
+            <h3>Your model's real attention</h3>
+            <div class="toolbar">
+              <label class="inline">Layer <select id="a-layer" class="select"></select></label>
+              <div class="seg" id="a-heads"></div>
+            </div>
+          </div>
+          <p class="muted small" id="a-real-note"></p>
+          <div id="a-heatmap"></div>
         </div>
         <footer class="panel-foot"><button class="btn next" data-go="train">Next: Train →</button></footer>
       </section>
 
-      <!-- Step 5: Train -->
+      <!-- ============ Step 6: Train ============ -->
       <section class="panel" data-step="train">
         <header class="panel-head">
-          <span class="eyebrow">Step 5</span>
+          <span class="eyebrow">Step 6</span>
           <h1>Train</h1>
-          <p>Every evaluation measures loss on training and validation data, and saves the weights whenever validation loss reaches a new low. Watch both lines go down.</p>
+          <p>Each step: predict the next token at every position of a batch, measure how wrong that was, and nudge every parameter to be a little less wrong.</p>
         </header>
+
+        <div class="card learn">
+          <div class="card-head"><h3>What one training step does</h3><span class="tag">Explained</span></div>
+          <ol class="flow">
+            <li><b>Forward pass.</b> The batch goes through the model, which gives a probability for every possible next token at every position.</li>
+            <li><b>Loss.</b> For each position, take the probability the model gave the <i>correct</i> next token and compute <code>−ln(p)</code>; the loss is the average. See the examples below.</li>
+            <li><b>Backward pass.</b> PyTorch works out, for every parameter, which direction would lower the loss (the gradient).</li>
+            <li><b>Update.</b> Every <code>gradient_accumulation_steps</code> steps, AdamW moves <b>all</b> parameters a little in that direction. The size of the move is the learning rate.</li>
+          </ol>
+          <div class="two-col">
+            <div>
+              <table class="ptable compact">
+                <thead><tr><th>Model gives the right token</th><th class="num">Loss</th><th class="num">Perplexity</th></tr></thead>
+                <tbody id="t-loss-examples"></tbody>
+              </table>
+              <p class="hint">Perplexity = e<sup>loss</sup>: the model is as unsure as if it were choosing among that many equally likely tokens.</p>
+            </div>
+            <div>
+              <div class="mini-head">Learning rate over this run</div>
+              <div id="t-lr-chart" class="chart"></div>
+              <p class="hint">Linear warmup avoids wild early updates; the cosine decay makes the last updates small and careful.</p>
+            </div>
+          </div>
+          <div id="t-plan" class="note"></div>
+        </div>
 
         <div class="card">
           <div class="card-head">
@@ -206,7 +310,6 @@
             <label>Eval batches <input id="t-eval_iters" type="number" min="1"></label>
             <label>Grad accumulation <input id="t-gradient_accumulation_steps" type="number" min="1"></label>
           </div>
-          <p class="hint" id="t-hint"></p>
           <div class="actions">
             <button id="t-start" class="btn primary">Start training</button>
             <button id="t-stop" class="btn danger hidden">Stop</button>
@@ -215,7 +318,8 @@
         </div>
 
         <div id="t-live" class="hidden">
-          <div id="t-stats" class="stats five"></div>
+          <div id="t-stats" class="stats"></div>
+          <div id="t-updates" class="stats"></div>
           <div class="card">
             <div class="card-head">
               <h3>Loss</h3>
@@ -228,15 +332,20 @@
             <div id="t-chart" class="chart"></div>
           </div>
         </div>
+
+        <div id="t-runs" class="card hidden">
+          <div class="card-head"><h3>Training runs</h3><span class="muted small">for the current training data</span></div>
+          <div class="ptable-scroll"><table class="ptable"><thead><tr><th>Finished</th><th>Model</th><th class="num">Steps</th><th class="num">Updates</th><th class="num">Parameters updated</th><th class="num">Tokens</th><th class="num">Best val loss</th><th class="num">Time</th></tr></thead><tbody id="t-runs-body"></tbody></table></div>
+        </div>
         <footer class="panel-foot"><button class="btn next" data-go="generate">Next: Generate →</button></footer>
       </section>
 
-      <!-- Step 6: Generate -->
+      <!-- ============ Step 7: Generate ============ -->
       <section class="panel" data-step="generate">
         <header class="panel-head">
-          <span class="eyebrow">Step 6</span>
+          <span class="eyebrow">Step 7</span>
           <h1>Generate stories</h1>
-          <p>Uses the saved checkpoint with the best validation loss. Give it the start of a story and it continues.</p>
+          <p>Uses the saved checkpoint with the best validation loss. Give it the start of a story and watch it continue, one token at a time.</p>
         </header>
 
         <div id="g-model" class="note"></div>
@@ -253,10 +362,36 @@
             <label>Length <output id="g-len-v"></output><input id="g-len" type="range" min="20" max="500" step="10" value="200"></label>
           </div>
           <p class="hint">Lower temperature is safer and more repetitive, higher is more surprising. Top-k only picks among the k most likely next tokens (0 = no limit).</p>
-          <div class="actions"><button id="g-run" class="btn primary">Generate</button><span id="g-busy" class="muted small hidden"><span class="spinner"></span> Writing…</span></div>
+          <div class="actions">
+            <button id="g-run" class="btn primary">Generate</button>
+            <label class="switch"><input type="checkbox" id="g-color" checked> Color tokens by confidence</label>
+          </div>
         </div>
 
-        <div id="g-out"></div>
+        <div id="g-live" class="hidden">
+          <div id="g-metrics" class="stats"></div>
+          <div class="card">
+            <div class="card-head"><h3>Output</h3><span class="legend conf-legend"><span><i class="sw conf-hi"></i>likely (40%+)</span><span><i class="sw conf-mid"></i>plausible (10–40%)</span><span><i class="sw conf-lo"></i>unlikely (under 10%)</span></span></div>
+            <div id="g-text" class="doc gen-out"></div>
+            <p class="hint">Hover a generated token to see the model's top alternatives at that point.</p>
+          </div>
+          <div class="two-col">
+            <div class="card">
+              <div class="card-head"><h3>Time per token</h3><span id="g-lat-note" class="muted small"></span></div>
+              <div id="g-latency" class="chart"></div>
+            </div>
+            <div class="card learn">
+              <div class="card-head"><h3>What happens during inference</h3></div>
+              <ol class="flow small-flow">
+                <li><b>Prefill.</b> The prompt's tokens go through the model in one pass. That, plus picking the first token, is the <b>time to first token</b>.</li>
+                <li><b>Decode.</b> Each new token needs one more pass over the context. This simple model has no KV cache, so it re-reads up to <span class="ctx-size">128</span> tokens every time.</li>
+                <li><b>Sliding window.</b> Past <span class="ctx-size">128</span> tokens, only the most recent ones fit in the context window, so the model forgets the start of the story.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        <div id="g-history"></div>
       </section>
     </main>
   </div>
