@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TinyStories LM Studio</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 18V6l8 6 8-6v12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">TinyStories LM Studio</div>
+        <div class="brand-sub">Train a language model from scratch, on your Mac</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="job-pill" class="pill hidden"></span>
+      <span id="device-pill" class="pill device"></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" aria-label="Steps">
+      <ol id="steps" class="steps"></ol>
+      <div class="sidebar-foot">
+        <div class="foot-title">Made for Apple Silicon</div>
+        <p>Training runs on your Mac's GPU through PyTorch's Metal (MPS) backend. No cloud, no Nvidia card needed.</p>
+      </div>
+    </nav>
+
+    <main>
+      <div id="blocked" class="blocked hidden"></div>
+
+      <!-- Step 1: Dataset -->
+      <section class="panel" data-step="dataset">
+        <header class="panel-head">
+          <span class="eyebrow">Step 1</span>
+          <h1>Choose a dataset</h1>
+          <p>Any Hugging Face text dataset works. It's downloaded once and kept in <code>data/</code>, so later runs start instantly.</p>
+        </header>
+
+        <div class="card">
+          <div class="presets">
+            <span class="muted small">Presets</span>
+            <button class="chip-btn" data-ds-preset="roneneldan/TinyStories||text">TinyStories</button>
+            <button class="chip-btn" data-ds-preset="Salesforce/wikitext|wikitext-2-raw-v1|text">WikiText-2</button>
+          </div>
+          <div class="fields three">
+            <label>Dataset <input id="ds-name" spellcheck="false" placeholder="owner/name"></label>
+            <label>Subset <span class="opt">optional</span> <input id="ds-config" spellcheck="false" placeholder="e.g. wikitext-2-raw-v1"></label>
+            <label>Text column <input id="ds-column" spellcheck="false" value="text"></label>
+          </div>
+          <div class="actions">
+            <button id="ds-load" class="btn primary">Load dataset</button>
+            <div class="job" data-job="dataset"></div>
+          </div>
+        </div>
+
+        <div id="ds-info" class="hidden">
+          <div id="ds-stats" class="stats"></div>
+          <div class="card">
+            <div class="card-head">
+              <h3>Browse documents</h3>
+              <div class="toolbar">
+                <div class="seg" id="ds-split">
+                  <button data-split="train" class="on">train</button>
+                  <button data-split="validation">validation</button>
+                </div>
+                <button class="icon-btn" id="ds-prev" aria-label="Previous">‹</button>
+                <span id="ds-pos" class="muted small mono"></span>
+                <button class="icon-btn" id="ds-next" aria-label="Next">›</button>
+                <button class="btn ghost small" id="ds-rand">Random</button>
+              </div>
+            </div>
+            <div id="ds-text" class="doc"></div>
+          </div>
+        </div>
+        <footer class="panel-foot"><button class="btn next" data-go="tokenize">Next: Tokenize →</button></footer>
+      </section>
+
+      <!-- Step 2: Tokenize -->
+      <section class="panel" data-step="tokenize">
+        <header class="panel-head">
+          <span class="eyebrow">Step 2</span>
+          <h1>Turn text into tokens</h1>
+          <p>Models read numbers, not letters. The GPT-2 tokenizer splits text into <b>tokens</b> (whole words or pieces of words) and maps each one to an ID from a vocabulary of 50,257.</p>
+        </header>
+
+        <div class="card">
+          <div class="card-head"><h3>Try the tokenizer</h3><span id="tok-meta" class="muted small"></span></div>
+          <textarea id="tok-input" rows="2" spellcheck="false">Once upon a time, there was a little cat named Tom.</textarea>
+          <div id="tok-chips" class="chips"></div>
+          <p class="hint">Hover a token to see its ID. <span class="tok-legend">·</span> marks a space, <span class="tok-legend">↵</span> a newline.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Tokenize the whole dataset</h3></div>
+          <p id="tok-status" class="muted"></p>
+          <div class="actions">
+            <button id="tok-run" class="btn primary">Tokenize dataset</button>
+            <div class="job" data-job="tokenize"></div>
+          </div>
+        </div>
+        <footer class="panel-foot"><button class="btn next" data-go="batches">Next: Batches →</button></footer>
+      </section>
+
+      <!-- Step 3: Batches -->
+      <section class="panel" data-step="batches">
+        <header class="panel-head">
+          <span class="eyebrow">Step 3</span>
+          <h1>Cut training batches</h1>
+          <p>Each batch is a stack of random windows of <code>block_size</code> consecutive tokens. The target is the same window shifted one token to the right: at every position the model learns to predict the <b>next</b> token.</p>
+        </header>
+
+        <div class="card">
+          <div class="fields three">
+            <label>Context window <span class="opt">block_size</span> <input id="b-block" type="number" min="8" max="1024"></label>
+            <label>Batch size <input id="b-batch" type="number" min="1" max="512"></label>
+            <label>Random seed <input id="b-seed" type="number"></label>
+          </div>
+          <div class="actions"><button id="b-run" class="btn primary">Sample a batch</button></div>
+        </div>
+
+        <div id="b-result" class="card hidden">
+          <div class="card-head"><h3>First window of the batch</h3><span id="b-shape" class="pill soft mono"></span></div>
+          <div class="table-scroll"><table class="shift"><tbody id="b-table"></tbody></table></div>
+          <p class="hint">Same color = same token. Each target is the token that comes right after the input above it.</p>
+        </div>
+        <footer class="panel-foot"><button class="btn next" data-go="model">Next: Model →</button></footer>
+      </section>
+
+      <!-- Step 4: Model -->
+      <section class="panel" data-step="model">
+        <header class="panel-head">
+          <span class="eyebrow">Step 4</span>
+          <h1>Build the transformer</h1>
+          <p>A decoder-only transformer, like a miniature GPT-2. Bigger numbers mean a more capable model, but slower training and more memory.</p>
+        </header>
+
+        <div class="card">
+          <div class="fields four">
+            <label>Layers <span class="opt">n_layer</span> <input id="m-layer" type="number" min="1" max="48"></label>
+            <label>Attention heads <span class="opt">n_head</span> <input id="m-head" type="number" min="1" max="32"></label>
+            <label>Embedding size <span class="opt">n_embd</span> <input id="m-embd" type="number" min="16" max="2048" step="16"></label>
+            <label>Dropout <input id="m-drop" type="number" min="0" max="0.9" step="0.05"></label>
+          </div>
+          <p class="hint" id="m-hint"></p>
+          <div class="actions"><button id="m-run" class="btn primary">Build model</button></div>
+        </div>
+
+        <div id="m-result" class="hidden">
+          <div id="m-stats" class="stats"></div>
+          <div class="two-col">
+            <div class="card">
+              <div class="card-head"><h3>Architecture</h3></div>
+              <div id="m-arch" class="arch"></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>Before training</h3></div>
+              <p class="muted small">The weights are random, so this is gibberish. Training fixes that.</p>
+              <div id="m-sample" class="doc gen"></div>
+            </div>
+          </div>
+        </div>
+        <footer class="panel-foot"><button class="btn next" data-go="train">Next: Train →</button></footer>
+      </section>
+
+      <!-- Step 5: Train -->
+      <section class="panel" data-step="train">
+        <header class="panel-head">
+          <span class="eyebrow">Step 5</span>
+          <h1>Train</h1>
+          <p>Every evaluation measures loss on training and validation data, and saves the weights whenever validation loss reaches a new low. Watch both lines go down.</p>
+        </header>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>Settings</h3>
+            <div class="seg" id="t-preset">
+              <button data-preset="quick" class="on">Quick</button>
+              <button data-preset="full">Full</button>
+              <button data-preset="custom">Custom</button>
+            </div>
+          </div>
+          <div class="fields four">
+            <label>Steps <input id="t-max_iters" type="number" min="1"></label>
+            <label>Learning rate <input id="t-learning_rate" type="number" step="any"></label>
+            <label>Min learning rate <input id="t-min_lr" type="number" step="any"></label>
+            <label>Warmup steps <input id="t-warmup_steps" type="number" min="0"></label>
+            <label>Evaluate every <input id="t-eval_interval" type="number" min="1"></label>
+            <label>Eval batches <input id="t-eval_iters" type="number" min="1"></label>
+            <label>Grad accumulation <input id="t-gradient_accumulation_steps" type="number" min="1"></label>
+          </div>
+          <p class="hint" id="t-hint"></p>
+          <div class="actions">
+            <button id="t-start" class="btn primary">Start training</button>
+            <button id="t-stop" class="btn danger hidden">Stop</button>
+            <div class="job" data-job="train"></div>
+          </div>
+        </div>
+
+        <div id="t-live" class="hidden">
+          <div id="t-stats" class="stats five"></div>
+          <div class="card">
+            <div class="card-head">
+              <h3>Loss</h3>
+              <div class="legend">
+                <span><i class="sw sw-step"></i>batch loss</span>
+                <span><i class="sw sw-train"></i>train (eval)</span>
+                <span><i class="sw sw-val"></i>validation</span>
+              </div>
+            </div>
+            <div id="t-chart" class="chart"></div>
+          </div>
+        </div>
+        <footer class="panel-foot"><button class="btn next" data-go="generate">Next: Generate →</button></footer>
+      </section>
+
+      <!-- Step 6: Generate -->
+      <section class="panel" data-step="generate">
+        <header class="panel-head">
+          <span class="eyebrow">Step 6</span>
+          <h1>Generate stories</h1>
+          <p>Uses the saved checkpoint with the best validation loss. Give it the start of a story and it continues.</p>
+        </header>
+
+        <div id="g-model" class="note"></div>
+
+        <div class="card">
+          <label class="block">Prompt <textarea id="g-prompt" rows="2" spellcheck="false">Once upon a time there was a little girl who</textarea></label>
+          <div class="fields three sliders">
+            <label>Temperature <output id="g-temp-v"></output><input id="g-temp" type="range" min="0.1" max="2" step="0.1" value="0.8"></label>
+            <label>Top-k <output id="g-topk-v"></output><input id="g-topk" type="range" min="0" max="200" step="5" value="50"></label>
+            <label>Length <output id="g-len-v"></output><input id="g-len" type="range" min="20" max="500" step="10" value="200"></label>
+          </div>
+          <p class="hint">Lower temperature is safer and more repetitive, higher is more surprising. Top-k only picks among the k most likely next tokens (0 = no limit).</p>
+          <div class="actions"><button id="g-run" class="btn primary">Generate</button><span id="g-busy" class="muted small hidden"><span class="spinner"></span> Writing…</span></div>
+        </div>
+
+        <div id="g-out"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

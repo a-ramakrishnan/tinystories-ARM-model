@@ -7,12 +7,17 @@ from tqdm.auto import tqdm
 from model import estimate_loss
 
 
-def pretrain(model, loader, cfg, dev):
+def pretrain(model, loader, cfg, dev, callback=None):
     """Train `model` on batches from `loader`.
 
     cfg: TrainConfig, dev: DeviceSetup.
     Saves the weights with the best validation loss to cfg.best_model_path.
     Returns (train_losses, val_losses), one entry per evaluation.
+
+    callback: optional function receiving progress events, used by the web front end:
+      {"type": "eval", "step", "train", "val", "lr"} after each evaluation
+      {"type": "step", "step", "loss", "lr"} after each training step
+    If it returns False, training stops early.
     """
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, betas=cfg.betas,
                                   weight_decay=cfg.weight_decay, eps=cfg.eps)
@@ -41,6 +46,11 @@ def pretrain(model, loader, cfg, dev):
                 best_val_loss = losses["val"]
                 torch.save(model.state_dict(), cfg.best_model_path)
 
+            if callback is not None and callback({"type": "eval", "step": step, "train": losses["train"],
+                                                  "val": losses["val"],
+                                                  "lr": optimizer.param_groups[0]["lr"]}) is False:
+                break
+
         X, y = loader.get_batch("train")
 
         with dev.ctx:
@@ -54,5 +64,10 @@ def pretrain(model, loader, cfg, dev):
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
         scheduler.step()
+
+        if callback is not None and callback({"type": "step", "step": step + 1,
+                                              "loss": loss.item() * cfg.gradient_accumulation_steps,
+                                              "lr": optimizer.param_groups[0]["lr"]}) is False:
+            break
 
     return train_losses, val_losses

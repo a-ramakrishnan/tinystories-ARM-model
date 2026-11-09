@@ -4,3 +4,5 @@ numpy
 tqdm
 torch
 matplotlib
+fastapi
+uvicorn

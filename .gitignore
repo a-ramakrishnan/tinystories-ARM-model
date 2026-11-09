@@ -63,6 +63,7 @@ junit.xml
 .ipynb_checkpoints/
 
 # IDEs and editors
+.claude/
 .idea/
 .vscode/
 *.swp
