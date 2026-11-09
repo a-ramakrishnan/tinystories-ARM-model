@@ -113,6 +113,7 @@ runs/
 *.hdf5
 
 # Local datasets (optional)
+data/
 data/raw/
 data/processed/
 datasets/
