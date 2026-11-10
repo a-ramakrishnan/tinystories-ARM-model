@@ -794,7 +794,23 @@ function duration(sec) {
   return h ? `${h}h ${m}m` : m ? `${m}m ${s}s` : `${s}s`;
 }
 
+function renderResume(s) {
+  const r = s.selection?.resume, card = $("#t-resume");
+  card.classList.toggle("hidden", !r);
+  if (!r) return;
+  const finished = r.step >= r.max_iters, m = r.model;
+  $("#t-resume-info").innerHTML = `Saved run: <b>step ${fmt(r.step)}</b> of ${fmt(r.max_iters)}${finished ? " (finished)" : " (stopped early)"}` +
+    `${m ? ` · ${m.n_layer} layers, ${m.n_embd}-dim` : ""} · best validation loss <b>${fmtLoss(r.best_val)}</b> · learning rate ${r.lr != null ? r.lr.toExponential(1) : "–"}`;
+  const to = $("#t-resume-to");
+  if (document.activeElement !== to && (!to.value || ui.resumeKey !== `${r.step}/${r.max_iters}`)) {
+    ui.resumeKey = `${r.step}/${r.max_iters}`;
+    to.value = finished ? r.max_iters + Math.max(1000, Math.round(r.max_iters / 2)) : r.max_iters;
+  }
+  $("#t-resume-run").disabled = training_running(s) || s.job.status === "running";
+}
+
 function renderTrain(s) {
+  renderResume(s);
   const tr = s.train, runs = s.selection?.runs || [];
   $("#t-runs").classList.toggle("hidden", !runs.length);
   $("#t-runs-body").innerHTML = runs.map((r) => `<tr title="${esc((r.datasets || []).join(" + "))}${r.mix ? ` (mixed ${r.mix === "equal" ? "equally" : "by size"})` : ""}">
@@ -1394,6 +1410,10 @@ $("#t-start").addEventListener("click", (e) => {
   action(e.target, async () => { await api("/api/train", trainValues()); await poll(); });
 });
 $("#t-stop").addEventListener("click", (e) => action(e.target, () => api("/api/train/stop", {})));
+$("#t-resume-run").addEventListener("click", (e) => action(e.target, async () => {
+  await api("/api/train/resume", { max_iters: +$("#t-resume-to").value });
+  await poll();
+}));
 
 $$("#g-temp, #g-topk, #g-len, #g-topp, #g-minp, #g-rep, #g-freq, #g-pres").forEach((i) => i.addEventListener("input", () => { syncSliders(); if (i.id !== "g-len") refreshDist(); }));
 $("#g-prompt").addEventListener("input", refreshDist);

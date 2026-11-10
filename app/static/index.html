@@ -339,6 +339,16 @@
           </div>
         </div>
 
+        <div id="t-resume" class="card hidden">
+          <div class="card-head"><h3>Continue training</h3><span class="muted small">pick up a saved run where it stopped</span></div>
+          <p id="t-resume-info" class="small"></p>
+          <div class="actions tight">
+            <label class="inline">Train until step <input id="t-resume-to" type="number" min="1" class="num-input"></label>
+            <button id="t-resume-run" class="btn">Continue training</button>
+          </div>
+          <p class="hint">Every evaluation saves the full training state (the latest weights, the optimizer's running averages and the step) to <code>training_state.pt</code>. Continuing with the same number of steps finishes an interrupted run exactly as if it had never stopped. Asking for more steps extends a finished run: the learning-rate schedule is stretched to the new end, and the learning rate ramps back up from where it stopped over a short re-warmup, so the model keeps learning instead of crawling at the minimum learning rate.</p>
+        </div>
+
         <div id="t-live" class="hidden">
           <div id="t-stats" class="stats"></div>
           <div id="t-updates" class="stats"></div>

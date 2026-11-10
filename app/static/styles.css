@@ -626,3 +626,4 @@ label.inline.grow input[type="range"] { flex: 1; }
 .ev-group .kvm-row { grid-template-columns: 128px 1fr 40px; gap: 6px; font-size: 12px; }
 .ev-group .kvm-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ev-samples { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.num-input { width: 110px; }

@@ -30,7 +30,7 @@ from inference import generate_text, load_model, save_model_config
 import registry
 from model import GPT, GPTConfig
 from plots import plot_losses
-from pretrain import pretrain
+from pretrain import pretrain, read_state_meta
 from tokenization import bin_files_exist, get_tokenizer, tokenize_and_save
 from train_config import TrainConfig, setup_device
 
@@ -54,9 +54,12 @@ PROMPTS = [
 ]
 
 
-def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG, text_column="text", datasets=None, mix="size"):
+def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG, text_column="text", datasets=None, mix="size",
+         resume=False, max_iters=None):
     """Run the pipeline. `datasets` is an optional list of (name, subset, text_column) to train on a mix;
-    otherwise the single `dataset` is used. `mix` is "size" (in proportion to tokens) or "equal"."""
+    otherwise the single `dataset` is used. `mix` is "size" (in proportion to tokens) or "equal".
+    resume: continue the saved training state for these datasets (see pretrain.py); max_iters: total steps
+    (with resume, more than the saved run's max_iters extends it)."""
     specs = datasets or [(dataset, dataset_config, text_column)]
     enc = get_tokenizer()
 
@@ -70,8 +73,17 @@ def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG,
         roots.append(dpaths.root)
     paths = mix_paths(roots, DATA_ROOT)  # one dataset: its own folder; several: data/mix-.../
     os.makedirs(paths.root, exist_ok=True)
-    if train_cfg is None:
-        train_cfg = TrainConfig(best_model_path=paths.checkpoint)
+    model_cfg = config
+    if resume:
+        state = read_state_meta(paths.root)
+        if state is None:
+            raise SystemExit(f"Nothing to resume: no training state in {os.path.relpath(paths.root, PROJECT_DIR)}/")
+        if state.get("model_config"):
+            model_cfg = GPTConfig(**state["model_config"])
+        saved = {**state["train_config"], "betas": tuple(state["train_config"]["betas"])}
+        train_cfg = TrainConfig(**{**saved, "best_model_path": paths.checkpoint, "max_iters": max_iters or saved["max_iters"]})
+    elif train_cfg is None:
+        train_cfg = TrainConfig(best_model_path=paths.checkpoint, **({"max_iters": max_iters} if max_iters else {}))
 
     # 3. Device and batches (sampled fresh every run)
     dev = setup_device()
@@ -79,25 +91,26 @@ def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG,
     if len(roots) > 1:
         print(f"Training on {len(roots)} datasets, mixed {'equally' if mix == 'equal' else 'by size'}")
     torch.manual_seed(train_cfg.seed)
-    loader = BatchLoader(roots, config.block_size, train_cfg.batch_size, dev.device, mix=mix)
+    loader = BatchLoader(roots, model_cfg.block_size, train_cfg.batch_size, dev.device, mix=mix)
 
     # 4. Model + pretraining
-    model = GPT(config).to(dev.device)
+    model = GPT(model_cfg).to(dev.device)
     run_info = {"datasets": [s[0] for s in specs], "mix": mix if len(specs) > 1 else None}
-    save_model_config(paths.model_config, config, run_info)
+    if not resume:
+        save_model_config(paths.model_config, model_cfg, run_info)
     t0 = time.time()
-    train_losses, val_losses = pretrain(model, loader, train_cfg, dev)
+    train_losses, val_losses = pretrain(model, loader, train_cfg, dev, resume=resume, model_config=asdict(model_cfg))
     updates = math.ceil(train_cfg.max_iters / train_cfg.gradient_accumulation_steps)
     n_params = sum(p.numel() for p in model.parameters())
     summary = {**run_info, "steps": train_cfg.max_iters, "updates": updates, "params": n_params,
-               "param_updates": n_params * updates, "tokens": train_cfg.max_iters * train_cfg.batch_size * config.block_size,
+               "param_updates": n_params * updates, "tokens": train_cfg.max_iters * train_cfg.batch_size * model_cfg.block_size,
                "best_val": min(val_losses) if val_losses else None, "seconds": round(time.time() - t0, 1),
                "trained_at": time.strftime("%Y-%m-%d %H:%M"), "device": dev.device}
-    save_model_config(paths.model_config, config, {**summary, "train_config": asdict(train_cfg)})
+    save_model_config(paths.model_config, model_cfg, {**summary, "train_config": asdict(train_cfg)})
     meta, _ = registry.add_model(paths.checkpoint, paths.model_config, source="trained")
     print(f"Saved in the model library as \"{meta['name']}\" (models/{meta['id']})")
     with open(os.path.join(paths.root, "runs.jsonl"), "a") as f:
-        f.write(json.dumps({**summary, "model": {k: getattr(config, k) for k in ("n_layer", "n_head", "n_embd", "block_size")},
+        f.write(json.dumps({**summary, "model": {k: getattr(model_cfg, k) for k in ("n_layer", "n_head", "n_embd", "block_size")},
                             "max_iters": train_cfg.max_iters}) + "\n")
     print(f"{updates:,} optimizer updates × {n_params:,} parameters = {n_params * updates:,} parameter updates")
 
@@ -105,7 +118,7 @@ def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG,
     plot_losses(train_losses, val_losses, train_cfg.eval_interval)
 
     # 6. Inference with the best checkpoint
-    model = load_model(config, train_cfg.best_model_path, dev.device)
+    model = load_model(model_cfg, train_cfg.best_model_path, dev.device)
     for prompt in PROMPTS:
         print(generate_text(model, enc, prompt, dev.device))
 
@@ -122,6 +135,10 @@ def parse_args():
                    help="Column that holds the text (default: text)")
     p.add_argument("--mix", choices=["size", "equal"], default="size",
                    help="With several datasets: draw batches in proportion to their size (default) or equally")
+    p.add_argument("--resume", action="store_true",
+                   help="Continue the saved training run for these datasets (after an interruption, or to train longer)")
+    p.add_argument("--max-iters", type=int, default=None,
+                   help="Total training steps (default: 20000). With --resume, a larger number extends the run")
     p.add_argument("--list-datasets", action="store_true",
                    help="List public text datasets that work out of the box, then exit")
     return p.parse_args()
@@ -143,8 +160,8 @@ if __name__ == "__main__":
     if args.list_datasets:
         list_datasets()
     elif args.dataset and len(args.dataset) > 1:
-        main(datasets=[parse_dataset_spec(s) for s in args.dataset], mix=args.mix)
+        main(datasets=[parse_dataset_spec(s) for s in args.dataset], mix=args.mix, resume=args.resume, max_iters=args.max_iters)
     else:
         name, subset, column = parse_dataset_spec(args.dataset[0] if args.dataset else f"{DEFAULT_DATASET}@{DEFAULT_CONFIG}")
         main(dataset=name, dataset_config=args.dataset_config or subset,
-             text_column=args.text_column if args.text_column != "text" else column)
+             text_column=args.text_column if args.text_column != "text" else column, resume=args.resume, max_iters=args.max_iters)

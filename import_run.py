@@ -47,6 +47,15 @@ def import_run(zip_path, data_root=DATA_ROOT):
             with z.open(name) as src, open(dest, "wb") as out:
                 shutil.copyfileobj(src, out)
 
+        # 1b. the training state, if the zip has it, so the run can be continued (full-model.py --resume)
+        if "training_state.pt" in names:
+            for name in ("training_state.pt", "training_state.json"):
+                if name in names:
+                    with z.open(name) as src, open(os.path.join(target, name), "wb") as out:
+                        shutil.copyfileobj(src, out)
+            print("Installed the training state: continue this run with Continue training in the web app's Train step,")
+            print("or  python3 full-model.py --resume --max-iters <total steps>")
+
         # 2. keep a copy in the model library (models/), where it's never overwritten
         meta, added = registry.add_model(os.path.join(target, "best_model_params.pt"), os.path.join(target, "model_config.json"),
                                          source="imported", origin=os.path.basename(zip_path))
@@ -59,7 +68,8 @@ def import_run(zip_path, data_root=DATA_ROOT):
 
         # 4. keep the extras
         extras_dir = os.path.join(target, "imported", os.path.splitext(os.path.basename(zip_path))[0])
-        extras = [n for n in names if n not in ("best_model_params.pt", "model_config.json") and "/" not in n]
+        extras = [n for n in names if n not in ("best_model_params.pt", "model_config.json", "training_state.pt",
+                                                 "training_state.json") and "/" not in n]
         if extras:
             os.makedirs(extras_dir, exist_ok=True)
             for name in extras:

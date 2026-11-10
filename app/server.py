@@ -39,7 +39,7 @@ from inference import (attention_maps, benchmark_generation, device_memory, gene
 from model import GPT, GPTConfig, param_breakdown  # noqa: E402
 import evaluate  # noqa: E402
 import registry  # noqa: E402
-from pretrain import pretrain  # noqa: E402
+from pretrain import pretrain, read_state_meta  # noqa: E402
 from tokenization import bin_files_exist, get_tokenizer, tokenize_and_save  # noqa: E402
 from train_config import TrainConfig, setup_device  # noqa: E402
 
@@ -180,6 +180,14 @@ def dataset_info(d):
     }
 
 
+def _resume_info(paths):
+    st = read_state_meta(paths.root) if paths else None
+    if not st:
+        return None
+    return {k: st.get(k) for k in ("step", "max_iters", "best_val", "last_val", "lr", "eval_interval")} | \
+        {"model": st.get("model_config"), "batch_size": st["train_config"]["batch_size"]}
+
+
 def selection_info():
     if not S.datasets:
         return None
@@ -196,6 +204,7 @@ def selection_info():
         "tokenized": tokenized, "shares": shares,
         "tokens": {k: sum(i["tokens"][k] for i in infos) for k in ("train", "validation")} if tokenized else None,
         "checkpoint": checkpoint_info(paths), "runs": read_runs(paths),
+        "resume": _resume_info(paths),
     }
 
 
@@ -604,7 +613,11 @@ def train_endpoint(req: TrainReq):
             traceback.print_exc()
     cfg = TrainConfig(batch_size=S.batch["batch_size"], seed=S.batch["seed"],
                       best_model_path=paths.checkpoint, **req.model_dump())
-    model, config = S.model, S.model_config
+    return _run_training(ds, paths, S.model, S.model_config, cfg, resume=None)
+
+
+def _run_training(ds, paths, model, config, cfg, resume=None):
+    """Start the training job. resume: the saved state's summary (read_state_meta) to continue from, or None."""
     n_params = sum(p.numel() for p in model.parameters())
     tokens_per_step = cfg.batch_size * config.block_size
     names = [d["name"] for d in ds]
@@ -616,12 +629,19 @@ def train_endpoint(req: TrainReq):
             with open(os.path.join(paths.root, "mix.json"), "w") as f:
                 json.dump({"datasets": [{"name": d["name"], "config_name": d["config_name"], "path": d["paths"].root}
                                         for d in ds]}, f, indent=2)
-        for f in (paths.checkpoint, paths.model_config):  # replace any earlier model for these datasets
-            if os.path.exists(f):
-                os.remove(f)
+        if not resume:
+            for f in (paths.checkpoint, paths.model_config):  # replace any earlier model for these datasets
+                if os.path.exists(f):
+                    os.remove(f)
         S.inference_cache = None
-        tr = S.train = {"max_iters": cfg.max_iters, "step": 0, "lr": None, "points": [], "evals": [],
-                        "best_val": None, "started": time.time(), "it_per_sec": None, "config": asdict(cfg),
+        start = resume["step"] if resume else 0
+        earlier = resume.get("val_losses") or [] if resume else []
+        tr = S.train = {"max_iters": cfg.max_iters, "step": start, "lr": None, "points": [],
+                        "evals": [{"step": (i + 1) * resume["eval_interval"], "train": round(t, 4), "val": round(v, 4)}
+                                  for i, (t, v) in enumerate(zip(resume.get("train_losses") or [], earlier))] if resume else [],
+                        "best_val": round(resume["best_val"], 4) if resume and resume.get("best_val") else None,
+                        "resumed_from": start or None,
+                        "started": time.time(), "it_per_sec": None, "config": asdict(cfg),
                         "params": n_params, "updates": 0, "total_updates": math.ceil(cfg.max_iters / cfg.gradient_accumulation_steps),
                         "tokens": 0, "tokens_per_step": tokens_per_step, "datasets": names}
         stride = max(1, cfg.max_iters // 1000)
@@ -635,7 +655,7 @@ def train_endpoint(req: TrainReq):
                 tr["tokens"] = step * tokens_per_step
                 if step == 1 or step % stride == 0:
                     tr["points"].append([step, round(ev["loss"], 4)])
-                tr["it_per_sec"] = step / max(time.time() - t0, 1e-6)
+                tr["it_per_sec"] = (step - start) / max(time.time() - t0, 1e-6)
                 S.job.update(progress=step / cfg.max_iters, message=f"Step {step:,} of {cfg.max_iters:,}")
             else:
                 tr["evals"].append({"step": ev["step"], "train": round(ev["train"], 4), "val": round(ev["val"], 4)})
@@ -643,9 +663,9 @@ def train_endpoint(req: TrainReq):
                     tr["best_val"] = round(ev["val"], 4)
             return not S.stop_requested
 
-        S.job["message"] = "Training…"
+        S.job["message"] = f"Resuming at step {start:,}…" if resume else "Training…"
         loader = selection_loader(config.block_size, cfg.batch_size, S.dev.device)
-        pretrain(model, loader, cfg, S.dev, callback)
+        pretrain(model, loader, cfg, S.dev, callback, resume=bool(resume), model_config=asdict(config))
 
         if not os.path.exists(paths.checkpoint):  # stopped (or finished) before the first evaluation
             torch.save(model.state_dict(), paths.checkpoint)
@@ -654,7 +674,9 @@ def train_endpoint(req: TrainReq):
                    "updates": tr["updates"], "tokens": tr["tokens"], "params": n_params,
                    "param_updates": n_params * tr["updates"], "best_val": tr["best_val"], "seconds": seconds,
                    "trained_at": time.strftime("%Y-%m-%d %H:%M"), "stopped_early": S.stop_requested,
-                   "device": S.dev.device, "chip": S.chip}
+                   "device": S.dev.device, "chip": S.chip, **({"resumed_from": start} if resume else {})}
+        if resume and not tr["evals"][len(earlier):]:  # no new evaluation: keep the earlier best for the summary
+            summary["best_val"] = tr["best_val"]
         save_model_config(paths.model_config, config, {**summary, "train_config": asdict(cfg)})
         try:  # keep a copy in the model library, where later training can't overwrite it
             registry.add_model(paths.checkpoint, paths.model_config, source="trained")
@@ -670,6 +692,39 @@ def train_endpoint(req: TrainReq):
             S.job["message"] = "Training complete. Model saved."
 
     return start_job("train", job)
+
+
+class ResumeReq(BaseModel):
+    max_iters: Optional[int] = None   # total steps; more than the saved run's extends it
+
+
+@app.post("/api/train/resume")
+def train_resume(req: ResumeReq):
+    """Continue the saved training run for the current datasets, from its last saved step."""
+    ds = require_tokenized()
+    paths = selection_paths()
+    state = read_state_meta(paths.root)
+    if state is None:
+        raise HTTPException(400, "There's no saved training run to continue for this training data.")
+    max_iters = req.max_iters or state["max_iters"]
+    if max_iters <= state["step"]:
+        raise HTTPException(400, f"The saved run is at step {state['step']:,}: ask for more steps than that.")
+    if max_iters > 1_000_000:
+        raise HTTPException(400, "That's too many steps.")
+    if state.get("model_config"):
+        config = GPTConfig(**state["model_config"])
+    else:
+        config, _ = load_model_config(paths.model_config)
+    saved = {**state["train_config"], "betas": tuple(state["train_config"]["betas"])}
+    cfg = TrainConfig(**{**saved, "best_model_path": paths.checkpoint, "max_iters": max_iters})
+    if checkpoint_info(paths) is not None:  # keep the current best model in the library first
+        try:
+            registry.add_model(paths.checkpoint, paths.model_config, source="trained")
+        except Exception:
+            traceback.print_exc()
+    model = GPT(config).to(S.dev.device)
+    S.model, S.model_config = model, config
+    return _run_training(ds, paths, model, config, cfg, resume=state)
 
 
 @app.post("/api/train/stop")

@@ -143,6 +143,15 @@ caffeinate -i python3 full-model.py 2>&1 | tee train.log
 
 The loss plot window **pauses the script** until you close it; generation runs after that.
 
+If a run is interrupted, or you want to train an existing run for longer, continue it from its saved state:
+
+```bash
+python3 full-model.py --resume                     # finish an interrupted run
+python3 full-model.py --resume --max-iters 30000   # extend a finished run to 30,000 steps in total
+```
+
+`--max-iters` also sets the number of steps for a new run. See [Resuming and extending a run](#resuming-and-extending-a-run).
+
 ## Screenshots
 
 | Choose one or more datasets | Tokenization, explained with examples |
@@ -450,12 +459,12 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 3 | **Harder, more realistic data** | Mini FineWeb-Edu as the default; the Large model for 30,000 steps on a Colab L4 | Loss **3.603** on educational web text ([results](#measured-mini-fineweb-edu-the-new-default)) |
 | 4 | **Better decoding** | Top-p, min-p, repetition / frequency / presence penalties, greedy; **Balanced** (temperature 0.8, top-p 0.9, repetition penalty 1.15) as the default ([sampling](#sampling-how-the-next-token-is-picked)) | The FineWeb model's repetition: **73% → 0%** of 4-token runs |
 | 5 | **Keep every model, measure every model the same way** | A model library and a fixed evaluation suite ([saved models](#saved-models-and-evaluation)) | A baseline to beat: **3.603** on FineWeb, 5.257 on WikiText-2, 73% greedy repetition |
+| 6 | **Resume training** | The full training state is saved at every evaluation; runs can be finished after an interruption or extended, in the app, on the command line and on Colab (with Google Drive) ([details](#resuming-and-extending-a-run)) | Tested on the Mac: a run stopped at step 25 resumed there and finished; a 60-step run extended to 90 kept its loss history and best checkpoint |
 
 ### Planned
 
 | # | Step | Why | How it's measured |
 |---|---|---|---|
-| 6 | **Resume training** | Save the optimizer state with each checkpoint and continue a run for more steps, instead of restarting; protects long cloud runs from disconnects | Loss keeps falling from where the run stopped |
 | 7 | **Faster training** | `torch.compile`, gradient accumulation to ~100K tokens per step and a learning-rate check; batches of 32 × 256 tokens leave a cloud GPU mostly idle (25,330 tokens/s on the L4) | Tokens per second, and loss for the same compute units |
 | 8 | **Tokenize large datasets in little memory** | Stream the tokenizer over the dataset in chunks, so Mini FineWeb-Edu fits on a 16 GB Mac and joins the held-out tests | Peak memory while tokenizing |
 | 9 | **RoPE (rotary positions)** | Usually a lower loss and better long-context behavior than learned positions; removes the KV cache rebuilds once the window is full; used by modern LLMs and diffusion LMs | Held-out loss vs the same run with learned positions; the KV cache timing chart |
@@ -482,6 +491,36 @@ AdamW updates **every parameter**. The app shows, live and for every past run:
 
 Every run is appended to `runs.jsonl` in the model's folder and listed in the Train step's history table.
 The command line prints the same summary at the end of a run.
+
+### Resuming and extending a run
+
+Every evaluation saves the **full training state** next to the model, in `training_state.pt`: the latest
+weights, AdamW's running averages for every parameter, the mixed-precision scaler, the step, the loss history
+and the random-number state, with a small summary in `training_state.json`. A run can then carry on later:
+
+- **Finish an interrupted run.** Continuing with the same number of steps picks up at the step where the state
+  was saved, with the same weights, optimizer state and learning-rate schedule (after stopping in the app,
+  closing the terminal, or a disconnected Colab session).
+- **Extend a finished run.** Asking for more steps stretches the cosine learning-rate schedule to the new end.
+  A finished run has decayed to the minimum learning rate, so instead of crawling on at the minimum, the
+  learning rate ramps back up to the stretched curve over a short re-warmup (200 steps, or a fifth of the
+  extension if that's shorter) and then decays again. Extending a 30,000-step run to 40,000, it ramps from
+  6e-5 to 1.4e-4 and returns to 6e-5 at step 40,000.
+
+Every run now also ends with a final evaluation, so the last stretch of training counts towards the best
+checkpoint, and a run shorter than one evaluation interval still saves its model.
+
+Where to continue a run:
+
+| Where | How |
+|---|---|
+| Web app | **Continue training** in the Train step: shows the saved run (step, best loss, learning rate) and trains until the step you choose |
+| Command line | `python3 full-model.py --resume [--max-iters N]` |
+| Colab / Kaggle | Tick `resume` in Step 5. Files in `/content` disappear when a Colab session disconnects, so for long runs tick `keep_checkpoints_in_drive` to save the checkpoints and training state in Google Drive |
+| Colab → Mac | Tick `include_training_state` in Step 10; `import_run.py` installs it, and the run continues on the Mac |
+
+The training state is about three times the size of the weights (the weights plus AdamW's two running
+averages), e.g. about 1.5 GB for the 124M Large model.
 
 ## Inference metrics
 
