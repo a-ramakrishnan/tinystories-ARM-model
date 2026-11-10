@@ -456,6 +456,44 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
 .idchip { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin-right: 6px; }
 .idchip b { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 
+/* ---------- encoder / decoder, dropout, layernorm markers ---------- */
+.kind { display: inline-block; font-size: 11px; font-weight: 650; padding: 1px 8px; border-radius: 999px; white-space: nowrap; vertical-align: middle; }
+.kind.both { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+.kind.decoder { background: color-mix(in srgb, var(--series-val) 16%, transparent); color: var(--series-val); border: 1px solid color-mix(in srgb, var(--series-val) 35%, transparent); }
+.tag.drop { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.mini.drop { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); border-style: dashed; }
+.mini.ln { color: var(--accent); }
+.arch-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; font-size: 12.5px; color: var(--muted); align-items: center; }
+.arch-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.sdot.decoder { border-color: color-mix(in srgb, var(--series-val) 55%, var(--border)); }
+.sdot.decoder.on { background: var(--series-val); border-color: var(--series-val); }
+.stage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.stage-head .stage-title { margin: 0; }
+.dropnote { font-size: 13px; color: var(--muted); margin: 8px 0 12px; }
+.dropdemo { padding: 10px 12px; border-radius: 8px; border: 1px dashed color-mix(in srgb, var(--warn) 45%, var(--border)); margin: 10px 0; }
+.dropdemo p { margin: 6px 0 0 !important; }
+.dd-row { display: flex; gap: 10px; align-items: baseline; font-family: var(--mono); font-size: 12.5px; }
+.dd-row .muted { width: 44px; font-family: var(--font); }
+.zeroed { color: var(--bad); font-weight: 700; text-decoration: none; }
+.ffn-flow { display: grid; gap: 10px; margin: 10px 0; }
+.vcells { display: flex; flex-wrap: wrap; gap: 2px; }
+.vcells span { font-family: var(--mono); font-size: 11.5px; padding: 3px 5px; border-radius: 4px; min-width: 44px; text-align: right;
+  background: color-mix(in srgb, var(--accent) calc(var(--h) * 60%), var(--panel-2)); }
+.vcells span.neg { background: color-mix(in srgb, var(--series-val) calc(var(--h) * 50%), var(--panel-2)); }
+.gelu-svg { vertical-align: middle; color: var(--accent); }
+.logit-table td { vertical-align: middle; }
+.logit-table th, .logit-table td { padding-right: 16px !important; }
+.logit-table .wtrack { min-width: 90px; }
+.logit-table tr.focus td { font-weight: 700; }
+.edcard summary { font-size: 14px; }
+.ed-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 4px 0 10px; }
+.ed { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel-2); font-size: 13px; }
+.ed.current { border-color: var(--series-val); background: color-mix(in srgb, var(--series-val) 7%, var(--panel)); }
+.ed-title { font-weight: 650; font-size: 14px; margin-bottom: 8px; }
+.ed-stack { display: grid; gap: 4px; margin-bottom: 8px; }
+.ed-stack span { padding: 5px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border); font-size: 12.5px; }
+.ed p { margin: 0; color: var(--muted); }
+
 /* ---------- generation output ---------- */
 .gen-out { font-size: 15px; line-height: 1.7; max-height: none; }
 .gen-out .prompt { font-weight: 650; color: var(--accent); }
@@ -494,7 +532,7 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
   .fields.three, .fields.four, .two-col { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .fields.ds-fields { grid-template-columns: 1fr 1fr; }
   .fields.ds-fields label:first-child { grid-column: 1 / -1; }
-  .learn-grid { grid-template-columns: 1fr; }
+  .learn-grid, .ed-grid { grid-template-columns: minmax(0, 1fr); }
   .sub-flow { flex-wrap: wrap; }
   .share-bar { width: 70px; }
   .topbar { padding: 10px 16px; }

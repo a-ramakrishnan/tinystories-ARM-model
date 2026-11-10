@@ -33,14 +33,30 @@ class CausalSelfAttention(nn.Module):
             self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
                                  .view(1, 1, config.block_size, config.block_size))
 
-    def forward(self, x):
+    def forward(self, x, kv_cache=None):
+        """kv_cache: optional dict for fast generation. It holds the keys and values of earlier tokens;
+        the new tokens' keys and values are appended, so only the new tokens need computing."""
         B, T, C = x.size()
         q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
 
-        if self.flash:
+        if kv_cache is not None:
+            n = kv_cache.get("len", 0)
+            if "kbuf" not in kv_cache:  # allocate the whole window once, then write into it in place
+                shape = (B, self.n_head, kv_cache["max_len"], C // self.n_head)
+                kv_cache["kbuf"] = torch.empty(shape, dtype=k.dtype, device=k.device)
+                kv_cache["vbuf"] = torch.empty(shape, dtype=v.dtype, device=v.device)
+            assert n == 0 or T == 1, "with a filled cache, feed one new token at a time"
+            kv_cache["kbuf"][:, :, n:n + T] = k
+            kv_cache["vbuf"][:, :, n:n + T] = v
+            kv_cache["len"] = n + T
+            k, v = kv_cache["kbuf"][:, :, :n + T], kv_cache["vbuf"][:, :, :n + T]
+            kv_cache["k"], kv_cache["v"] = k, v  # views of the filled part (used to report the cache size)
+            # first pass (prefill): causal over the prompt; later: the single new query may see every cached key
+            y = F.scaled_dot_product_attention(q, k, v, is_causal=n == 0)
+        elif self.flash:
             y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.attn_dropout.p if self.training else 0.0, is_causal=True)
         else:
             att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
@@ -74,8 +90,8 @@ class Block(nn.Module):
         self.ln2 = LayerNorm(config.n_embd, config.bias)
         self.mlp = MLP(config)
 
-    def forward(self, x):
-        x = x + self.attn(self.ln1(x))
+    def forward(self, x, kv_cache=None):
+        x = x + self.attn(self.ln1(x), kv_cache)
         x = x + self.mlp(self.ln2(x))
         return x
 
@@ -118,17 +134,19 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None):
+    def forward(self, idx, targets=None, kv_caches=None, start_pos=0):
+        """kv_caches: optional list of one dict per layer (see CausalSelfAttention) for fast generation;
+        start_pos is then the position of the first token in idx."""
         device = idx.device
         b, t = idx.size()
-        assert t <= self.config.block_size
-        pos = torch.arange(0, t, dtype=torch.long, device=device)
+        assert start_pos + t <= self.config.block_size
+        pos = torch.arange(start_pos, start_pos + t, dtype=torch.long, device=device)
 
         tok_emb = self.transformer.wte(idx)
         pos_emb = self.transformer.wpe(pos)
         x = self.transformer.drop(tok_emb + pos_emb)
-        for block in self.transformer.h:
-            x = block(x)
+        for i, block in enumerate(self.transformer.h):
+            x = block(x, kv_caches[i] if kv_caches is not None else None)
         x = self.transformer.ln_f(x)
 
         if targets is not None:

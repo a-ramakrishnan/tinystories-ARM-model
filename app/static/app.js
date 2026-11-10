@@ -418,27 +418,30 @@ function renderArchitecture(c, b) {
   const heads = Array.from({ length: shownHeads }, (_, i) => `<span class="head">H${i + 1}</span>`).join("") + (c.n_head > shownHeads ? `<span class="head more">+${c.n_head - shownHeads}</span>` : "");
   const hs = c.n_embd / c.n_head;
   const arrow = '<div class="arr">↓</div>';
-  const box = (cls, title, sub, params) => `<div class="abox ${cls}"><div><div class="at">${title}</div>${sub ? `<div class="as">${sub}</div>` : ""}</div>${params != null ? `<span class="ap">${short(params)}</span>` : ""}</div>`;
+  const drop = `<div class="mini drop" title="Dropout ${c.dropout}: zeroes ${Math.round(c.dropout * 100)}% of values at random while training; off when generating">Dropout</div>`;
+  const dec = '<span class="kind decoder">Decoder only</span>';
+  const box = (cls, title, sub, params, badge = "") => `<div class="abox ${cls}"><div><div class="at">${title} ${badge}</div>${sub ? `<div class="as">${sub}</div>` : ""}</div>${params != null ? `<span class="ap">${short(params)}</span>` : ""}</div>`;
   $("#m-arch").innerHTML = `<div class="arch2">
     ${box("io", "Input: token IDs", `up to <b>${c.block_size}</b> tokens · shape (batch, ${c.block_size})`, null)}${arrow}
-    ${box("emb", "Token embedding + position embedding", `each token becomes a vector of ${c.n_embd} numbers · ${fmt(c.vocab_size)} × ${c.n_embd} and ${c.block_size} × ${c.n_embd} tables`, part("Token embeddings") + part("Position embeddings"))}${arrow}
+    <div class="sub-flow">${box("emb", "Token embedding + position embedding", `each token becomes a vector of ${c.n_embd} numbers · ${fmt(c.vocab_size)} × ${c.n_embd} and ${c.block_size} × ${c.n_embd} tables`, part("Token embeddings") + part("Position embeddings"))}<div class="arr r">→</div>${drop}</div>${arrow}
     <div class="stackbox"><div class="stack-badge">× ${c.n_layer} layer${c.n_layer > 1 ? "s" : ""}</div>
       <div class="stack-title">Transformer block <span class="ap">${short(b.block)} each</span></div>
       <div class="sub-flow">
-        <div class="mini">LayerNorm</div><div class="arr r">→</div>
-        <div class="abox attn"><div><div class="at">Multi-head self-attention</div><div class="as">${c.n_head} heads × ${hs} dims · causal mask (no peeking ahead)</div><div class="heads">${heads}</div></div></div>
-        <div class="arr r">→</div><div class="resid">+ residual</div>
+        <div class="mini ln">LayerNorm</div><div class="arr r">→</div>
+        <div class="abox attn"><div><div class="at">Masked multi-head self-attention ${dec}</div><div class="as">${c.n_head} heads × ${hs} dims · causal mask: each token sees only earlier tokens · attention dropout</div><div class="heads">${heads}</div></div></div>
+        <div class="arr r">→</div>${drop}<div class="arr r">→</div><div class="resid">+ residual</div>
       </div>
       <div class="sub-flow">
-        <div class="mini">LayerNorm</div><div class="arr r">→</div>
+        <div class="mini ln">LayerNorm</div><div class="arr r">→</div>
         <div class="abox ffn"><div><div class="at">Feed-forward network (MLP)</div><div class="as">Linear ${c.n_embd} → ${4 * c.n_embd} · GELU · Linear ${4 * c.n_embd} → ${c.n_embd}</div></div></div>
-        <div class="arr r">→</div><div class="resid">+ residual</div>
+        <div class="arr r">→</div>${drop}<div class="arr r">→</div><div class="resid">+ residual</div>
       </div>
     </div>${arrow}
     ${box("", "Final LayerNorm", "", part("Final LayerNorm"))}${arrow}
-    ${box("emb", "Output layer (shares the token embeddings)", `a score (logit) for each of the ${fmt(c.vocab_size)} tokens at every position · shape (batch, ${c.block_size}, ${fmt(c.vocab_size)})`, 0)}${arrow}
-    ${box("io", "Softmax → next-token probabilities", "sample one token, append it, repeat", null)}
-  </div>`;
+    ${box("emb", "Output layer (shares the token embeddings)", `a score (logit) for each of the ${fmt(c.vocab_size)} tokens at every position · shape (batch, ${c.block_size}, ${fmt(c.vocab_size)})`, 0, dec)}${arrow}
+    ${box("io", "Softmax → next-token probabilities", "sample one token, append it, repeat (autoregressive decoding)", null, dec)}
+  </div>
+  <div class="arch-legend"><span><span class="mini ln">LayerNorm</span> normalizes each vector</span><span><span class="mini drop">Dropout</span> training only (p = ${c.dropout})</span><span>${dec} parts an encoder doesn't have</span><span class="muted">Not in this model: an encoder stack and cross-attention (encoder–decoder models)</span></div>`;
 }
 
 function renderModel(r) {
@@ -463,18 +466,32 @@ function prng(seed) {
 }
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
+const randMatrix = (seed, rows, cols, scale) => { const rnd = prng(seed); return Array.from({ length: rows }, () => Array.from({ length: cols }, () => r1((rnd() * 2 - 1) * scale))); };
 const W_Q = [[1.0, -0.4, 0.2, 0.6], [0.2, 0.8, -0.6, 0.4], [-0.4, 0.6, 1.0, -0.2], [0.6, 0.2, 0.4, 0.8]];
 const W_K = [[0.8, 0.2, -0.4, 0.4], [-0.2, 1.0, 0.4, 0.2], [0.6, -0.4, 0.8, 0.2], [0.2, 0.4, 0.2, 1.0]];
 const W_V = [[0.2, 0.5, 0.1, -0.3], [0.4, -0.1, 0.3, 0.2], [-0.3, 0.2, 0.4, 0.1], [0.1, 0.3, -0.2, 0.4]];
+const W_O = randMatrix(55, 4, 4, 0.6);
+const W_1 = randMatrix(99, 4, 16, 1.0);   // feed-forward: expand 4 -> 16 (4 x n_embd, like the real model)
+const W_2 = randMatrix(77, 16, 4, 0.4);   // feed-forward: project 16 -> 4
 const matmul = (A, B) => A.map((row) => B[0].map((_, j) => r2(row.reduce((s, a, k) => s + a * B[k][j], 0))));
 const transpose = (A) => A[0].map((_, j) => A.map((r) => r[j]));
+const addM = (A, B) => A.map((row, i) => row.map((v, j) => r2(v + B[i][j])));
+const gelu = (x) => 0.5 * x * (1 + Math.tanh(0.7978845608 * (x + 0.044715 * x ** 3)));
+const toyEmbedding = (id) => { const rnd = prng(id + 1); return [0, 1, 2, 3].map(() => r1(rnd() * 4 - 2)); };
+function layerNorm(row) {
+  const mu = row.reduce((a, b) => a + b, 0) / row.length;
+  const v = row.reduce((a, b) => a + (b - mu) ** 2, 0) / row.length;
+  return { mu: r2(mu), sd: r2(Math.sqrt(v + 1e-5)), out: row.map((x) => r2((x - mu) / Math.sqrt(v + 1e-5))) };
+}
+const lnRows = (M) => M.map((r) => layerNorm(r).out);
 
 function buildWalk(tokens) {
   const T = tokens.length;
-  const E = tokens.map((t) => { const rnd = prng(t.id + 1); return [0, 1, 2, 3].map(() => r1(rnd() * 4 - 2)); });
+  const E = tokens.map((t) => toyEmbedding(t.id));
   const P = tokens.map((_, t) => [r1(Math.sin(t) * 0.5), r1(Math.cos(t) * 0.5), r1(Math.sin(t / 2) * 0.5), r1(Math.cos(t / 2) * 0.5)]);
   const X = E.map((e, i) => e.map((v, j) => r1(v + P[i][j])));
-  const Q = matmul(X, W_Q), K = matmul(X, W_K), V = matmul(X, W_V);
+  const XN = lnRows(X);                                    // LayerNorm 1 (scale 1, shift 0 in this toy)
+  const Q = matmul(XN, W_Q), K = matmul(XN, W_K), V = matmul(XN, W_V);
   const S = matmul(Q, transpose(K)).map((row) => row.map((v) => r2(v / 2)));  // ÷ √d_k = √4 = 2
   const A = S.map((row, i) => {
     const vis = row.slice(0, i + 1), m = Math.max(...vis);
@@ -482,7 +499,15 @@ function buildWalk(tokens) {
     return row.map((_, j) => (j <= i ? r2(ex[j] / sum) : 0));
   });
   const C = A.map((row) => [0, 1, 2, 3].map((k) => r2(row.reduce((s, w, j) => s + w * V[j][k], 0))));
-  return { tokens, T, E, P, X, Q, K, V, S, A, C, stage: 0, focus: T - 1 };
+  const O = matmul(C, W_O);                                // attention output projection
+  const H = addM(X, O);                                    // residual
+  const HN = lnRows(H);                                    // LayerNorm 2
+  const U = matmul(HN, W_1);                               // expand to 16
+  const G = U.map((r) => r.map((x) => r2(gelu(x))));       // GELU
+  const F = matmul(G, W_2);                                // project back to 4
+  const X2 = addM(H, F);                                   // residual
+  const XF = lnRows(X2);                                   // final LayerNorm
+  return { tokens, T, E, P, X, XN, Q, K, V, S, A, C, O, H, HN, U, G, F, X2, XF, stage: 0, focus: T - 1 };
 }
 
 function matrix(M, { rows, cols, title, heat = false, focus = -1, mask = false, digits = 2, clickable = false } = {}) {
@@ -497,31 +522,44 @@ function matrix(M, { rows, cols, title, heat = false, focus = -1, mask = false, 
   return `<div class="mat">${title ? `<div class="mat-title">${title}</div>` : ""}<table>${head}${body}</table></div>`;
 }
 
+const vec = (v, digits = 2) => `[${v.map((x) => Number(x).toFixed(digits)).join(", ")}]`;
 const tokLabel = (t) => esc(t.text).replace(/ /g, "·");
+const dropNote = (where) => `<div class="dropnote"><span class="tag drop">Dropout · training only</span> ${where}</div>`;
 
 const STAGES = [
   {
-    title: "1. Tokens become IDs",
+    title: "Tokens become IDs", kind: "both",
     body: (w) => `<p>The prompt is tokenized. From here on the model only sees these numbers.</p>
       <div class="chips">${w.tokens.map((t, i) => `<span class="idchip">${tokenChip(t, i)}<b>${t.id}</b></span>`).join("")}</div>
-      <p class="muted small">Next we follow these ${w.T} tokens through one attention head.</p>`,
+      <p class="muted small">Next we follow these ${w.T} tokens through one transformer block, and then out the other end as a prediction.</p>`,
   },
   {
-    title: "2. Embeddings: each token becomes a vector",
+    title: "Embeddings: each token becomes a vector", kind: "both",
     body: (w, c) => `<p>Each ID picks a row from the <b>token embedding table</b>, and each position adds a row from the <b>position embedding table</b>. The sum <code>x = e + p</code> says both <i>what</i> the token is and <i>where</i> it is.</p>
       <div class="mats">${matrix(w.E, { rows: w.tokens.map(tokLabel), title: "token embedding e", digits: 1 })}<div class="op">+</div>${matrix(w.P, { rows: w.tokens.map((_, i) => `pos ${i}`), title: "position p", digits: 1 })}<div class="op">=</div>${matrix(w.X, { rows: w.tokens.map(tokLabel), title: "x", digits: 1, heat: true })}</div>
-      <p class="muted small">Toy numbers with 4 dimensions. Your model uses ${c.n_embd} dimensions, looked up from a ${fmt(c.vocab_size)} × ${c.n_embd} table that it learns during training.</p>`,
+      ${dropNote(`is applied to <code>x</code> here: while training, ${Math.round((c.dropout ?? 0.1) * 100)}% of the numbers are zeroed at random so the model can't rely on any single one.`)}
+      <p class="muted small">Toy numbers with 4 dimensions. Your model uses ${c.n_embd} dimensions from a ${fmt(c.vocab_size)} × ${c.n_embd} table that it learns during training.</p>`,
   },
   {
-    title: "3. Queries, keys and values",
-    body: (w, c) => `<p>Three learned matrices turn every <code>x</code> into three vectors:</p>
+    title: "LayerNorm before attention", kind: "both",
+    body: (w) => {
+      const i = w.focus, ln = layerNorm(w.X[i]);
+      return `<p>Before attention, each token's vector is <b>normalized</b>: subtract its mean, divide by its standard deviation. This keeps the numbers in a steady range however deep the network gets. (The real LayerNorm then multiplies by a learned scale and adds a learned shift; here those are 1 and 0.)</p>
+        <div class="calc">“${tokLabel(w.tokens[i])}”: x = ${vec(w.X[i], 1)} · mean = ${ln.mu} · std = ${ln.sd}<br>(x − mean) ÷ std = <b>${vec(ln.out)}</b></div>
+        <div class="mats">${matrix(w.XN, { rows: w.tokens.map(tokLabel), title: "LayerNorm(x)", heat: true, focus: i, clickable: true })}</div>
+        <p class="muted small">This model uses <i>pre-norm</i>: LayerNorm comes before attention and before the feed-forward network (as in GPT-2), rather than after them as in the original Transformer.</p>`;
+    },
+  },
+  {
+    title: "Queries, keys and values", kind: "both",
+    body: (w, c) => `<p>Three learned matrices turn every normalized vector into three new vectors:</p>
       <ul class="qkv"><li><b>Query (Q)</b>: what this token is looking for.</li><li><b>Key (K)</b>: what this token offers to others.</li><li><b>Value (V)</b>: the information it passes on if someone attends to it.</li></ul>
-      <div class="mats">${matrix(w.X, { rows: w.tokens.map(tokLabel), title: "x", digits: 1 })}<div class="op">×</div>${matrix(W_Q, { title: "W<sub>Q</sub>", digits: 1 })}<div class="op">=</div>${matrix(w.Q, { rows: w.tokens.map(tokLabel), title: "Q", heat: true })}</div>
-      <div class="mats">${matrix(w.K, { rows: w.tokens.map(tokLabel), title: "K = x × W<sub>K</sub>", heat: true })}${matrix(w.V, { rows: w.tokens.map(tokLabel), title: "V = x × W<sub>V</sub>", heat: true })}</div>
+      <div class="mats">${matrix(w.XN, { rows: w.tokens.map(tokLabel), title: "LayerNorm(x)" })}<div class="op">×</div>${matrix(W_Q, { title: "W<sub>Q</sub>", digits: 1 })}<div class="op">=</div>${matrix(w.Q, { rows: w.tokens.map(tokLabel), title: "Q", heat: true })}</div>
+      <div class="mats">${matrix(w.K, { rows: w.tokens.map(tokLabel), title: "K = LayerNorm(x) × W<sub>K</sub>", heat: true })}${matrix(w.V, { rows: w.tokens.map(tokLabel), title: "V = LayerNorm(x) × W<sub>V</sub>", heat: true })}</div>
       <p class="muted small">In your model each head has its own W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> of size ${c.n_embd} × ${c.n_embd / c.n_head}.</p>`,
   },
   {
-    title: "4. Attention scores: how well each query matches each key",
+    title: "Attention scores: how well each query matches each key", kind: "both",
     body: (w) => {
       const i = w.focus, j = 0, q = w.Q[i], k = w.K[j];
       const terms = q.map((v, n) => `${v.toFixed(2)}×${k[n].toFixed(2)}`).join(" + ");
@@ -531,72 +569,124 @@ const STAGES = [
     },
   },
   {
-    title: "5. Causal mask: no peeking at the future",
+    title: "Causal mask: no peeking at the future", kind: "decoder",
     body: (w) => `<p>When predicting what comes next, a token must not see tokens after it, or it could cheat by reading the answer. Scores for future positions are set to <code>−∞</code>, which becomes 0 after softmax.</p>
       <div class="mats">${matrix(w.S, { rows: w.tokens.map(tokLabel), cols: w.tokens.map(tokLabel), title: "masked scores", heat: true, mask: true, focus: w.focus, clickable: true })}</div>
-      <p class="muted small">This is what makes it a <i>decoder-only</i> or <i>causal</i> language model.</p>`,
+      <p class="muted small"><b>This is what makes a decoder.</b> An encoder (like BERT) skips the mask, so every token sees the whole sentence in both directions; that suits understanding text, but not writing it one token at a time.</p>`,
   },
   {
-    title: "6. Softmax: scores become attention weights",
-    body: (w) => {
+    title: "Softmax: scores become attention weights", kind: "both",
+    body: (w, c) => {
       const i = w.focus;
       const bars = w.A[i].slice(0, i + 1).map((v, j) => `<div class="wbar"><span class="wl">${tokLabel(w.tokens[j])}</span><div class="wtrack"><div style="width:${v * 100}%"></div></div><span class="wv">${(v * 100).toFixed(0)}%</span></div>`).join("");
       return `<p>Softmax turns each row into percentages that add up to 100%: how much attention a token pays to each earlier token (and itself).</p>
         <div class="mats">${matrix(w.A, { rows: w.tokens.map(tokLabel), cols: w.tokens.map(tokLabel), title: "attention weights", heat: true, mask: true, focus: i, clickable: true })}
-        <div class="wbars"><div class="mat-title">“${tokLabel(w.tokens[i])}” attends to</div>${bars}</div></div>`;
+        <div class="wbars"><div class="mat-title">“${tokLabel(w.tokens[i])}” attends to</div>${bars}</div></div>
+        ${dropNote(`is applied to these attention weights while training (${Math.round((c.dropout ?? 0.1) * 100)}%), so a token can't always lean on the same neighbour.`)}`;
     },
   },
   {
-    title: "7. The context vector: a weighted mix of values",
+    title: "The context vector: a weighted mix of values", kind: "both",
     body: (w) => {
       const i = w.focus;
-      const terms = w.A[i].slice(0, i + 1).map((a, j) => `<div class="term"><span class="wv">${a.toFixed(2)}</span>×<span class="vec">[${w.V[j].map((v) => v.toFixed(2)).join(", ")}]</span><span class="muted small">V of “${tokLabel(w.tokens[j])}”</span></div>`).join("");
+      const terms = w.A[i].slice(0, i + 1).map((a, j) => `<div class="term"><span class="wv">${a.toFixed(2)}</span>×<span class="vec">${vec(w.V[j])}</span><span class="muted small">V of “${tokLabel(w.tokens[j])}”</span></div>`).join("");
       return `<p>Each token's <b>context vector</b> is the sum of all value vectors, weighted by its attention. This is how information moves between tokens: “${tokLabel(w.tokens[i])}” now carries a blend of what came before it.</p>
-        <div class="terms">${terms}<div class="term total">= <span class="vec"><b>[${w.C[i].map((v) => v.toFixed(2)).join(", ")}]</b></span><span class="muted small">context vector of “${tokLabel(w.tokens[i])}”</span></div></div>
+        <div class="terms">${terms}<div class="term total">= <span class="vec"><b>${vec(w.C[i])}</b></span><span class="muted small">context vector of “${tokLabel(w.tokens[i])}”</span></div></div>
         <div class="mats">${matrix(w.C, { rows: w.tokens.map(tokLabel), title: "all context vectors = weights × V", heat: true, focus: i, clickable: true })}</div>`;
     },
   },
   {
-    title: "8. Many heads, then the feed-forward network",
-    body: (w, c) => `<p>That was <b>one head</b>. Your model runs <b>${c.n_head} heads</b> side by side, each with its own Q, K, V, so different heads can track different things (the previous word, the subject of the sentence, punctuation…).</p>
+    title: "Output projection, dropout and the residual connection", kind: "both",
+    body: (w, c) => {
+      const i = w.focus, o = w.O[i];
+      const p = c.dropout ?? 0.1, keep = 1 / (1 - p), dropIdx = (i + 1) % 4;
+      const dropped = o.map((v, n) => (n === dropIdx ? 0 : r2(v * keep)));
+      return `<p>The context vector is mixed by one more learned matrix, <b>W<sub>O</sub></b> (the output projection). Then it is <b>added back</b> to the token's original vector <code>x</code>: the <b>residual connection</b>. The block only has to learn a <i>change</i> to <code>x</code>, which makes deep networks much easier to train.</p>
+        <div class="calc">“${tokLabel(w.tokens[i])}”: context ${vec(w.C[i])} × W<sub>O</sub> = <b>${vec(o)}</b></div>
+        <div class="dropdemo"><div class="mat-title">Dropout while training (one possible random draw, p = ${p})</div>
+          <div class="dd-row"><span class="muted small">before</span><span class="vec">${vec(o)}</span></div>
+          <div class="dd-row"><span class="muted small">after</span><span class="vec">[${dropped.map((v, n) => (n === dropIdx ? '<s class="zeroed">0.00</s>' : v.toFixed(2))).join(", ")}]</span></div>
+          <p class="muted small">Each number has a ${Math.round(p * 100)}% chance of being zeroed; the survivors are multiplied by 1 / (1 − ${p}) = ${keep.toFixed(2)} so the total stays about the same. When generating text, dropout is switched off and the vector passes through unchanged.</p></div>
+        <div class="calc">residual: x ${vec(w.X[i], 1)} + ${vec(o)} = <b>${vec(w.H[i])}</b></div>
+        <div class="mats">${matrix(w.H, { rows: w.tokens.map(tokLabel), title: "after attention: h = x + context × W<sub>O</sub>", heat: true, focus: i, clickable: true })}</div>`;
+    },
+  },
+  {
+    title: "LayerNorm, then the feed-forward network", kind: "both",
+    body: (w, c) => {
+      const i = w.focus, ln = layerNorm(w.H[i]);
+      const cells = (v, cls = "") => `<div class="vcells ${cls}">${v.map((x) => `<span style="--h:${Math.min(1, Math.abs(x) / 2).toFixed(2)}" class="${x < 0 ? "neg" : ""}">${x.toFixed(2)}</span>`).join("")}</div>`;
+      return `<p>Now each token is processed <b>on its own</b> by the feed-forward network (FFN). First another LayerNorm, then it is <b>widened</b> to 4× its size, passed through <b>GELU</b>, and <b>narrowed</b> back. Attention moved information <i>between</i> tokens; the FFN works on what each token now holds.</p>
+        <div class="ffn-flow">
+          <div><div class="mat-title">1. LayerNorm(h) · mean ${ln.mu}, std ${ln.sd}</div>${cells(ln.out)}</div>
+          <div><div class="mat-title">2. × W<sub>1</sub> (4 → 16): widen</div>${cells(w.U[i])}</div>
+          <div><div class="mat-title">3. GELU ${geluSvg()} keeps positives, squashes negatives toward 0</div>${cells(w.G[i])}</div>
+          <div><div class="mat-title">4. × W<sub>2</sub> (16 → 4): narrow back</div>${cells(w.F[i])}</div>
+        </div>
+        ${dropNote("is applied to the FFN output while training.")}
+        <div class="calc">residual: h ${vec(w.H[i])} + FFN ${vec(w.F[i])} = <b>${vec(w.X2[i])}</b> → the block's output for “${tokLabel(w.tokens[i])}”</div>
+        <p class="muted small">Toy sizes 4 → 16 → 4. Your model goes ${c.n_embd} → ${4 * c.n_embd} → ${c.n_embd}; the FFN holds about two thirds of each block's parameters.</p>`;
+    },
+  },
+  {
+    title: "Many heads, many layers", kind: "both",
+    body: (w, c) => `<p>That was <b>one head</b> in <b>one block</b>. Your model runs <b>${c.n_head} heads</b> side by side in every block, each with its own Q, K and V, so different heads can track different things (the previous word, the subject of the sentence, punctuation…). Their context vectors are concatenated before W<sub>O</sub>.</p>
       <div class="pipeline">
         <div class="pp">${c.n_head} heads × ${c.n_embd / c.n_head} dims</div><span>→</span>
         <div class="pp">concatenate → ${c.n_embd}</div><span>→</span>
-        <div class="pp">output projection ${c.n_embd} × ${c.n_embd}</div><span>→</span>
-        <div class="pp acc">+ x (residual)</div>
+        <div class="pp">W<sub>O</sub> ${c.n_embd} × ${c.n_embd}</div><span>→</span>
+        <div class="pp acc">+ residual</div><span>→</span>
+        <div class="pp">LayerNorm → FFN</div><span>→</span><div class="pp acc">+ residual</div>
       </div>
-      <p>Then each token goes through the <b>feed-forward network</b> on its own: it widens to ${4 * c.n_embd} numbers, applies the GELU curve (keeping positive signals, damping negative ones), and narrows back.</p>
-      <div class="pipeline">
-        <div class="pp">LayerNorm</div><span>→</span><div class="pp">Linear ${c.n_embd} → ${4 * c.n_embd}</div><span>→</span>
-        <div class="pp gelu">${geluSvg()} GELU</div><span>→</span><div class="pp">Linear ${4 * c.n_embd} → ${c.n_embd}</div><span>→</span><div class="pp acc">+ residual</div>
-      </div>
-      <p class="muted small">Attention moves information <i>between</i> tokens; the feed-forward network processes it <i>within</i> each token. This pair is one transformer block, and it repeats <b>${c.n_layer} times</b>.</p>`,
+      <p>The output of one block is the input of the next. The whole block repeats <b>${c.n_layer} times</b>, each time refining every token's vector with more context.</p>`,
   },
   {
-    title: "9. Predicting the next token",
+    title: "Final LayerNorm, output layer, softmax: picking the next token", kind: "decoder",
+    body: (w) => {
+      const r = ui.real;
+      const last = w.T - 1, final = w.XF[last];
+      const cands = (r ? r.next.slice(0, 6) : w.tokens.slice(0, 6).map((t) => ({ id: t.id, text: t.text })));
+      const logits = cands.map((cd) => r2(toyEmbedding(cd.id).reduce((s, e, k) => s + e * final[k], 0)));
+      const m = Math.max(...logits), ex = logits.map((l) => Math.exp(l - m)), sum = ex.reduce((a, b) => a + b, 0);
+      const probs = ex.map((e) => e / sum);
+      const best = probs.indexOf(Math.max(...probs));
+      const rows = cands.map((cd, n) => `<tr class="${n === best ? "focus" : ""}"><td class="wl">${esc(cd.text).replace(/ /g, "·")}</td><td class="mono">${vec(toyEmbedding(cd.id), 1)}</td><td class="num mono">${logits[n].toFixed(2)}</td><td><div class="wtrack"><div style="width:${probs[n] * 100}%"></div></div></td><td class="num mono">${(probs[n] * 100).toFixed(0)}%</td></tr>`).join("");
+      return `<p>Only the <b>last</b> token's vector (“${tokLabel(w.tokens[last])}”) is used to predict what comes next. It goes through a final LayerNorm, and is then compared with <b>every row of the token embedding table</b>: the same table used at the start (<i>weight tying</i>). Each dot product is a <b>logit</b>: a score for that word being next. Softmax turns the logits into probabilities.</p>
+        <div class="calc">final vector = LayerNorm(${vec(w.X2[last])}) = <b>${vec(final)}</b></div>
+        <div class="ptable-scroll"><table class="ptable logit-table"><thead><tr><th>Candidate</th><th>Its embedding</th><th class="num">Logit = final · embedding</th><th>Probability</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+        <p class="muted small">Toy numbers, ${cands.length} candidates${r ? " (your model's real top candidates, with toy embeddings, so the toy may pick a different winner than the real model: see the next stage)" : ""}.${r && r.tokens.length > w.T ? ` The walkthrough follows only the first ${w.T} tokens; the candidates come from the full prompt.` : ""} The real model computes ${fmt(VOCAB)} logits at once. Then it picks: <b>greedy</b> takes the highest; <b>sampling</b> draws at random by probability, after <b>temperature</b> (divides the logits: below 1 sharpens, above 1 flattens) and <b>top-k</b> (keeps only the k best).</p>`;
+    },
+  },
+  {
+    title: "Your model's real prediction", kind: "decoder",
     body: (w, c) => {
       const r = ui.real;
-      const last = r ? r.tokens.map((t) => t.text).join("") : "";
-      if (!r) return `<p>After the last block, the final vector of the <b>last</b> token is compared with every row of the token embedding table, giving ${fmt(c.vocab_size)} scores. Softmax turns them into probabilities. Build or train a model to see real predictions here.</p>`;
+      if (!r) return `<p>Build or train a model to see real predictions here.</p>`;
+      const last = r.tokens.map((t) => t.text).join("");
       const bars = r.next.map((n) => `<div class="wbar pick"><span class="wl">${esc(n.text).replace(/ /g, "·").replace(/\n/g, "↵")}</span><div class="wtrack"><div style="width:${(n.prob / r.next[0].prob) * 100}%"></div></div><span class="wv">${(n.prob * 100).toFixed(1)}%</span><button class="btn small ghost" data-append="${esc(n.text)}">Add</button></div>`).join("");
-      return `<p>After the last block, the final vector of the <b>last</b> token (“${tokLabel(r.tokens[r.tokens.length - 1])}”) goes through LayerNorm and is compared with every row of the token embedding table: ${fmt(c.vocab_size)} scores (logits). Softmax turns them into probabilities. These are your ${r.source === "trained" ? "trained" : "untrained"} model's real top 10 for <code>${esc(last)}</code>:</p>
+      return `<p>The same steps, for real: ${c.n_layer} blocks of ${c.n_head} heads with ${c.n_embd}-dimensional vectors, then ${fmt(c.vocab_size)} logits. These are your ${r.source === "trained" ? "trained" : "untrained"} model's top 10 for <code>${esc(last)}</code>:</p>
         <div class="wbars wide">${bars}</div>
-        <p class="muted small">Greedy decoding would take the top one; sampling picks at random in proportion to these probabilities (shaped by temperature and top-k). Click <b>Add</b> to append a token and run the walkthrough again: this loop is how text is generated.</p>`;
+        <p class="muted small">Click <b>Add</b> to append a token and run the walkthrough again: repeating this loop, one token at a time, is how text is generated. This is <b>autoregressive</b> decoding, the defining job of a decoder.</p>`;
     },
   },
 ];
 
 function geluSvg() {
-  const pts = []; for (let x = -3; x <= 3; x += 0.25) { const g = 0.5 * x * (1 + Math.tanh(0.7978845608 * (x + 0.044715 * x ** 3))); pts.push(`${(x + 3) * 8},${24 - (g + 0.5) * 6}`); }
-  return `<svg viewBox="0 0 48 28" width="40" height="24"><polyline points="${pts.join(" ")}" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+  const pts = []; for (let x = -3; x <= 3; x += 0.25) { const g = gelu(x); pts.push(`${(x + 3) * 8},${24 - (g + 0.5) * 6}`); }
+  return `<svg viewBox="0 0 48 28" width="40" height="24" class="gelu-svg"><polyline points="${pts.join(" ")}" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
 }
+
+const KIND_BADGE = {
+  both: '<span class="kind both" title="Encoders do this too">Encoder &amp; decoder</span>',
+  decoder: '<span class="kind decoder" title="Only decoder (GPT-style) models do this">Decoder only</span>',
+};
 
 function renderWalk() {
   const w = ui.walk;
   if (!w) return;
   const c = ui.realConfig || ui.status?.model?.config || ui.status?.selection?.checkpoint?.model || { n_embd: 384, n_head: 6, n_layer: 6, vocab_size: VOCAB };
-  $("#a-dots").innerHTML = STAGES.map((st, i) => `<button class="sdot ${i === w.stage ? "on" : i < w.stage ? "past" : ""}" data-stage="${i}" title="${esc(st.title)}">${i + 1}</button>`).join("");
-  $("#a-stage").innerHTML = `<h3 class="stage-title">${STAGES[w.stage].title}</h3>${STAGES[w.stage].body(w, c)}`;
+  $("#a-dots").innerHTML = STAGES.map((st, i) => `<button class="sdot ${i === w.stage ? "on" : i < w.stage ? "past" : ""} ${st.kind}" data-stage="${i}" title="${esc(st.title)}${st.kind === "decoder" ? " (decoder only)" : ""}">${i + 1}</button>`).join("");
+  $("#a-stage").innerHTML = `<div class="stage-head"><h3 class="stage-title">${w.stage + 1}. ${STAGES[w.stage].title}</h3>${KIND_BADGE[STAGES[w.stage].kind]}</div>${STAGES[w.stage].body(w, c)}`;
   $("#a-prev").disabled = w.stage === 0;
   $("#a-next").disabled = w.stage === STAGES.length - 1;
 }
@@ -772,6 +862,7 @@ function renderGenerateCard(s) {
     $("#g-params-total").textContent = `${short(c.params.total)} (${fmt(c.params.total)})`;
     $("#g-params").innerHTML = renderParams(c.params);
     $$(".ctx-size").forEach((e) => { e.textContent = c.model.block_size; });
+    $$(".dev-name").forEach((e) => { e.textContent = { mps: "Apple GPU (Metal)", cuda: "Nvidia GPU", cpu: "CPU" }[s.device] || s.device; });
   }
   el.className = "note";
   const m = c.model, names = (c.datasets || s.datasets.map((d) => d.name)).map((n) => (n.startsWith("http") ? shortUrl(n) : n));
@@ -789,15 +880,42 @@ function syncSliders() {
 const confClass = (p) => (p >= 0.4 ? "hi" : p >= 0.1 ? "mid" : "lo");
 
 function renderGenMetrics(m, live = false) {
+  const mem = m.memory;
   $("#g-metrics").innerHTML = [
     stat("Prompt tokens", fmt(m.prompt_tokens), m.prompt_truncated ? "longer than the context window" : "input"),
     stat("Generated tokens", fmt(m.output_tokens), live ? "so far" : "output"),
     stat("Context used", `${fmt(m.context_used ?? Math.min(m.prompt_tokens + m.output_tokens, m.context_window))} / ${fmt(m.context_window)}`, "tokens the model could see at the end"),
-    stat("Time to first token", m.ttft_ms != null ? `${Math.round(m.ttft_ms)} ms` : "–", "prefill + first pick"),
+    stat("Time to first token", m.ttft_ms != null ? `${Math.round(m.ttft_ms)} ms` : "–", m.prefill_tokens_per_sec ? `prefill at ${fmt(Math.round(m.prefill_tokens_per_sec))} tok/s` : "prefill + first pick"),
     stat("Total time", m.total_ms != null ? `${(m.total_ms / 1000).toFixed(2)} s` : "–", live ? "running…" : "for all tokens"),
-    stat("Speed", m.tokens_per_sec != null ? `${m.tokens_per_sec} tok/s` : "–", m.ms_per_token != null ? `${m.ms_per_token} ms per token after the first` : ""),
+    stat("Decode speed", m.tokens_per_sec != null ? `${m.tokens_per_sec} tok/s` : "–", m.ms_per_token != null ? `${m.ms_per_token} ms per token after the first` : ""),
+    stat("KV cache", m.use_kv_cache === false ? "off" : m.kv_cache_bytes != null ? bytes(m.kv_cache_bytes) : "on",
+      m.kv_bytes_per_token ? `${bytes(m.kv_bytes_per_token)} per token${m.recomputes ? ` · rebuilt ${fmt(m.recomputes)}×` : ""}` : ""),
+    stat("Memory", m.weights_bytes ? bytes(m.weights_bytes) : "–", mem?.allocated != null ? `weights · ${bytes(mem.allocated)} in use on the GPU${mem.peak ? `, peak ${bytes(mem.peak)}` : ""}` : "weights"),
     stat("Average confidence", m.avg_prob != null ? `${Math.round(m.avg_prob * 100)}%` : "–", "model's probability for each chosen token"),
   ].join("");
+}
+
+async function runBenchmark() {
+  $("#g-bench-busy").classList.remove("hidden");
+  try {
+    const r = await api("/api/generate/benchmark", { prompt: $("#g-prompt").value, n_tokens: +$("#g-bench-n").value });
+    const a = r.no_cache, b = r.kv_cache;
+    const row = (label, f, better) => `<tr><td>${label}</td><td class="num">${f(a)}</td><td class="num">${f(b)}</td><td class="num">${better ? better(a, b) : ""}</td></tr>`;
+    const x = (u, v) => { if (!u || !v) return ""; const k = u / v; return Math.abs(k - 1) < 0.05 ? "about the same" : `${k.toFixed(2)}× ${k > 1 ? "faster" : "slower"}`; };
+    $("#g-bench-out").innerHTML = `<div class="ptable-scroll"><table class="ptable bench"><thead><tr><th></th><th class="num">Without cache</th><th class="num">With KV cache</th><th class="num">Difference</th></tr></thead><tbody>
+      ${row("Time to first token", (m) => `${m.ttft_ms} ms`)}
+      ${row("Decode speed", (m) => `${m.tokens_per_sec} tok/s`, (u, v) => x(v.tokens_per_sec, u.tokens_per_sec))}
+      ${row("Time per token", (m) => `${m.ms_per_token} ms`)}
+      ${row(`Total for ${r.n_tokens} tokens`, (m) => `${(m.total_ms / 1000).toFixed(2)} s`, () => `<b>${x(a.total_ms, b.total_ms)}</b>`)}
+      ${row("KV cache size", (m) => (m.kv_cache_bytes ? bytes(m.kv_cache_bytes) : "–"))}
+      ${row("Cache rebuilds (window full)", (m) => fmt(m.recomputes))}
+      ${row("GPU memory in use", (m) => (m.memory?.allocated != null ? bytes(m.memory.allocated) : "–"))}
+      </tbody></table></div>
+      <p class="hint">${r.same_output ? "✓ Both runs produced exactly the same tokens: the cache changes speed, not results." : "The runs differ slightly: tiny floating-point differences changed a sampled token."}
+      The cache stores 2 (key and value) × ${r.kv_bytes_per_token / (2 * 4) / (ui.status?.selection?.checkpoint?.model?.n_layer || 6)} numbers × ${ui.status?.selection?.checkpoint?.model?.n_layer || 6} layers × 4 bytes = ${bytes(r.kv_bytes_per_token)} per token, up to ${bytes(r.kv_bytes_per_token * r.context_window)} for a full ${r.context_window}-token window.
+      ${r.prompt_tokens + r.n_tokens > r.context_window ? `Past ${r.context_window} tokens the window slides, so this model rebuilds its cache every step and the advantage shrinks.` : ""}</p>
+      <p class="hint"><b>Why the gain is modest here:</b> with a small model and at most ${r.context_window} tokens, each step is dominated by the fixed cost of launching work on the GPU, not by the arithmetic the cache saves. On an M5 the cache measured about 1.1× faster for the Small model and 1.3× for Large (run it a few times: GPU timings vary). The benefit grows with model size and context length: for large language models reading thousands of tokens, the KV cache is what makes generation practical.</p>`;
+  } finally { $("#g-bench-busy").classList.add("hidden"); }
 }
 
 function drawLatency(ms) {
@@ -810,7 +928,7 @@ function drawLatency(ms) {
 }
 
 async function generate() {
-  const body = { prompt: $("#g-prompt").value, temperature: +$("#g-temp").value, top_k: +$("#g-topk").value, max_new_tokens: +$("#g-len").value };
+  const body = { prompt: $("#g-prompt").value, temperature: +$("#g-temp").value, top_k: +$("#g-topk").value, max_new_tokens: +$("#g-len").value, use_kv_cache: $("#g-kv").checked };
   const res = await fetch("/api/generate/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.detail || res.statusText); }
   // keep the previous output in the history
@@ -932,6 +1050,7 @@ $("#t-stop").addEventListener("click", (e) => action(e.target, () => api("/api/t
 $$("#g-temp, #g-topk, #g-len").forEach((i) => i.addEventListener("input", syncSliders));
 $("#g-color").addEventListener("change", (e) => $("#g-text").classList.toggle("plain", !e.target.checked));
 $("#g-run").addEventListener("click", (e) => action(e.target, generate));
+$("#g-bench").addEventListener("click", (e) => action(e.target, runBenchmark));
 
 // ---------- polling ----------
 async function poll() {

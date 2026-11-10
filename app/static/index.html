@@ -234,6 +234,28 @@
           </div>
         </div>
 
+        <details class="card details edcard" open>
+          <summary><span><b>Encoder, decoder, or both?</b> This model is a <span class="kind decoder">Decoder only</span> transformer</span><span class="muted small">Show / hide</span></summary>
+          <div class="ed-grid">
+            <div class="ed">
+              <div class="ed-title">Encoder-only <span class="muted small">e.g. BERT</span></div>
+              <div class="ed-stack"><span>Self-attention <b>without</b> a mask: every token sees the whole text</span><span>Feed-forward</span></div>
+              <p>Reads text in both directions to <b>understand</b> it: classification, search, tagging. Doesn't generate text.</p>
+            </div>
+            <div class="ed current">
+              <div class="ed-title">Decoder-only <span class="muted small">e.g. GPT · this model ✓</span></div>
+              <div class="ed-stack"><span><b>Masked</b> (causal) self-attention: only earlier tokens</span><span>Feed-forward</span><span>Next-token output layer</span></div>
+              <p>Predicts the <b>next token</b>, then feeds it back in, one at a time. Built for <b>writing</b> text.</p>
+            </div>
+            <div class="ed">
+              <div class="ed-title">Encoder–decoder <span class="muted small">e.g. original Transformer, T5</span></div>
+              <div class="ed-stack"><span>Encoder (unmasked) reads the input</span><span>Decoder: masked self-attention + <b>cross-attention</b> to the encoder's output</span></div>
+              <p>Turns one text into another: <b>translation</b>, summarization. Cross-attention is the part this model doesn't have.</p>
+            </div>
+          </div>
+          <p class="muted small">In the walkthrough below, each stage is labelled <span class="kind both">Encoder &amp; decoder</span> if an encoder does the same thing, or <span class="kind decoder">Decoder only</span> if only a decoder does it. Dropout steps are marked <span class="tag drop">Dropout · training only</span>.</p>
+        </details>
+
         <div id="a-walk" class="card hidden">
           <div class="stage-nav">
             <div id="a-dots" class="stage-dots"></div>
@@ -364,6 +386,7 @@
           <p class="hint">Lower temperature is safer and more repetitive, higher is more surprising. Top-k only picks among the k most likely next tokens (0 = no limit).</p>
           <div class="actions">
             <button id="g-run" class="btn primary">Generate</button>
+            <label class="switch"><input type="checkbox" id="g-kv" checked> Use KV cache</label>
             <label class="switch"><input type="checkbox" id="g-color" checked> Color tokens by confidence</label>
           </div>
         </div>
@@ -384,11 +407,22 @@
               <div class="card-head"><h3>What happens during inference</h3></div>
               <ol class="flow small-flow">
                 <li><b>Prefill.</b> The prompt's tokens go through the model in one pass. That, plus picking the first token, is the <b>time to first token</b>.</li>
-                <li><b>Decode.</b> Each new token needs one more pass over the context. This simple model has no KV cache, so it re-reads up to <span class="ctx-size">128</span> tokens every time.</li>
-                <li><b>Sliding window.</b> Past <span class="ctx-size">128</span> tokens, only the most recent ones fit in the context window, so the model forgets the start of the story.</li>
+                <li><b>Decode.</b> Each new token needs one more pass. With the <b>KV cache</b>, every layer keeps the keys and values it already computed, so only the new token is processed. Without it, the whole context is re-read every time.</li>
+                <li><b>Sliding window.</b> Past <span class="ctx-size">128</span> tokens, only the most recent fit in the context window. This model's positions are learned per slot, so when the window slides the cache must be rebuilt ("recomputes").</li>
               </ol>
             </div>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>KV cache: with vs without</h3><span class="kind decoder">Decoder inference</span></div>
+          <p class="muted small">Generates the same tokens twice, with the same random seed: once re-reading the whole context for every token, once with the KV cache. Measured on this machine's <span class="dev-name">GPU</span>.</p>
+          <div class="actions tight">
+            <label class="inline">Tokens <select id="g-bench-n" class="select"><option>50</option><option selected>100</option><option>120</option><option>250</option></select></label>
+            <button id="g-bench" class="btn">Run comparison</button>
+            <span id="g-bench-busy" class="muted small hidden"><span class="spinner"></span> Running both…</span>
+          </div>
+          <div id="g-bench-out"></div>
         </div>
 
         <div id="g-history"></div>

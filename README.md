@@ -24,13 +24,16 @@ explains every stage of the **LLM training pipeline** in a local web app:
 4. **Model**: a **transformer** with **multi-head causal self-attention**, feed-forward (MLP) blocks, LayerNorm
    and weight tying, from 16M to 124M parameters, with an architecture diagram and a line-by-line
    **parameter count**.
-5. **Inside the transformer**: a step-by-step **attention visualization** with **Q, K and V matrices**,
-   attention scores, the causal mask, softmax, **context vectors** and **next-token prediction**, plus
-   heatmaps of the trained model's real attention.
+5. **Inside the transformer**: a 13-stage **transformer visualization** with **Q, K and V matrices**:
+   **LayerNorm**, attention scores, the causal mask, softmax, **context vectors**, the output projection,
+   **dropout**, **residual connections**, the **feed-forward network** (GELU), and the final **logits and
+   softmax** that pick the next token. Each stage is labelled **encoder & decoder** or **decoder only**, and
+   heatmaps show the trained model's real attention.
 6. **Pre-training**: **AdamW**, warmup and **cosine learning-rate decay**, gradient accumulation and clipping,
    with live **loss curves**, optimizer updates, parameter updates and tokens processed.
-7. **Inference**: streamed **text generation** with temperature and top-k sampling, showing tokens used,
-   **time to first token**, tokens per second and the model's confidence in every token.
+7. **Inference**: streamed **text generation** with temperature and top-k sampling and a **KV cache**, showing
+   tokens used, **time to first token**, decode speed, KV cache size, GPU memory and the model's confidence in
+   every token, plus a with/without **KV cache benchmark**.
 
 The default dataset is [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories), 2.1 million
 short stories in simple English. The research behind it showed that even very small models can learn to
@@ -65,7 +68,7 @@ on Mac · TinyStories · nanoGPT · tokenization · Hugging Face datasets · dee
 - **Measured speed.** On an M5 with 16 GB, the default model trains at about **2 steps per second**
   (32 × 128 tokens per step). The *Quick* preset (2,000 steps) takes roughly 20 minutes and brings the
   validation loss from 10.8 down to about 4.6. The full run (20,000 steps) takes several hours. Generation
-  runs at about 55–65 tokens per second, with roughly 70–130 ms to the first token.
+  with the KV cache runs at about 130–150 tokens per second for the default model.
 
 It also runs on an Nvidia GPU (CUDA, with mixed precision) or the CPU, but the Mac is what it's built and
 tested on.
@@ -104,13 +107,15 @@ It opens http://127.0.0.1:8000 in your browser. The sidebar walks through seven 
 4. **Model**: pick a size preset (Tiny 16M, Small 30M, Medium 51M, Large 124M) or set layers, heads and
    embedding size yourself, with a live parameter estimate. Building shows the architecture diagram, the
    input and output token counts, and how every parameter adds up.
-5. **Inside the transformer**: walk a prompt through attention in nine stages, then explore your model's
-   real attention heatmaps by layer and head.
+5. **Inside the transformer**: compare encoder-only, decoder-only and encoder–decoder models, then walk a
+   prompt through a whole transformer block and out to the next token in 13 stages, and explore your
+   model's real attention heatmaps by layer and head.
 6. **Train**: see what one training step does, how loss relates to probability, and the learning-rate
    schedule; then train and watch loss, speed, optimizer updates, parameters updated and tokens processed.
    Every run is kept in a history table.
 7. **Generate**: text streams in token by token, colored by the model's confidence, with tokens used, time
-   to first token, total time, speed and a per-token timing chart.
+   to first token, decode speed, KV cache size, GPU memory and a per-token timing chart. Switch the KV cache
+   on or off, or run a side-by-side comparison.
 
 Options: `--port 8080` to use another port, `--no-browser` to skip opening a browser tab. A step can be
 opened directly with a link such as http://127.0.0.1:8000/#attention.
@@ -138,29 +143,47 @@ The loss plot window **pauses the script** until you close it; generation runs a
 | ![One window of tokens turned into next-token training examples](docs/screenshots/batches.png) | ![Model size presets with a live parameter estimate of 123,751,680](docs/screenshots/model-size.png) |
 | **The architecture, drawn from your settings** | **How every parameter adds up** |
 | ![Transformer architecture diagram with 12 attention heads and feed-forward network](docs/screenshots/model-architecture.png) | ![Parameter breakdown table with formulas](docs/screenshots/model-parameters.png) |
-| **Attention weights after softmax, with the real model's heatmap** | **How a context vector is computed** |
-| ![Toy attention weights and real attention heatmap for one layer and head](docs/screenshots/attention-weights.png) | ![Context vector as a weighted sum of value vectors](docs/screenshots/attention-context.png) |
-| **How the next token is chosen** | **Generation with inference metrics** |
-| ![Top 10 next-token probabilities from the trained model](docs/screenshots/attention-next-token.png) | ![Streamed generation with time to first token, speed and confidence colors](docs/screenshots/generate.png) |
+| **Encoder, decoder, or both?** | **Attention weights after softmax, with the real model's heatmap** |
+| ![Encoder-only, decoder-only and encoder–decoder models compared, with stage labels](docs/screenshots/encoder-decoder.png) | ![Toy attention weights and real attention heatmap for one layer and head](docs/screenshots/attention-weights.png) |
+| **How a context vector is computed** | **Output projection, dropout and the residual connection** |
+| ![Context vector as a weighted sum of value vectors](docs/screenshots/attention-context.png) | ![Output projection, a dropout example and the residual add](docs/screenshots/attention-residual.png) |
+| **The context vector goes through LayerNorm and the feed-forward network** | **Final LayerNorm, logits and softmax pick the next token** |
+| ![LayerNorm, widen to 16, GELU, narrow back, residual](docs/screenshots/attention-ffn.png) | ![Logits from the final vector and the token embeddings, softmax probabilities](docs/screenshots/attention-logits.png) |
+| **Your real model's next-token probabilities** | **Generation with inference metrics** |
+| ![Top 10 next-token probabilities from the trained model](docs/screenshots/attention-next-token.png) | ![Streamed generation with time to first token, KV cache size, memory and confidence colors](docs/screenshots/generate.png) |
+| **KV cache: with vs without** | |
+| ![Side-by-side generation benchmark with and without the KV cache](docs/screenshots/kv-cache.png) | |
 | **What one training step does** | **Training on a mix: updates, parameters updated, tokens** |
 | ![Loss and perplexity examples, learning-rate schedule and the plan for a run](docs/screenshots/train-explained.png) | ![Live training stats on two datasets mixed equally](docs/screenshots/train.png) |
 
 ## Inside the transformer
 
-The web app's fifth step follows a short prompt through one attention head in nine stages. It uses
-**small made-up numbers** (4 dimensions instead of 384) so every value can be checked by hand, and every
-number on screen is actually computed from the ones before it:
+The web app's fifth step follows a short prompt through a whole transformer block, and out the other end as
+a prediction, in 13 stages. It uses **small made-up numbers** (4 dimensions instead of 384) so every value
+can be checked by hand, and every number on screen is actually computed from the ones before it. Each stage
+is labelled **Encoder & decoder** (an encoder like BERT does the same) or **Decoder only**:
 
-1. **Tokens become IDs.**
-2. **Embeddings**: each token's vector plus a position vector gives `x`.
-3. **Queries, keys and values**: `Q = x·W_Q`, `K = x·W_K`, `V = x·W_V`.
-4. **Attention scores**: `Q·Kᵀ / √d_k`, with one score worked out term by term.
-5. **Causal mask**: future positions set to `−∞`, so a token can't see what comes after it.
-6. **Softmax**: each row becomes attention weights that add up to 100%.
-7. **Context vector**: each token's weighted sum of value vectors, shown term by term.
-8. **Multi-head attention and the feed-forward network**, using your model's real sizes.
-9. **Next-token prediction** from your **real trained model**: its top 10 candidates and their
-   probabilities. Click one to append it and run the walkthrough again; that loop is text generation.
+| # | Stage | Shown | |
+|---|---|---|---|
+| 1 | Tokens become IDs | the real token IDs | Encoder & decoder |
+| 2 | Embeddings | token vector + position vector = `x`, where dropout applies | Encoder & decoder |
+| 3 | **LayerNorm** | mean, standard deviation and the normalized vector (pre-norm, as in GPT-2) | Encoder & decoder |
+| 4 | Queries, keys, values | `Q = LN(x)·W_Q`, `K = LN(x)·W_K`, `V = LN(x)·W_V` | Encoder & decoder |
+| 5 | Attention scores | `Q·Kᵀ / √d_k`, one worked out term by term | Encoder & decoder |
+| 6 | Causal mask | future positions set to `−∞` | **Decoder only** |
+| 7 | Softmax | attention weights per token, where attention dropout applies | Encoder & decoder |
+| 8 | Context vector | each token's weighted sum of value vectors, term by term | Encoder & decoder |
+| 9 | Output projection, **dropout**, residual | `context·W_O`, a dropout example (zero + rescale by 1/(1−p)), `h = x + …` | Encoder & decoder |
+| 10 | LayerNorm and the **feed-forward network** | `LN(h)` → widen to 16 → GELU → narrow to 4 → dropout → `+ h` | Encoder & decoder |
+| 11 | Many heads, many layers | how heads are concatenated and blocks repeat, with your model's sizes | Encoder & decoder |
+| 12 | Final LayerNorm, **logits**, softmax | the last token's vector · each candidate's embedding (weight tying) → probabilities | **Decoder only** |
+| 13 | Your model's real prediction | top 10 next tokens from the **trained model**; click one to append it and continue | **Decoder only** |
+
+Above the walkthrough, a card compares **encoder-only** (BERT: unmasked attention, for understanding text),
+**decoder-only** (GPT and this model: masked attention, for generating text) and **encoder–decoder**
+(original Transformer, T5: adds **cross-attention**, for translation). This model has no encoder and no
+cross-attention. The Model step's architecture diagram marks the same decoder-only parts, plus every
+LayerNorm and dropout.
 
 Below the walkthrough, a heatmap shows your trained model's **real attention weights** for the same
 prompt, for any layer and head (or averaged over heads).
@@ -319,13 +342,29 @@ The Generate step streams tokens as they are produced and reports:
 |---|---|
 | Prompt tokens / generated tokens | Tokens in and out |
 | Context used | How many tokens the model could see at the end (at most the context window, 128) |
-| Time to first token | Reading the prompt (prefill) and picking the first token |
-| Total time, tokens per second | Speed of the decode loop: one forward pass per new token |
+| Time to first token | Reading the prompt (prefill) and picking the first token, with the prefill speed |
+| Total time, decode speed | Speed of the decode loop: one forward pass per new token |
+| KV cache | Size of the cache at the end, and per token (`2 × n_layer × n_embd × 4 bytes`, 18 KB for the default model) |
+| Memory | Size of the weights, and GPU memory in use (plus the peak on CUDA) |
 | Average confidence | The model's average probability for the tokens it picked |
 | Per-token timing chart | Time for each token; the first one is the slowest |
 
 Each generated token is colored by the model's probability for it, and hovering shows its top alternatives.
-This simple model has no KV cache, so every new token re-reads the whole context (up to 128 tokens).
+
+### The KV cache
+
+With the **KV cache** on (the default), every layer keeps the keys and values it has already computed, so
+each new token only runs itself through the model instead of re-reading the whole context. The cache is
+allocated once for the whole context window and filled in place. It's exact: cached and uncached logits
+match to within 2×10⁻⁶. The **KV cache: with vs without** card generates the same tokens both ways, with the
+same seed, and compares them.
+
+Measured on an Apple M5, the cache made the default (Small) model about **1.1× faster** and the Large model
+about **1.3× faster**. The gain is modest here because, with a small model and a 128-token window, each step
+is dominated by the fixed cost of launching work on the GPU. It grows with model size and context length,
+and for large language models reading thousands of tokens it is what makes generation practical. This
+model's positions are learned per slot, so once the 128-token window is full the cache has to be rebuilt
+every step (shown as "rebuilds").
 
 ## What happens on each run
 
@@ -348,11 +387,11 @@ app/
 data.py                    Dataset sources, text-only validation, local caching, multi-dataset BatchLoader
 catalog.py                 Public text datasets shown in the gallery and by --list-datasets
 tokenization.py            GPT-2 tokenizer and writing train.bin / validation.bin
-model.py                   GPT architecture, param_breakdown() and estimate_loss()
+model.py                   GPT architecture (with an optional KV cache), param_breakdown() and estimate_loss()
 train_config.py            TrainConfig hyperparameters and setup_device() (MPS / CUDA / CPU)
 pretrain.py                Training loop: AdamW, warmup + cosine LR schedule, gradient accumulation
 plots.py                   Loss curves
-inference.py               Checkpoints, text generation (streamed), attention maps, next-token probabilities
+inference.py               Checkpoints, streamed generation, KV cache benchmark, GPU memory, attention maps
 train_step_by_step.ipynb   Notebook version for Google Colab
 docs/screenshots/          Screenshots used in this README
 ```
@@ -420,7 +459,15 @@ For a model trained on several datasets, use `mix_paths([...dataset folders...])
 
 Click the **Open in Colab** badge, choose *Runtime → Change runtime type → T4 GPU*, and run the cells from
 top to bottom. The notebook clones this repository, installs the dependencies, and walks through the main
-steps with form fields for the settings and the dataset.
+steps with form fields for the settings and the dataset. On a GPU it also shows:
+
+- the GPU's name, memory and utilization (`nvidia-smi`);
+- a **model size** dropdown up to **Large** (124M parameters, GPT-2 small size), which fits easily on a T4;
+- training throughput (tokens per second) and **peak GPU memory** after training;
+- **Step 9**: a KV cache benchmark at several lengths, with tokens per second with and without the cache,
+  cache size, rebuilds once the window is full, and GPU memory.
+
+CUDA GPUs train with mixed precision (bfloat16 where supported, float16 otherwise).
 
 ## Credits
 

@@ -38,20 +38,68 @@ def generate_text(model, enc, prompt, device, max_new_tokens=200, temperature=1.
     return enc.decode(out[0].tolist())
 
 
+def kv_cache_bytes(caches):
+    """Memory held by a list of per-layer KV caches."""
+    return sum(c[k].numel() * c[k].element_size() for c in caches for k in ("k", "v") if c.get(k) is not None)
+
+
+def kv_bytes_per_token(config, dtype_bytes=4):
+    """Each token stores a key and a value vector of n_embd numbers in every layer."""
+    return 2 * config.n_layer * config.n_embd * dtype_bytes
+
+
+def device_memory(device):
+    """GPU memory in use right now (bytes), plus the peak where the backend tracks it."""
+    device = str(device)
+    if device.startswith("cuda"):
+        return {"allocated": torch.cuda.memory_allocated(), "peak": torch.cuda.max_memory_allocated(),
+                "reserved": torch.cuda.memory_reserved(), "total": torch.cuda.get_device_properties(0).total_memory,
+                "name": torch.cuda.get_device_name(0)}
+    if device == "mps":
+        return {"allocated": torch.mps.current_allocated_memory(), "driver": torch.mps.driver_allocated_memory(),
+                "peak": None, "name": "Apple GPU (MPS)"}
+    return {"allocated": None, "peak": None, "name": "CPU"}
+
+
+def _sync(device):
+    if str(device).startswith("cuda"):
+        torch.cuda.synchronize()
+    elif str(device) == "mps":
+        torch.mps.synchronize()
+
+
 @torch.no_grad()
-def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1.0, top_k=None, n_alternatives=5):
+def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1.0, top_k=None, n_alternatives=5,
+                    use_kv_cache=True, stats=None):
     """Like GPT.generate, but yields each new token as soon as it's chosen, with timing and probabilities.
 
     Yields dicts: {"id", "prob", "alternatives": [(id, prob), ...], "ms"} where `prob` is the model's own
     probability for the chosen token (before temperature / top-k), and `ms` is the time since the start.
-    There is no KV cache: every step runs the model over the whole context (up to block_size tokens).
+
+    With use_kv_cache, the keys and values of earlier tokens are kept, so each step only runs the new token
+    through the model. Without it, every step re-reads the whole context (up to block_size tokens). This model
+    uses learned absolute positions, so once the context window is full the positions shift and the cache has
+    to be rebuilt ("recompute"). `stats`, if given, is filled with cache size and recompute counts.
     """
     block = model.config.block_size
     idx = torch.tensor(prompt_ids, dtype=torch.long, device=device).unsqueeze(0)
+    caches, cache_len, recomputes = None, 0, 0
     t0 = time.perf_counter()
     for _ in range(max_new_tokens):
-        idx_cond = idx if idx.size(1) <= block else idx[:, -block:]
-        logits, _ = model(idx_cond)
+        if use_kv_cache:
+            if caches is None or cache_len + 1 > block:
+                if caches is not None:
+                    recomputes += 1
+                caches = [{"max_len": block} for _ in range(model.config.n_layer)]
+                ctx = idx[:, -block:]
+                logits, _ = model(ctx, kv_caches=caches, start_pos=0)
+                cache_len = ctx.size(1)
+            else:
+                logits, _ = model(idx[:, -1:], kv_caches=caches, start_pos=cache_len)
+                cache_len += 1
+        else:
+            idx_cond = idx if idx.size(1) <= block else idx[:, -block:]
+            logits, _ = model(idx_cond)
         logits = logits[:, -1, :]
         raw = F.softmax(logits, dim=-1)
         scaled = logits / temperature
@@ -61,10 +109,56 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
         idx_next = torch.multinomial(F.softmax(scaled, dim=-1), num_samples=1)
         alt_p, alt_i = torch.topk(raw[0], n_alternatives)
         token = int(idx_next.item())  # .item() waits for the GPU, so the timing below is real
+        if stats is not None:
+            stats.update(kv_cache_bytes=kv_cache_bytes(caches) if caches else 0, cache_tokens=cache_len if caches else 0,
+                         recomputes=recomputes)
         yield {"id": token, "prob": float(raw[0, token]),
                "alternatives": list(zip(alt_i.tolist(), [round(p, 4) for p in alt_p.tolist()])),
                "ms": (time.perf_counter() - t0) * 1000}
         idx = torch.cat((idx, idx_next), dim=1)
+
+
+def benchmark_generation(model, prompt_ids, device, n_tokens=100, seed=1234, repeats=2):
+    """Generate the same tokens with and without the KV cache and compare speed and memory.
+
+    Both runs use the same random seed, so they should produce the same text (tiny float differences can
+    occasionally change a sampled token). Each mode runs `repeats` times and the fastest run is kept, which
+    smooths out GPU timing noise.
+    """
+    results = {}
+    for use_cache in (False, True):  # warm up both code paths (GPU kernels for each shape) so timing is fair
+        for _ in generate_stream(model, prompt_ids, device, min(n_tokens, 30), use_kv_cache=use_cache):
+            pass
+    for use_cache in (False, True):
+        best = None
+        for _ in range(repeats):
+            if str(device).startswith("cuda"):
+                torch.cuda.reset_peak_memory_stats()
+            _sync(device)
+            torch.manual_seed(seed)
+            stats, times, ids = {}, [], []
+            for ev in generate_stream(model, prompt_ids, device, n_tokens, temperature=1.0, top_k=50,
+                                      use_kv_cache=use_cache, stats=stats):
+                times.append(ev["ms"])
+                ids.append(ev["id"])
+            _sync(device)
+            if best is None or times[-1] < best[0][-1]:
+                best = (times, ids, stats)
+        times, ids, stats = best
+        decode_ms = times[-1] - times[0]
+        results["kv_cache" if use_cache else "no_cache"] = {
+            "ttft_ms": round(times[0], 1), "total_ms": round(times[-1], 1),
+            "tokens_per_sec": round((len(times) - 1) / (decode_ms / 1000), 1) if decode_ms > 0 else None,
+            "ms_per_token": round(decode_ms / (len(times) - 1), 2) if len(times) > 1 else None,
+            "kv_cache_bytes": stats.get("kv_cache_bytes", 0), "recomputes": stats.get("recomputes", 0),
+            "memory": device_memory(device), "ids": ids,
+        }
+    a, b = results["no_cache"], results["kv_cache"]
+    results["speedup"] = round(a["total_ms"] / b["total_ms"], 2) if b["total_ms"] else None
+    results["same_output"] = a["ids"] == b["ids"]
+    for r in (a, b):
+        r.pop("ids")
+    return results
 
 
 @torch.no_grad()

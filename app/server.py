@@ -33,8 +33,8 @@ from pydantic import BaseModel  # noqa: E402
 from catalog import DATASET_CATALOG  # noqa: E402
 from data import (DEFAULT_DATASET, BatchLoader, SubsetNeeded, dataset_paths, get_dataset,  # noqa: E402
                   inspect_source, mix_paths, resolve_source, token_count)
-from inference import (attention_maps, generate_stream, load_model, load_model_config,  # noqa: E402
-                       next_token_probs, save_model_config)
+from inference import (attention_maps, benchmark_generation, device_memory, generate_stream,  # noqa: E402
+                       kv_bytes_per_token, load_model, load_model_config, next_token_probs, save_model_config)
 from model import GPT, GPTConfig, param_breakdown  # noqa: E402
 from pretrain import pretrain  # noqa: E402
 from tokenization import bin_files_exist, get_tokenizer, tokenize_and_save  # noqa: E402
@@ -266,6 +266,12 @@ class GenerateReq(BaseModel):
     max_new_tokens: int = 200
     temperature: float = 0.8
     top_k: int = 50
+    use_kv_cache: bool = True
+
+
+class BenchmarkReq(BaseModel):
+    prompt: str = "Once upon a time there was a little girl who"
+    n_tokens: int = 100
 
 
 # ---------- status & datasets ----------
@@ -604,11 +610,13 @@ def generate_stream_endpoint(req: GenerateReq):
         return json.dumps(obj) + "\n"
 
     def gen():
+        n_params = sum(p.numel() for p in model.parameters())
         yield line({"type": "start", "prompt_tokens": len(ids), "context_window": block,
-                    "prompt_truncated": len(ids) > block, "params": sum(p.numel() for p in model.parameters()),
-                    "device": S.dev.device})
-        out, times, probs = [], [], []
-        for ev in generate_stream(model, ids, S.dev.device, max_new, temperature, top_k):
+                    "prompt_truncated": len(ids) > block, "params": n_params, "device": S.dev.device,
+                    "use_kv_cache": req.use_kv_cache})
+        out, times, probs, stats = [], [], [], {}
+        for ev in generate_stream(model, ids, S.dev.device, max_new, temperature, top_k,
+                                  use_kv_cache=req.use_kv_cache, stats=stats):
             out.append(ev["id"])
             times.append(ev["ms"])
             probs.append(ev["prob"])
@@ -624,9 +632,27 @@ def generate_stream_endpoint(req: GenerateReq):
                     "tokens_per_sec": round((len(out) - 1) / (decode_ms / 1000), 1) if len(out) > 1 and decode_ms > 0 else None,
                     "ms_per_token": round(decode_ms / (len(out) - 1), 1) if len(out) > 1 else None,
                     "token_ms": [round(b - a, 1) for a, b in zip([0.0] + times[:-1], times)],
-                    "avg_prob": round(sum(probs) / len(probs), 4)})
+                    "avg_prob": round(sum(probs) / len(probs), 4),
+                    "prefill_tokens_per_sec": round(min(len(ids), block) / (first_ms / 1000), 1) if first_ms > 0 else None,
+                    "use_kv_cache": req.use_kv_cache, "kv_cache_bytes": stats.get("kv_cache_bytes", 0),
+                    "kv_bytes_per_token": kv_bytes_per_token(model.config), "recomputes": stats.get("recomputes", 0),
+                    "weights_bytes": n_params * 4, "memory": device_memory(S.dev.device)})
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+@app.post("/api/generate/benchmark")
+def generate_benchmark(req: BenchmarkReq):
+    """Generate the same tokens with and without the KV cache and compare speed and memory."""
+    require_datasets()
+    if training_running():
+        raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
+    model, _ = inference_model()
+    ids = S.enc.encode_ordinary(req.prompt[:2000]) or [S.enc.eot_token]
+    n = max(10, min(req.n_tokens, 500))
+    r = benchmark_generation(model, ids, S.dev.device, n_tokens=n)
+    return {**r, "n_tokens": n, "prompt_tokens": len(ids), "context_window": model.config.block_size,
+            "kv_bytes_per_token": kv_bytes_per_token(model.config), "device": S.dev.device, "chip": S.chip}
 
 
 # ---------- static front end ----------
