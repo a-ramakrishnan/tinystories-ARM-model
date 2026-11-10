@@ -366,7 +366,7 @@
       <section class="panel" data-step="generate">
         <header class="panel-head">
           <span class="eyebrow">Step 7</span>
-          <h1>Generate stories</h1>
+          <h1>Generate text</h1>
           <p>Uses the saved checkpoint with the best validation loss. Give it the start of a text and watch it continue, one token at a time.</p>
         </header>
 
@@ -418,11 +418,46 @@
           <div class="card-head"><h3>KV cache: with vs without</h3><span class="kind decoder">Decoder inference</span></div>
           <p class="muted small">Generates the same tokens twice, with the same random seed: once re-reading the whole context for every token, once with the KV cache. Measured on this machine's <span class="dev-name">GPU</span>.</p>
           <div class="actions tight">
-            <label class="inline">Tokens <select id="g-bench-n" class="select"><option>50</option><option selected>100</option><option>120</option><option>250</option></select></label>
+            <label class="inline">Tokens <select id="g-bench-n" class="select"><option value="50">50</option><option value="100">100</option><option value="fill" selected>fill the window</option><option value="past">past the window</option></select></label>
             <button id="g-bench" class="btn">Run comparison</button>
             <span id="g-bench-busy" class="muted small hidden"><span class="spinner"></span> Running both…</span>
           </div>
           <div id="g-bench-out"></div>
+          <div id="g-bench-charts" class="two-col hidden">
+            <div>
+              <div class="card-head"><h4>Time for each token</h4><span class="legend"><span><i class="sw" style="background:var(--series-val)"></i>without cache</span><span><i class="sw" style="background:var(--accent)"></i>with KV cache</span></span></div>
+              <div id="g-bench-per" class="chart"></div>
+              <p class="hint">Without the cache, each token re-reads the whole context, so its cost grows until the window is full. With the cache, each token costs about the same. In the shaded part the window slides, the cache is rebuilt for every token, and both lines meet. On a small model, fixed GPU overhead hides much of the growth; thicker lines are moving averages.</p>
+            </div>
+            <div>
+              <div class="card-head"><h4>Total time so far</h4><span id="g-bench-saved" class="muted small"></span></div>
+              <div id="g-bench-cum" class="chart"></div>
+              <p class="hint">The gap between the lines is the time the cache saved. The first point is the prompt's prefill, which both ways pay.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>How the KV cache works</h3><span class="kind decoder">Decoder inference</span></div>
+          <p class="muted small">Every layer turns each token into a <b>key</b> (what this token offers to later tokens) and a <b>value</b> (what it passes on when attended to). A new token's query is compared with the keys of every earlier token. Those keys and values never change, so they can be kept instead of recomputed.</p>
+          <div class="actions tight">
+            <button id="kv-play" class="btn">▶ Play</button>
+            <label class="inline grow">Step <input id="kv-step" type="range" min="1" max="12" value="1"> <output id="kv-step-v"></output></label>
+            <label class="switch"><input type="checkbox" id="kv-on" checked> Use KV cache</label>
+          </div>
+          <div id="kv-diagram" class="chart kv-diagram"></div>
+          <div id="kv-explain" class="stats"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>KV cache memory</h3><span class="muted small">2 × layers × KV width × bytes × tokens × sequences</span></div>
+          <div class="fields three">
+            <label>Model <select id="kvm-model" class="select"></select></label>
+            <label>Precision <select id="kvm-dtype" class="select"><option value="4">float32 (4 bytes)</option><option value="2" selected>float16 / bfloat16 (2 bytes)</option><option value="1">8-bit (1 byte)</option></select></label>
+            <label>Sequences at once (batch) <output id="kvm-batch-v"></output><input id="kvm-batch" type="range" min="0" max="7" step="1" value="0"></label>
+          </div>
+          <label class="block">Context length <output id="kvm-ctx-v"></output><input id="kvm-ctx" type="range" min="7" max="17" step="1" value="8"></label>
+          <div id="kvm-out"></div>
         </div>
 
         <div id="g-history"></div>

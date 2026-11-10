@@ -270,8 +270,9 @@ class GenerateReq(BaseModel):
 
 
 class BenchmarkReq(BaseModel):
-    prompt: str = "Once upon a time there was a little girl who"
+    prompt: str = "The water cycle is the process by which"
     n_tokens: int = 100
+    length: Optional[str] = None   # "fill": exactly fill the context window; "past": go 80 tokens beyond it
 
 
 # ---------- status & datasets ----------
@@ -657,10 +658,15 @@ def generate_benchmark(req: BenchmarkReq):
         raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
     model, _ = inference_model()
     ids = S.enc.encode_ordinary(req.prompt[:2000]) or [S.enc.eot_token]
-    n = max(10, min(req.n_tokens, 500))
+    ids = ids[-model.config.block_size:]
+    room = model.config.block_size - len(ids)
+    n = {"fill": room, "past": room + 80}.get(req.length, req.n_tokens)
+    n = max(10, min(n, 500))
     r = benchmark_generation(model, ids, S.dev.device, n_tokens=n)
     return {**r, "n_tokens": n, "prompt_tokens": len(ids), "context_window": model.config.block_size,
-            "kv_bytes_per_token": kv_bytes_per_token(model.config), "device": S.dev.device, "chip": S.chip}
+            "kv_bytes_per_token": kv_bytes_per_token(model.config), "device": S.dev.device, "chip": S.chip,
+            "n_layer": model.config.n_layer, "n_embd": model.config.n_embd,
+            "params": sum(p.numel() for p in model.parameters())}
 
 
 # ---------- static front end ----------

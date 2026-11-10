@@ -545,3 +545,33 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
   main { padding: 20px 16px 48px; }
 }
 .story-end { color: var(--muted); font-size: 12px; font-style: italic; }
+
+/* ---------- KV cache: diagram and memory calculator ---------- */
+.card-head h4 { margin: 0; font-size: 14px; font-weight: 650; }
+label.inline.grow { flex: 1; min-width: 180px; }
+label.inline.grow input[type="range"] { flex: 1; }
+#g-bench-charts { margin-top: 14px; }
+.kv-diagram svg { max-width: 720px; margin: 6px 0 8px; overflow: visible; }
+.kv-diagram .kv-label { fill: var(--muted); font-size: 10.5px; }
+.kv-diagram .kv-toktext { fill: var(--text); font-size: 10.5px; font-family: var(--mono); }
+.kv-tok { fill: var(--panel-2); stroke: var(--border); }
+.kv-tok.seen { fill: var(--accent-soft); stroke: var(--accent-soft); }
+.kv-tok.now { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.kv-attn { fill: none; stroke: var(--accent); stroke-width: 1; opacity: .55; }
+.kv-empty { fill: var(--panel-2); stroke: var(--border); stroke-dasharray: 2 2; }
+.kv-new { fill: var(--accent); }
+.kv-reused { fill: var(--accent-soft); stroke: var(--accent); stroke-width: .8; }
+.kv-recompute { fill: var(--series-val); opacity: .85; }
+.kv-diagram rect { transition: fill .25s, opacity .25s; }
+.sw.kv-key { height: 10px; width: 14px; border-radius: 3px; }
+.sw.kv-key.kv-new { background: var(--accent); }
+.sw.kv-key.kv-reused { background: var(--accent-soft); outline: 1px solid var(--accent); }
+.sw.kv-key.kv-recompute { background: var(--series-val); }
+.kvm-bars { display: grid; gap: 8px; margin: 12px 0 4px; }
+.kvm-row { display: grid; grid-template-columns: 76px 1fr 80px; align-items: center; gap: 10px; font-size: 13px; }
+.kvm-row b { text-align: right; font-variant-numeric: tabular-nums; }
+.kvm-track { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; height: 18px; overflow: hidden; }
+.kvm-bar { height: 100%; border-radius: 5px; transition: width .3s; }
+.kvm-bar.w { background: var(--series-train); }
+.kvm-bar.c { background: var(--accent); }
+@media (max-width: 760px) { #g-bench-charts { grid-template-columns: 1fr; } }

@@ -162,6 +162,8 @@ def benchmark_generation(model, prompt_ids, device, n_tokens=100, seed=1234, rep
             "ms_per_token": round(decode_ms / (len(times) - 1), 2) if len(times) > 1 else None,
             "kv_cache_bytes": stats.get("kv_cache_bytes", 0), "recomputes": stats.get("recomputes", 0),
             "memory": device_memory(device), "ids": ids,
+            # time for each token (the first includes the prompt's prefill), for per-position charts
+            "token_ms": [round(b - a, 2) for a, b in zip([0.0] + times[:-1], times)],
         }
     a, b = results["no_cache"], results["kv_cache"]
     results["speedup"] = round(a["total_ms"] / b["total_ms"], 2) if b["total_ms"] else None

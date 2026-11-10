@@ -866,6 +866,7 @@ function renderGenerateCard(s) {
     $$(".dev-name").forEach((e) => { e.textContent = { mps: "Apple GPU (Metal)", cuda: "Nvidia GPU", cpu: "CPU" }[s.device] || s.device; });
   }
   el.className = "note";
+  if (ui.kvKey !== key) { ui.kvKey = key; loadKvTokens().then(renderKv); renderKvMem(); }
   const m = c.model, names = (c.datasets || s.datasets.map((d) => d.name)).map((n) => (n.startsWith("http") ? shortUrl(n) : n));
   el.innerHTML = `Using the model trained on <b>${esc(names.join(" + "))}</b>: ${m.n_layer} layers, ${m.n_head} heads, ${m.n_embd}-dim, ` +
     `${fmt(c.steps ?? 0)} steps${c.updates ? ` (${fmt(c.updates)} updates)` : ""}${c.stopped_early ? ", stopped early" : ""}, best validation loss <b>${fmtLoss(c.best_val)}</b>` +
@@ -899,7 +900,8 @@ function renderGenMetrics(m, live = false) {
 async function runBenchmark() {
   $("#g-bench-busy").classList.remove("hidden");
   try {
-    const r = await api("/api/generate/benchmark", { prompt: $("#g-prompt").value, n_tokens: +$("#g-bench-n").value });
+    const sel = $("#g-bench-n").value;
+    const r = await api("/api/generate/benchmark", { prompt: $("#g-prompt").value, n_tokens: +sel || 100, length: +sel ? null : sel });
     const a = r.no_cache, b = r.kv_cache;
     const row = (label, f, better) => `<tr><td>${label}</td><td class="num">${f(a)}</td><td class="num">${f(b)}</td><td class="num">${better ? better(a, b) : ""}</td></tr>`;
     const x = (u, v) => { if (!u || !v) return ""; const k = u / v; return Math.abs(k - 1) < 0.05 ? "about the same" : `${k.toFixed(2)}× ${k > 1 ? "faster" : "slower"}`; };
@@ -916,7 +918,166 @@ async function runBenchmark() {
       The cache stores 2 (key and value) × ${r.kv_bytes_per_token / (2 * 4) / (ui.status?.selection?.checkpoint?.model?.n_layer || 6)} numbers × ${ui.status?.selection?.checkpoint?.model?.n_layer || 6} layers × 4 bytes = ${bytes(r.kv_bytes_per_token)} per token, up to ${bytes(r.kv_bytes_per_token * r.context_window)} for a full ${r.context_window}-token window.
       ${r.prompt_tokens + r.n_tokens > r.context_window ? `Past ${r.context_window} tokens the window slides, so this model rebuilds its cache every step and the advantage shrinks.` : ""}</p>
       <p class="hint"><b>Why the gain is modest here:</b> with a small model and at most ${r.context_window} tokens, each step is dominated by the fixed cost of launching work on the GPU, not by the arithmetic the cache saves. On an M5 the cache measured about 1.1× faster for the Small model and 1.3× for Large (run it a few times: GPU timings vary). The benefit grows with model size and context length: for large language models reading thousands of tokens, the KV cache is what makes generation practical.</p>`;
+    drawBenchCharts(r);
   } finally { $("#g-bench-busy").classList.add("hidden"); }
+}
+
+// A small line chart: series = [{values, color, label}], x values start at x0.
+function lineChart(series, { x0 = 1, xLabel = "", yLabel = "", yMax = null, marks = [], W = 380, H = 190 } = {}) {
+  const L = 44, R = 10, T = 10, Bm = 34, n = Math.max(...series.map((s) => s.values.length));
+  const ymax = yMax ?? (Math.max(...series.flatMap((s) => s.values)) * 1.08 || 1);
+  const X = (i) => L + (n > 1 ? (i / (n - 1)) * (W - L - R) : 0), Y = (v) => T + (1 - Math.min(v, ymax) / ymax) * (H - T - Bm);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * ymax);
+  const nice = (v) => (ymax >= 100 ? Math.round(v) : ymax >= 10 ? v.toFixed(0) : v.toFixed(1));
+  const grid = ticks.map((v) => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${nice(v)}</text>`).join("");
+  const markEls = marks.map((m) => `<line x1="${X(m.i)}" x2="${X(m.i)}" y1="${T}" y2="${H - Bm}" stroke="var(--muted)" stroke-dasharray="3 3"/>` +
+    (m.shade ? `<rect x="${X(m.i)}" y="${T}" width="${W - R - X(m.i)}" height="${H - T - Bm}" fill="var(--muted)" opacity=".07"/>` : "") +
+    (X(m.i) > W * 0.6 ? `<text x="${X(m.i) - 4}" y="${T + 11}" text-anchor="end">${esc(m.label)}</text>` : `<text x="${X(m.i) + 4}" y="${T + 11}">${esc(m.label)}</text>`)).join("");
+  const pts = (vs) => vs.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const avg = (vs, k) => vs.map((_, i) => { const w = vs.slice(Math.max(0, i - k), i + k + 1); return w.reduce((a, b) => a + b, 0) / w.length; });
+  const lines = series.map((s) => (s.smooth
+    ? `<polyline fill="none" stroke="${s.color}" stroke-width="1" opacity=".22" points="${pts(s.values)}"/>` +
+      `<polyline fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linejoin="round" points="${pts(avg(s.values, s.smooth))}"><title>${esc(s.label)} (moving average)</title></polyline>`
+    : `<polyline fill="none" stroke="${s.color}" stroke-width="1.8" stroke-linejoin="round" points="${pts(s.values)}"><title>${esc(s.label)}</title></polyline>`)).join("");
+  return `<svg viewBox="0 0 ${W} ${H}"><g class="grid">${grid}</g>${markEls}${lines}
+    <text x="${L}" y="${H - 18}">${x0}</text><text x="${W - R}" y="${H - 18}" text-anchor="end">${x0 + n - 1}</text>
+    <text x="${(L + W - R) / 2}" y="${H - 4}" text-anchor="middle">${esc(xLabel)}</text>
+    <text transform="translate(11 ${(T + H - Bm) / 2}) rotate(-90)" text-anchor="middle">${esc(yLabel)}</text></svg>`;
+}
+
+function drawBenchCharts(r) {
+  const a = r.no_cache.token_ms, b = r.kv_cache.token_ms;
+  if (!a?.length || !b?.length) return;
+  $("#g-bench-charts").classList.remove("hidden");
+  // per-token time, skipping the first token (it includes the prompt's prefill and would flatten the chart)
+  const pa = a.slice(1), pb = b.slice(1);
+  const sorted = [...pa, ...pb].sort((x, y) => x - y), p98 = sorted[Math.floor(sorted.length * 0.98)] || 1;
+  const fullAt = r.context_window - r.prompt_tokens;   // tokens generated when the window is full
+  const marks = fullAt > 1 && fullAt < pa.length + 1 ? [{ i: fullAt - 1, label: "window full →", shade: true }] : [];
+  const k = Math.max(2, Math.round(pa.length / 40));
+  $("#g-bench-per").innerHTML = lineChart([
+    { values: pa, color: "var(--series-val)", label: "without cache", smooth: k },
+    { values: pb, color: "var(--accent)", label: "with KV cache", smooth: k },
+  ], { x0: 2, xLabel: "token number", yLabel: "ms per token", yMax: p98 * 1.1, marks });
+  const cum = (xs) => { let s = 0; return xs.map((v) => (s += v) / 1000); };
+  const ca = cum(a), cb = cum(b);
+  $("#g-bench-cum").innerHTML = lineChart([
+    { values: ca, color: "var(--series-val)", label: "without cache" },
+    { values: cb, color: "var(--accent)", label: "with KV cache" },
+  ], { x0: 1, xLabel: "tokens generated", yLabel: "seconds", marks: marks.map((m) => ({ ...m, i: m.i + 1, label: "window full", shade: false })) });
+  const saved = ca[ca.length - 1] - cb[cb.length - 1];
+  $("#g-bench-saved").textContent = saved > 0 ? `cache saved ${saved.toFixed(2)} s (${Math.round((saved / ca[ca.length - 1]) * 100)}%)` : "no time saved on this run";
+}
+
+// ---------- KV cache: interactive diagram ----------
+const kv = { tokens: null, key: null, step: 1, timer: null };
+
+async function loadKvTokens() {
+  const prompt = ($("#g-prompt").value || "The water cycle is the process by which").slice(0, 300);
+  if (kv.key === prompt && kv.tokens) return;
+  kv.key = prompt;
+  try { kv.tokens = (await api("/api/tokenize/preview", { text: prompt })).tokens.slice(0, 12); }
+  catch (e) { kv.tokens = prompt.split(/(?=\s)/).slice(0, 12).map((t) => ({ text: t })); }
+  $("#kv-step").max = kv.tokens.length;
+  kv.step = Math.min(kv.step, kv.tokens.length);
+  $("#kv-step").value = kv.step;
+}
+
+function kvModel() {
+  const m = ui.status?.selection?.checkpoint?.model || ui.status?.model?.config || { n_layer: 6, n_embd: 384, block_size: 256 };
+  return { n_layer: m.n_layer, n_embd: m.n_embd, block: m.block_size, perToken: 2 * m.n_layer * m.n_embd * 4 };
+}
+
+function renderKv() {
+  if (!kv.tokens?.length) return;
+  const m = kvModel(), on = $("#kv-on").checked, t = kv.step, toks = kv.tokens, n = toks.length;
+  const layersShown = Math.min(m.n_layer, 4), cw = 46, ch = 13, L = 86, T = 64;
+  const W = L + n * cw + 12, rowH = 2 * ch + 12, H = T + layersShown * rowH + (m.n_layer > layersShown ? 18 : 0) + 8;
+  const cell = (i) => (i > t - 1 ? "kv-empty" : !on ? "kv-recompute" : i === t - 1 ? "kv-new" : "kv-reused");
+  let g = "";
+  // tokens along the top
+  toks.forEach((tk, i) => {
+    const x = L + i * cw;
+    g += `<rect class="kv-tok ${i < t ? (i === t - 1 ? "now" : "seen") : ""}" x="${x + 2}" y="${T - 30}" width="${cw - 4}" height="20" rx="5"/>` +
+      `<text class="kv-toktext" x="${x + cw / 2}" y="${T - 16}" text-anchor="middle">${esc(JSON.stringify(tk.text).slice(1, -1).slice(0, 7))}</text>`;
+  });
+  // attention from the newest token to every token so far (including itself)
+  const xNew = L + (t - 1) * cw + cw / 2;
+  for (let i = 0; i < t; i++) {
+    const x = L + i * cw + cw / 2;
+    if (i === t - 1) continue;
+    g += `<path class="kv-attn" d="M${xNew},${T - 32} Q${(x + xNew) / 2},${T - 32 - Math.min(26, 6 + (t - i) * 3)} ${x},${T - 32}"/>`;
+  }
+  g += `<text x="8" y="${T - 16}" class="kv-label">tokens</text>`;
+  for (let l = 0; l < layersShown; l++) {
+    const y = T + l * rowH;
+    g += `<text x="8" y="${y + ch - 2}" class="kv-label">layer ${l + 1} K</text><text x="8" y="${y + 2 * ch + 2}" class="kv-label">layer ${l + 1} V</text>`;
+    for (let i = 0; i < n; i++) {
+      const x = L + i * cw, c = cell(i);
+      g += `<rect class="${c}" x="${x + 3}" y="${y}" width="${cw - 6}" height="${ch}" rx="3"/><rect class="${c}" x="${x + 3}" y="${y + ch + 3}" width="${cw - 6}" height="${ch}" rx="3"/>`;
+    }
+  }
+  if (m.n_layer > layersShown) g += `<text x="${L}" y="${T + layersShown * rowH + 10}" class="kv-label">… and ${m.n_layer - layersShown} more layers, each the same</text>`;
+  $("#kv-diagram").innerHTML = `<svg viewBox="0 0 ${W} ${H}">${g}</svg>
+    <div class="legend"><span><i class="sw kv-key kv-new"></i>computed now</span><span><i class="sw kv-key kv-reused"></i>read from the cache</span><span><i class="sw kv-key kv-recompute"></i>recomputed (no cache)</span></div>`;
+  const doneNo = (t * (t + 1)) / 2, doneKv = t;
+  $("#kv-step-v").textContent = `${t} of ${n}`;
+  $("#kv-explain").innerHTML = [
+    stat("This step", `${on ? 1 : t} token${(on ? 1 : t) > 1 ? "s" : ""}`, on ? "only the new token runs through the layers" : `all ${t} tokens run through every layer again`),
+    stat("Tokens processed so far", fmt(on ? doneKv : doneNo), on ? `without the cache: ${fmt(doneNo)}, growing with the square of the length` : `with the cache: ${fmt(doneKv)}, growing in a straight line`),
+    stat("Cache held", on ? bytes(t * m.perToken) : "none", on ? `${fmt(2 * m.n_layer * t)} key and value vectors of ${m.n_embd} numbers (float32)` : `all ${fmt(2 * m.n_layer * t)} keys and values are computed again`),
+    stat("Attention reads", `${t} key${t > 1 ? "s" : ""}`, "the new token's query is compared with every key so far, both ways"),
+  ].join("");
+}
+
+function kvPlay() {
+  if (kv.timer) { clearInterval(kv.timer); kv.timer = null; $("#kv-play").textContent = "▶ Play"; return; }
+  if (kv.step >= kv.tokens.length) kv.step = 0;
+  $("#kv-play").textContent = "⏸ Pause";
+  kv.timer = setInterval(() => {
+    kv.step++;
+    $("#kv-step").value = kv.step;
+    renderKv();
+    if (kv.step >= kv.tokens.length) kvPlay();
+  }, 800);
+}
+
+// ---------- KV cache: memory calculator ----------
+function kvModels() {
+  const c = ui.status?.selection?.checkpoint, m = c?.model || ui.status?.model?.config;
+  const own = m ? [{ name: `This model (${short(c?.params?.total || ui.status?.model?.params || 0)} parameters)`, layers: m.n_layer, width: m.n_embd, params: c?.params?.total || ui.status?.model?.params || 0, max: m.block_size }] : [];
+  return own.concat([
+    { name: "GPT-2 small (124M)", layers: 12, width: 768, params: 124e6, max: 1024 },
+    { name: "GPT-2 XL (1.5B)", layers: 48, width: 1600, params: 1.56e9, max: 1024 },
+    { name: "Llama 2 7B", layers: 32, width: 4096, params: 6.7e9, max: 4096 },
+    { name: "Llama 3.1 8B (grouped-query attention)", layers: 32, width: 1024, params: 8.0e9, max: 131072, gqa: "32 query heads share 8 key/value heads, so it stores 1,024 numbers per layer instead of 4,096" },
+    { name: "Llama 3.1 70B (grouped-query attention)", layers: 80, width: 1024, params: 70.6e9, max: 131072, gqa: "64 query heads share 8 key/value heads" },
+  ]);
+}
+
+function renderKvMem() {
+  const models = kvModels(), sel = $("#kvm-model");
+  const names = models.map((m) => m.name).join("|");
+  if (sel.dataset.names !== names) {
+    const prev = sel.value;
+    sel.innerHTML = models.map((m, i) => `<option value="${i}">${esc(m.name)}</option>`).join("");
+    sel.dataset.names = names;
+    if (prev && +prev < models.length) sel.value = prev;
+  }
+  const m = models[+sel.value || 0], b = +$("#kvm-dtype").value;
+  const ctx = 2 ** +$("#kvm-ctx").value, batch = 2 ** +$("#kvm-batch").value;
+  $("#kvm-ctx-v").textContent = `${fmt(ctx)} tokens`;
+  $("#kvm-batch-v").textContent = fmt(batch);
+  const perTok = 2 * m.layers * m.width * b, cache = perTok * ctx * batch, weights = m.params * b;
+  const big = Math.max(cache, weights), pct = (v) => Math.max(0.5, (v / big) * 100);
+  $("#kvm-out").innerHTML = `
+    <div class="kvm-bars">
+      <div class="kvm-row"><span>Weights</span><div class="kvm-track"><div class="kvm-bar w" style="width:${pct(weights)}%"></div></div><b>${bytes(weights)}</b></div>
+      <div class="kvm-row"><span>KV cache</span><div class="kvm-track"><div class="kvm-bar c" style="width:${pct(cache)}%"></div></div><b>${bytes(cache)}</b></div>
+    </div>
+    <p class="hint">${bytes(perTok)} per token = 2 × ${m.layers} layers × ${fmt(m.width)} numbers × ${b} byte${b > 1 ? "s" : ""}, × ${fmt(ctx)} tokens × ${fmt(batch)} sequence${batch > 1 ? "s" : ""}.
+    ${cache > weights ? `<b>The cache is ${(cache / weights).toFixed(1)}× bigger than the model itself.</b> This is why long contexts and many users at once are limited by memory, and why servers use tricks like grouped-query attention, 8-bit caches and paged caches.` : `The cache is ${Math.round((cache / weights) * 100)}% of the weights' size.`}
+    ${ctx > m.max ? ` Note: this model can only see ${fmt(m.max)} tokens.` : ""} ${m.gqa ? ` ${esc(m.gqa)}.` : ""}</p>`;
 }
 
 function drawLatency(ms) {
@@ -1053,6 +1214,11 @@ $$("#g-temp, #g-topk, #g-len").forEach((i) => i.addEventListener("input", syncSl
 $("#g-color").addEventListener("change", (e) => $("#g-text").classList.toggle("plain", !e.target.checked));
 $("#g-run").addEventListener("click", (e) => action(e.target, generate));
 $("#g-bench").addEventListener("click", (e) => action(e.target, runBenchmark));
+$("#kv-play").addEventListener("click", kvPlay);
+$("#kv-step").addEventListener("input", (e) => { kv.step = +e.target.value; renderKv(); });
+$("#kv-on").addEventListener("change", renderKv);
+$("#g-prompt").addEventListener("change", () => loadKvTokens().then(renderKv));
+$$("#kvm-model, #kvm-dtype, #kvm-ctx, #kvm-batch").forEach((i) => i.addEventListener("input", renderKvMem));
 
 // ---------- polling ----------
 async function poll() {
