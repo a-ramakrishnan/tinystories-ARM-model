@@ -37,6 +37,8 @@ from inference import (attention_maps, benchmark_generation, device_memory, gene
                        kv_bytes_per_token, load_model, load_model_config, next_token_probs, sampling_distribution,
                        save_model_config)
 from model import GPT, GPTConfig, param_breakdown  # noqa: E402
+import evaluate  # noqa: E402
+import registry  # noqa: E402
 from pretrain import pretrain  # noqa: E402
 from tokenization import bin_files_exist, get_tokenizer, tokenize_and_save  # noqa: E402
 from train_config import TrainConfig, setup_device  # noqa: E402
@@ -78,6 +80,7 @@ class State:
         self.train = None              # live training progress
         self.stop_requested = False
         self.inference_cache = None    # (checkpoint path, mtime, model, config)
+        self.active_model = None       # id of a saved model (models/) to use instead of the datasets' model
 
 
 S = State()
@@ -196,15 +199,53 @@ def selection_info():
     }
 
 
+def _load_cached(weights, config_path):
+    mtime = os.path.getmtime(weights)
+    if not (S.inference_cache and S.inference_cache[0] == weights and S.inference_cache[1] == mtime):
+        S.inference_cache = None  # free the old model before loading the next one
+        config, _ = load_model_config(config_path)
+        S.inference_cache = (weights, mtime, load_model(config, weights, S.dev.device), config)
+    return S.inference_cache[2]
+
+
+def active_library_model():
+    """The saved model chosen in the Models step, if it still exists."""
+    if S.active_model:
+        try:
+            return registry.get_model(S.active_model)
+        except (KeyError, ValueError):
+            S.active_model = None
+    return None
+
+
+def active_info():
+    """The model Generate and Inside the transformer use: a saved model, or the datasets' own model."""
+    meta = active_library_model()
+    if meta:
+        cfg = GPTConfig(**meta["model"])
+        return {"source": "library", "id": meta["id"], "name": meta["name"], "model": meta["model"],
+                "params": param_breakdown(cfg), "steps": meta.get("steps"), "updates": meta.get("updates"),
+                "best_val": meta.get("best_val"), "trained_at": meta.get("trained_at"), "stopped_early": False,
+                "datasets": meta.get("datasets"), "chip": meta.get("chip"), "platform": meta.get("platform")}
+    ck = checkpoint_info(selection_paths())
+    return {"source": "datasets", **ck} if ck else None
+
+
+def require_model():
+    """Generation needs either a chosen saved model or datasets with a trained model."""
+    if not active_library_model():
+        require_datasets()
+
+
 def inference_model(allow_untrained=False):
-    """The trained model for the current datasets (cached), or the built untrained model if allowed."""
+    """The model to run (cached): the chosen saved model, else the current datasets' trained model, else
+    the built untrained model if allowed."""
+    meta = active_library_model()
+    if meta:
+        return _load_cached(*registry.paths_of(meta["id"])), "trained"
     paths = selection_paths()
     if checkpoint_info(paths) is not None:
-        mtime = os.path.getmtime(paths.checkpoint)
-        if not (S.inference_cache and S.inference_cache[0] == paths.checkpoint and S.inference_cache[1] == mtime):
-            config, _ = load_model_config(paths.model_config)
-            S.inference_cache = (paths.checkpoint, mtime, load_model(config, paths.checkpoint, S.dev.device), config)
-        return S.inference_cache[2], "trained"
+        return _load_cached(paths.checkpoint, paths.model_config), "trained"
     if allow_untrained and S.model is not None:
         return S.model, "untrained"
     raise HTTPException(400, "No trained model for these datasets yet. Train one in the Train step.")
@@ -314,6 +355,8 @@ def status():
         "torch": torch.__version__, "default_dataset": DEFAULT_DATASET, "default_config": DEFAULT_CONFIG,
         "datasets": [dataset_info(d) for d in selected()],
         "selection": selection_info(),
+        "active": active_info(),
+        "library_count": len(registry.list_models()),
         "batch": S.batch,
         "model": {"config": asdict(S.model_config), "params": sum(p.numel() for p in S.model.parameters()),
                   "breakdown": param_breakdown(S.model_config)} if S.model is not None else None,
@@ -548,6 +591,11 @@ def train_endpoint(req: TrainReq):
         raise HTTPException(400, "min_lr must be positive and no higher than learning_rate.")
 
     paths = selection_paths()
+    if checkpoint_info(paths) is not None:  # the run overwrites this checkpoint: keep a copy in the library first
+        try:
+            registry.add_model(paths.checkpoint, paths.model_config, source="trained")
+        except Exception:
+            traceback.print_exc()
     cfg = TrainConfig(batch_size=S.batch["batch_size"], seed=S.batch["seed"],
                       best_model_path=paths.checkpoint, **req.model_dump())
     model, config = S.model, S.model_config
@@ -602,6 +650,11 @@ def train_endpoint(req: TrainReq):
                    "trained_at": time.strftime("%Y-%m-%d %H:%M"), "stopped_early": S.stop_requested,
                    "device": S.dev.device, "chip": S.chip}
         save_model_config(paths.model_config, config, {**summary, "train_config": asdict(cfg)})
+        try:  # keep a copy in the model library, where later training can't overwrite it
+            registry.add_model(paths.checkpoint, paths.model_config, source="trained")
+        except Exception:
+            traceback.print_exc()
+        S.active_model = None  # Generate switches to the model just trained
         with open(os.path.join(paths.root, "runs.jsonl"), "a") as f:
             f.write(json.dumps({**summary, "model": {k: getattr(config, k) for k in ("n_layer", "n_head", "n_embd", "block_size")},
                                 "max_iters": cfg.max_iters}) + "\n")
@@ -626,7 +679,7 @@ def train_stop():
 @app.post("/api/generate/stream")
 def generate_stream_endpoint(req: GenerateReq):
     """Stream generated tokens as newline-delimited JSON: a 'start' line, one 'token' line each, then 'done'."""
-    require_datasets()
+    require_model()
     if training_running():
         raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
     model, _ = inference_model()
@@ -696,7 +749,7 @@ def repetition_stats(ids):
 @app.post("/api/generate/distribution")
 def generate_distribution(req: DistributionReq):
     """The model's next-token distribution for a prompt, step by step through penalties and the sampling filters."""
-    require_datasets()
+    require_model()
     if training_running():
         raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
     model, _ = inference_model()
@@ -726,7 +779,7 @@ def generate_distribution(req: DistributionReq):
 @app.post("/api/generate/compare")
 def generate_compare(req: CompareReq):
     """Continue the same prompt with up to four sampling settings (same seed) and compare the results."""
-    require_datasets()
+    require_model()
     if training_running():
         raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
     model, _ = inference_model()
@@ -754,7 +807,7 @@ def generate_compare(req: CompareReq):
 @app.post("/api/generate/benchmark")
 def generate_benchmark(req: BenchmarkReq):
     """Generate the same tokens with and without the KV cache and compare speed and memory."""
-    require_datasets()
+    require_model()
     if training_running():
         raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
     model, _ = inference_model()
@@ -768,6 +821,107 @@ def generate_benchmark(req: BenchmarkReq):
             "kv_bytes_per_token": kv_bytes_per_token(model.config), "device": S.dev.device, "chip": S.chip,
             "n_layer": model.config.n_layer, "n_embd": model.config.n_embd,
             "params": sum(p.numel() for p in model.parameters())}
+
+
+# ---------- model library and evaluation ----------
+
+class ModelIdReq(BaseModel):
+    id: Optional[str] = None
+
+
+class RenameReq(BaseModel):
+    id: str
+    name: str
+
+
+class EvalReq(BaseModel):
+    ids: List[str]
+    datasets: Optional[List[str]] = None   # dataset keys (folder names); default: every one available
+
+
+def _model_row(m):
+    return {k: m.get(k) for k in ("id", "name", "source", "origin", "added_at", "model_type", "model", "params",
+                                  "datasets", "steps", "tokens", "best_val", "seconds", "trained_at", "chip",
+                                  "platform", "bytes")} | {"eval": m.get("eval"), "active": m["id"] == S.active_model}
+
+
+@app.get("/api/models")
+def models_list():
+    return {"models": [_model_row(m) for m in registry.list_models()], "active": S.active_model,
+            "eval_datasets": [{k: d[k] for k in ("key", "title", "tokens")} for d in evaluate.eval_datasets()],
+            "suite": {"version": evaluate.SUITE_VERSION, "windows": evaluate.EVAL_WINDOWS, "context": evaluate.EVAL_CONTEXT,
+                      "prompts": evaluate.PROMPTS, "tokens": evaluate.GEN_TOKENS, "balanced": evaluate.BALANCED}}
+
+
+@app.post("/api/models/scan")
+def models_scan():
+    require_idle("look for models")
+    found = registry.scan(DATA_ROOT)
+    return {"added": [m["name"] for m, added in found if added], "found": len(found)}
+
+
+@app.post("/api/models/save-current")
+def models_save_current():
+    paths = selection_paths()
+    if checkpoint_info(paths) is None:
+        raise HTTPException(400, "There's no trained model for the current datasets.")
+    meta, added = registry.add_model(paths.checkpoint, paths.model_config, source="saved")
+    return {"id": meta["id"], "name": meta["name"], "added": added}
+
+
+@app.post("/api/models/use")
+def models_use(req: ModelIdReq):
+    require_idle("switch models")
+    if req.id:
+        try:
+            registry.get_model(req.id)
+        except (KeyError, ValueError) as e:
+            raise HTTPException(404, str(e))
+    S.active_model = req.id or None
+    return {"active": S.active_model}
+
+
+@app.post("/api/models/rename")
+def models_rename(req: RenameReq):
+    try:
+        return {"name": registry.rename_model(req.id, req.name)["name"]}
+    except (KeyError, ValueError) as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/models/delete")
+def models_delete(req: ModelIdReq):
+    require_idle("delete a model")
+    try:
+        registry.delete_model(req.id)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(404, str(e))
+    if S.active_model == req.id:
+        S.active_model = None
+    if S.inference_cache and f"{os.sep}{req.id}{os.sep}" in S.inference_cache[0]:
+        S.inference_cache = None
+    return {"ok": True}
+
+
+@app.post("/api/eval/run")
+def eval_run(req: EvalReq):
+    ids = [i for i in req.ids if i][:20]
+    if not ids:
+        raise HTTPException(400, "Pick at least one model to evaluate.")
+    datasets = [d for d in evaluate.eval_datasets() if req.datasets is None or d["key"] in req.datasets]
+
+    def job():
+        S.inference_cache = None  # make room: models are loaded one at a time
+        for n, mid in enumerate(ids):
+            name = registry.get_model(mid)["name"]
+
+            def say(msg, n=n, name=name):
+                S.job.update(message=f"{name} ({n + 1} of {len(ids)}): {msg}…",
+                             progress=n / len(ids))
+            evaluate.evaluate_model(mid, S.dev.device, datasets=datasets, progress=say)
+        S.job["message"] = f"Evaluated {len(ids)} model{'s' if len(ids) > 1 else ''}."
+
+    return start_job("evaluate", job)
 
 
 # ---------- static front end ----------

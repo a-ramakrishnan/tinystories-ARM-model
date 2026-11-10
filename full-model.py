@@ -27,6 +27,7 @@ import torch
 
 from data import DEFAULT_CONFIG, DEFAULT_DATASET, BatchLoader, dataset_paths, get_dataset, mix_paths, parse_dataset_spec
 from inference import generate_text, load_model, save_model_config
+import registry
 from model import GPT, GPTConfig
 from plots import plot_losses
 from pretrain import pretrain
@@ -93,6 +94,8 @@ def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG,
                "best_val": min(val_losses) if val_losses else None, "seconds": round(time.time() - t0, 1),
                "trained_at": time.strftime("%Y-%m-%d %H:%M"), "device": dev.device}
     save_model_config(paths.model_config, config, {**summary, "train_config": asdict(train_cfg)})
+    meta, _ = registry.add_model(paths.checkpoint, paths.model_config, source="trained")
+    print(f"Saved in the model library as \"{meta['name']}\" (models/{meta['id']})")
     with open(os.path.join(paths.root, "runs.jsonl"), "a") as f:
         f.write(json.dumps({**summary, "model": {k: getattr(config, k) for k in ("n_layer", "n_head", "n_embd", "block_size")},
                             "max_iters": train_cfg.max_iters}) + "\n")

@@ -37,6 +37,9 @@ explains every stage of the **LLM training pipeline** in a local web app:
    tokens used, **time to first token**, decode speed, KV cache size, GPU memory and the model's confidence in
    every token, plus a with/without **KV cache benchmark** with per-token timing charts, an interactive
    **KV cache diagram** and a **KV cache memory calculator**.
+8. **Models & evaluation**: every trained or imported model kept in a **model library**, switchable for
+   generation, and compared on a fixed **evaluation suite** (held-out loss and perplexity per dataset,
+   repetition, variety, speed and size) with side-by-side samples.
 
 The default dataset is [Mini FineWeb-Edu](https://huggingface.co/datasets/BaoMinhTran/mini-fineweb-edu)
 (its `small` subset, ~500M tokens), educational web pages filtered from Common Crawl for teaching value: the
@@ -573,6 +576,8 @@ plots.py                   Loss curves
 inference.py               Checkpoints, streamed generation, KV cache benchmark, GPU memory, attention maps
 train_step_by_step.ipynb   Notebook for training on Google Colab or Kaggle
 import_run.py              Brings a model trained on Colab or Kaggle into data/ (from the notebook's results zip)
+registry.py                Model library: every trained or imported model saved under models/<id>/
+evaluate.py                Evaluation suite: the same held-out loss and generation tests for every model
 docs/screenshots/          Screenshots used in this README
 ```
 
@@ -610,6 +615,73 @@ config = GPTConfig(
 The web app's *Quick* preset uses 2,000 steps, 200 warmup, and evaluation every 250 steps over 50 batches,
 with the same learning rate and no gradient accumulation. *Full* uses the defaults above. See
 [Getting better stories](#getting-better-stories) for why these settings replaced the original ones.
+
+## Saved models and evaluation
+
+Training a new model on the same data used to replace the old one. Now every model you train (in the app or
+with `full-model.py`) or import from Colab is also saved in a **model library**, `models/<id>/`, under its
+own name, and is never overwritten. The app's **Models** step (step 8) lists them:
+
+![The model library: every saved model with its size, training data and best validation loss](docs/screenshots/models-library.png)
+
+- **Use for generation** switches Generate and *Inside the transformer* to that model, whatever datasets
+  are selected. A model trained on Colab can be used without downloading its dataset.
+- **Find models on this Mac** adds the models already under `data/`, including the backups `import_run.py`
+  made. **Save the current datasets' model** saves the one you're working with; training also saves the
+  current model before replacing it.
+- **Rename** and **Delete** (which removes only the library copy; `data/` isn't touched).
+
+On the command line:
+
+```bash
+python3 registry.py scan        # add every model under data/ to the library
+python3 registry.py list        # show the library
+```
+
+### The evaluation suite
+
+Every model gets the **same tests**, so the numbers can be compared directly (`evaluate.py`):
+
+1. **Held-out loss** on every tokenized dataset on this Mac: 64 fixed windows of 256 tokens from each
+   validation split, the same positions for every model. Loss is the average surprise per token; perplexity
+   (e<sup>loss</sup>) is roughly how many tokens the model is choosing between.
+2. **Generation**: 6 fixed prompts (stories and educational text), 100 tokens each with a fixed seed,
+   decoded greedy and with the Balanced preset. Measures how much greedy decoding repeats itself, the variety
+   of the Balanced text, the model's confidence, speed with the KV cache and time to first token.
+3. **Size**: parameters, weights in memory and KV cache per token.
+
+Results are stored with each model (`models/<id>/eval.json`). Tick models in the Models step and press
+**Evaluate selected models** (15–40 seconds each on an M5), or:
+
+```bash
+python3 evaluate.py              # evaluate every saved model that hasn't been evaluated yet
+python3 evaluate.py --table      # print the comparison table
+```
+
+All six models on this Mac, evaluated on an Apple M5:
+
+![Comparison of six models: held-out loss per dataset, repetition, variety, speed and size](docs/screenshots/models-compare.png)
+
+| Model | TinyStories | WikiText-2 | Tiny Shakespeare | Greedy repetition | Speed |
+|---|---|---|---|---|---|
+| Large 124M · Mini FineWeb-Edu · 30k steps | 3.872 | **5.257** | **5.664** | 73% | 49 tok/s |
+| Medium 51M · TinyStories · 20k steps | **1.561** | 8.693 | 7.632 | **3%** | 99 tok/s |
+| Large 124M · TinyStories · 2k steps (old settings) | 4.510 | 9.842 | 8.495 | 69% | 60 tok/s |
+| Small 30M · TinyStories · 2k steps (old settings) | 4.620 | 9.765 | 8.100 | 73% | 97 tok/s |
+| Small 30M · TinyStories + Tiny Shakespeare · 1k steps | 6.382 | 9.375 | 7.047 | 89% | 98 tok/s |
+| Tiny 16M · WikiText · 40 steps (a quick test) | 10.701 | 10.547 | 10.783 | 98% | 118 tok/s |
+
+What it shows: each model is best on the kind of text it was trained on. The TinyStories model is
+excellent on stories (perplexity 4.8) and lost on Wikipedia, while the FineWeb model, trained on varied
+educational text, is the best on WikiText-2 and Shakespeare, neither of which it ever saw. The well-trained
+TinyStories model barely repeats itself even with greedy decoding (3%); the FineWeb model still loops
+greedily (73%), which is why the Balanced preset matters for it. The undertrained models, including the
+original 2,000-step runs, score far worse everywhere. (Mini FineWeb-Edu joins the held-out tests once it's
+downloaded and tokenized on this Mac.)
+
+The **Samples** card shows every model's continuation of the same prompt side by side:
+
+![Six models continuing "Photosynthesis is the process" with the same seed](docs/screenshots/models-samples.png)
 
 ## Generating text from a trained model
 

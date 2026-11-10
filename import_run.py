@@ -5,7 +5,8 @@
 # The zip is made by Step 10 of train_step_by_step.ipynb. This script:
 #   1. puts best_model_params.pt and model_config.json in data/<dataset>/, after backing up the ones there,
 #   2. adds the run to data/<dataset>/runs.jsonl, so it shows in the web app's training history,
-#   3. keeps the run's extras (loss chart, metrics, sample story) in data/<dataset>/imported/<zip name>/.
+#   3. saves a copy in the model library (models/, see registry.py), and
+#   4. keeps the run's extras (loss chart, metrics, sample story) in data/<dataset>/imported/<zip name>/.
 # Then `python3 app/server.py` uses the imported model for Generate and Inside the transformer.
 
 import argparse
@@ -15,6 +16,8 @@ import shutil
 import sys
 import time
 import zipfile
+
+import registry
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(PROJECT_DIR, "data")
@@ -44,12 +47,17 @@ def import_run(zip_path, data_root=DATA_ROOT):
             with z.open(name) as src, open(dest, "wb") as out:
                 shutil.copyfileobj(src, out)
 
-        # 2. add the run to the training history
+        # 2. keep a copy in the model library (models/), where it's never overwritten
+        meta, added = registry.add_model(os.path.join(target, "best_model_params.pt"), os.path.join(target, "model_config.json"),
+                                         source="imported", origin=os.path.basename(zip_path))
+        print(f"{'Saved' if added else 'Already'} in the model library as \"{meta['name']}\" (models/{meta['id']})")
+
+        # 3. add the run to the training history
         if run.get("summary"):
             with open(os.path.join(target, "runs.jsonl"), "a") as f:
                 f.write(json.dumps({**run["summary"], "imported_from": os.path.basename(zip_path)}) + "\n")
 
-        # 3. keep the extras
+        # 4. keep the extras
         extras_dir = os.path.join(target, "imported", os.path.splitext(os.path.basename(zip_path))[0])
         extras = [n for n in names if n not in ("best_model_params.pt", "model_config.json") and "/" not in n]
         if extras:

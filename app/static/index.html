@@ -504,6 +504,51 @@
 
         <div id="g-history"></div>
       </section>
+
+      <!-- ============ Step 8: Models & evaluation ============ -->
+      <section class="panel" data-step="models">
+        <header class="panel-head">
+          <span class="eyebrow">Step 8</span>
+          <h1>Models &amp; evaluation</h1>
+          <p>Every model you train or import is saved here under its own name, so a new run never replaces it. Pick which one Generate and <i>Inside the transformer</i> use, and compare them all on the same tests.</p>
+        </header>
+
+        <div class="card">
+          <div class="card-head"><h3>Saved models</h3><span id="lib-summary" class="muted small"></span></div>
+          <div class="actions tight">
+            <button id="lib-scan" class="btn">Find models on this Mac</button>
+            <button id="lib-save" class="btn">Save the current datasets' model</button>
+            <button id="lib-default" class="btn">Use the current datasets' model</button>
+          </div>
+          <div id="lib-table"></div>
+          <p class="hint">Models live in <code>models/&lt;id&gt;/</code> (weights, config, and evaluation results). Training in the app, <code>full-model.py</code> and <code>import_run.py</code> add to it automatically. <b>Find models on this Mac</b> adds the models already under <code>data/</code>, including backups.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Evaluation suite</h3><span class="kind decoder">Same tests for every model</span></div>
+          <div id="ev-suite" class="small"></div>
+          <div class="actions tight">
+            <button id="ev-run" class="btn primary">Evaluate selected models</button>
+            <span class="muted small">Tick models in the table above. About 15–40 seconds per model.</span>
+          </div>
+          <div data-job="evaluate"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Comparison</h3><span class="muted small">best in each column in bold · lower loss is better</span></div>
+          <div id="ev-table"></div>
+          <div id="ev-chart" class="chart"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Samples</h3><span class="muted small">same prompt, same seed, every evaluated model</span></div>
+          <div class="actions tight">
+            <label class="inline">Prompt <select id="ev-prompt" class="select"></select></label>
+            <label class="inline">Decoding <select id="ev-mode" class="select"><option value="balanced">Balanced (T 0.8, top-p 0.9, repetition 1.15)</option><option value="greedy">Greedy</option></select></label>
+          </div>
+          <div id="ev-samples" class="cmp-out"></div>
+        </div>
+      </section>
     </main>
   </div>
 

@@ -608,3 +608,21 @@ label.inline.grow input[type="range"] { flex: 1; }
   .sd-row { grid-template-columns: 90px 1fr 110px; }
   .sd-tag { grid-column: 2 / -1; }
 }
+
+/* ---------- models & evaluation ---------- */
+.tag.good { background: var(--good-soft); color: var(--good); }
+.ptable.lib tr.in-use td { background: var(--accent-soft); }
+.ptable.lib td { vertical-align: top; }
+.lib-name { font-weight: 600; }
+.lib-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.ptable.lib td:nth-child(2) { min-width: 300px; }
+.ptable.ev td { white-space: nowrap; }
+.ptable.ev th { white-space: normal; min-width: 76px; vertical-align: bottom; }
+.ptable.ev .best { font-weight: 750; color: var(--good); }
+.sw-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+.ev-bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px 22px; margin-top: 14px; }
+.ev-group { display: grid; gap: 6px; align-content: start; }
+.ev-gtitle { font-weight: 650; font-size: 13px; }
+.ev-group .kvm-row { grid-template-columns: 128px 1fr 40px; gap: 6px; font-size: 12px; }
+.ev-group .kvm-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ev-samples { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }

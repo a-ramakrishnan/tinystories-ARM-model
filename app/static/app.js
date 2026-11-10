@@ -20,7 +20,8 @@ const STEPS = [
   { id: "model", title: "Model", sub: "Build the transformer" },
   { id: "attention", title: "Inside the transformer", sub: "Attention, step by step" },
   { id: "train", title: "Train", sub: "Watch it learn" },
-  { id: "generate", title: "Generate", sub: "Write stories" },
+  { id: "generate", title: "Generate", sub: "Write text" },
+  { id: "models", title: "Models", sub: "Save, switch, compare" },
 ];
 
 const TRAIN_PRESETS = {
@@ -85,19 +86,21 @@ function stepDone(id) {
     case "attention": return ui.inspected;
     case "train": return !!sel?.checkpoint;
     case "generate": return ui.generated;
+    case "models": return (s?.library_count || 0) > 0;
   }
 }
 
 function stepBlocker(id) {
   const s = ui.status, sel = s?.selection;
-  if (id === "dataset") return null;
-  if (!sel) return ["Add a dataset first.", "dataset"];
+  if (id === "dataset" || id === "models") return null;
+  if (id === "generate" && s.active) return null;
+  if (!sel) return ["Add a dataset first, or pick a saved model in the Models step.", "dataset"];
   if (id === "tokenize") return null;
   if (!sel.tokenized) return ["Tokenize your training data first.", "tokenize"];
   if (id === "batches" || id === "model") return null;
   if (id === "attention") return s.model || sel.checkpoint ? null : ["Build a model first.", "model"];
   if (id === "train") return s.model || sel.checkpoint ? null : ["Build a model first.", "model"];
-  if (id === "generate") return sel.checkpoint ? null : ["Train a model first.", "train"];
+  if (id === "generate") return s.active ? null : ["Train a model first, or pick a saved model in the Models step.", "train"];
   return null;
 }
 
@@ -107,6 +110,7 @@ function go(id) {
   history.replaceState(null, "", `#${id}`);
   $$(".panel").forEach((p) => p.classList.toggle("active", p.dataset.step === id));
   window.scrollTo({ top: 0, behavior: "smooth" });
+  if (id === "models") loadModels().catch((e) => toast(e.message, true));
   render();
   if (id === "batches") renderBatchExample();
   if (id === "tokenize") renderTokenExamples();
@@ -116,6 +120,8 @@ function go(id) {
 function render() {
   const s = ui.status;
   if (!s) return;
+  if (ui.evalRunning && !(s.job.kind === "evaluate" && s.job.status === "running")) { ui.evalRunning = false; loadModels(); }
+  if (s.job.kind === "evaluate" && s.job.status === "running") ui.evalRunning = true;
   if (!ui.filled) fillInputs(s);
   renderTopbar(s);
   renderSidebar(s);
@@ -685,7 +691,7 @@ const KIND_BADGE = {
 function renderWalk() {
   const w = ui.walk;
   if (!w) return;
-  const c = ui.realConfig || ui.status?.model?.config || ui.status?.selection?.checkpoint?.model || { n_embd: 384, n_head: 6, n_layer: 6, vocab_size: VOCAB };
+  const c = ui.realConfig || ui.status?.model?.config || ui.status?.active?.model || { n_embd: 384, n_head: 6, n_layer: 6, vocab_size: VOCAB };
   $("#a-dots").innerHTML = STAGES.map((st, i) => `<button class="sdot ${i === w.stage ? "on" : i < w.stage ? "past" : ""} ${st.kind}" data-stage="${i}" title="${esc(st.title)}${st.kind === "decoder" ? " (decoder only)" : ""}">${i + 1}</button>`).join("");
   $("#a-stage").innerHTML = `<div class="stage-head"><h3 class="stage-title">${w.stage + 1}. ${STAGES[w.stage].title}</h3>${KIND_BADGE[STAGES[w.stage].kind]}</div>${STAGES[w.stage].body(w, c)}`;
   $("#a-prev").disabled = w.stage === 0;
@@ -702,7 +708,7 @@ async function runWalk() {
   ui.real = null;
   try {
     ui.real = await api("/api/inspect", { prompt, layer: +($("#a-layer").value || 0) });
-    ui.realConfig = { ...(ui.status?.selection?.checkpoint?.model || ui.status?.model?.config || {}), n_head: ui.real.n_head, n_layer: ui.real.n_layer };
+    ui.realConfig = { ...(ui.status?.active?.model || ui.status?.model?.config || {}), n_head: ui.real.n_head, n_layer: ui.real.n_layer };
   } catch (e) { ui.real = null; }
   ui.inspected = true;
   $("#a-walk").classList.remove("hidden");
@@ -854,10 +860,10 @@ function drawChart(tr) {
 
 // ---------- 7. generate ----------
 function renderGenerateCard(s) {
-  const c = s.selection?.checkpoint, el = $("#g-model");
+  const c = s.active, el = $("#g-model");
   $("#g-params-wrap").classList.toggle("hidden", !c?.params);
-  if (!c) { el.className = "note warn"; el.textContent = "No trained model for this training data yet. Train one in the Train step."; return; }
-  const key = JSON.stringify([s.selection.path, c.model, c.trained_at]);
+  if (!c) { el.className = "note warn"; el.innerHTML = 'No trained model for this training data yet. Train one in the Train step, or <a href="#" data-go="models">pick a saved model</a>.'; return; }
+  const key = JSON.stringify([c.id || s.selection?.path, c.model, c.trained_at]);
   if (c.params && ui.genParamsKey !== key) {
     ui.genParamsKey = key;
     $("#g-params-total").textContent = `${short(c.params.total)} (${fmt(c.params.total)})`;
@@ -868,7 +874,8 @@ function renderGenerateCard(s) {
   el.className = "note";
   if (ui.kvKey !== key) { ui.kvKey = key; loadKvTokens().then(renderKv); renderKvMem(); fillCompare(); refreshDist(); }
   const m = c.model, names = (c.datasets || s.datasets.map((d) => d.name)).map((n) => (n.startsWith("http") ? shortUrl(n) : n));
-  el.innerHTML = `Using the model trained on <b>${esc(names.join(" + "))}</b>: ${m.n_layer} layers, ${m.n_head} heads, ${m.n_embd}-dim, ` +
+  el.innerHTML = (c.source === "library" ? `Using the saved model <b>${esc(c.name)}</b> (<a href="#" data-go="models">change</a>), trained on ${esc(names.join(" + "))}: ` : `Using the model trained on <b>${esc(names.join(" + "))}</b> (<a href="#" data-go="models">pick another</a>): `) +
+    `${m.n_layer} layers, ${m.n_head} heads, ${m.n_embd}-dim, ` +
     `${fmt(c.steps ?? 0)} steps${c.updates ? ` (${fmt(c.updates)} updates)` : ""}${c.stopped_early ? ", stopped early" : ""}, best validation loss <b>${fmtLoss(c.best_val)}</b>` +
     (c.trained_at ? ` · ${esc(c.trained_at)}` : "");
 }
@@ -944,7 +951,7 @@ async function runBenchmark() {
       ${row("GPU memory in use", (m) => (m.memory?.allocated != null ? bytes(m.memory.allocated) : "–"))}
       </tbody></table></div>
       <p class="hint">${r.same_output ? "✓ Both runs produced exactly the same tokens: the cache changes speed, not results." : "The runs differ slightly: tiny floating-point differences changed a sampled token."}
-      The cache stores 2 (key and value) × ${r.kv_bytes_per_token / (2 * 4) / (ui.status?.selection?.checkpoint?.model?.n_layer || 6)} numbers × ${ui.status?.selection?.checkpoint?.model?.n_layer || 6} layers × 4 bytes = ${bytes(r.kv_bytes_per_token)} per token, up to ${bytes(r.kv_bytes_per_token * r.context_window)} for a full ${r.context_window}-token window.
+      The cache stores 2 (key and value) × ${r.kv_bytes_per_token / (2 * 4) / (ui.status?.active?.model?.n_layer || 6)} numbers × ${ui.status?.active?.model?.n_layer || 6} layers × 4 bytes = ${bytes(r.kv_bytes_per_token)} per token, up to ${bytes(r.kv_bytes_per_token * r.context_window)} for a full ${r.context_window}-token window.
       ${r.prompt_tokens + r.n_tokens > r.context_window ? `Past ${r.context_window} tokens the window slides, so this model rebuilds its cache every step and the advantage shrinks.` : ""}</p>
       <p class="hint"><b>Why the gain is modest here:</b> with a small model and at most ${r.context_window} tokens, each step is dominated by the fixed cost of launching work on the GPU, not by the arithmetic the cache saves. On an M5 the cache measured about 1.1× faster for the Small model and 1.3× for Large (run it a few times: GPU timings vary). The benefit grows with model size and context length: for large language models reading thousands of tokens, the KV cache is what makes generation practical.</p>`;
     drawBenchCharts(r);
@@ -1001,7 +1008,7 @@ function drawBenchCharts(r) {
 // ---------- sampling explorer: how the next token is picked ----------
 let distTimer = null, distSeq = 0;
 function refreshDist() {
-  if (!ui.status?.selection?.checkpoint) return;
+  if (!ui.status?.active) return;
   clearTimeout(distTimer);
   distTimer = setTimeout(async () => {
     const seq = ++distSeq;
@@ -1074,7 +1081,7 @@ async function loadKvTokens() {
 }
 
 function kvModel() {
-  const m = ui.status?.selection?.checkpoint?.model || ui.status?.model?.config || { n_layer: 6, n_embd: 384, block_size: 256 };
+  const m = ui.status?.active?.model || ui.status?.model?.config || { n_layer: 6, n_embd: 384, block_size: 256 };
   return { n_layer: m.n_layer, n_embd: m.n_embd, block: m.block_size, perToken: 2 * m.n_layer * m.n_embd * 4 };
 }
 
@@ -1134,7 +1141,7 @@ function kvPlay() {
 
 // ---------- KV cache: memory calculator ----------
 function kvModels() {
-  const c = ui.status?.selection?.checkpoint, m = c?.model || ui.status?.model?.config;
+  const c = ui.status?.active, m = c?.model || ui.status?.model?.config;
   const own = m ? [{ name: `This model (${short(c?.params?.total || ui.status?.model?.params || 0)} parameters)`, layers: m.n_layer, width: m.n_embd, params: c?.params?.total || ui.status?.model?.params || 0, max: m.block_size }] : [];
   return own.concat([
     { name: "GPT-2 small (124M)", layers: 12, width: 768, params: 124e6, max: 1024 },
@@ -1234,6 +1241,94 @@ async function generate() {
   render();
 }
 
+// ---------- 8. models & evaluation ----------
+const MODEL_COLORS = ["var(--accent)", "var(--series-val)", "var(--series-train)", "#9b5cf6", "#c2410c", "#0e7490", "#be185d", "#4d7c0f"];
+const lib = { data: null, picked: new Set() };
+
+async function loadModels() {
+  lib.data = await (await fetch("/api/models")).json();
+  const ids = new Set(lib.data.models.map((m) => m.id));
+  lib.picked = new Set([...lib.picked].filter((i) => ids.has(i)));
+  renderLibrary();
+  renderEvaluation();
+}
+
+const shortData = (ds) => (ds || []).map((n) => (n.startsWith("http") ? shortUrl(n) : n.split("/").pop())).join(" + ") || "–";
+const when = (t) => (t ? esc(t.slice(0, 16)) : "–");
+
+function renderLibrary() {
+  const r = lib.data, models = r.models;
+  const total = models.reduce((a, m) => a + (m.bytes || 0), 0);
+  $("#lib-summary").textContent = models.length ? `${models.length} model${models.length > 1 ? "s" : ""} · ${bytes(total)} on disk` : "";
+  if (!models.length) {
+    $("#lib-table").innerHTML = '<p class="muted">No saved models yet. Train one, import one from Colab, or press <b>Find models on this Mac</b>.</p>';
+    return;
+  }
+  $("#lib-table").innerHTML = `<div class="ptable-scroll"><table class="ptable lib">
+    <thead><tr><th><input type="checkbox" id="lib-all" title="Select all"></th><th>Model</th><th>Trained on</th><th class="num">Best val loss</th><th class="num">Evaluated</th></tr></thead>
+    <tbody>${models.map((m) => `<tr class="${m.active ? "in-use" : ""}">
+      <td><input type="checkbox" data-pick="${esc(m.id)}" ${lib.picked.has(m.id) ? "checked" : ""}></td>
+      <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}</div>
+        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
+        <div class="lib-actions">${m.active ? "" : `<button class="btn small" data-use="${esc(m.id)}">Use for generation</button>`}<button class="btn small ghost" data-rename="${esc(m.id)}">Rename</button><button class="btn small ghost danger" data-delete="${esc(m.id)}">Delete</button></div></td>
+      <td>${esc(shortData(m.datasets))}<div class="muted small">${m.steps ? `${fmt(m.steps)} steps` : ""}${m.chip ? ` · ${esc(m.chip)}` : ""}${m.platform ? ` (${esc(m.platform)})` : ""}</div><div class="muted small">${when(m.trained_at)}</div></td>
+      <td class="num">${fmtLoss(m.best_val)}<div class="muted small">on its own data</div></td>
+      <td class="num">${m.eval ? `<span class="tag">${when(m.eval.evaluated_at)}</span>` : '<span class="muted small">not yet</span>'}</td>
+    </tr>`).join("")}</tbody></table></div>`;
+  $("#lib-all").checked = models.every((m) => lib.picked.has(m.id));
+}
+
+function renderEvaluation() {
+  const r = lib.data, s = r.suite;
+  $("#ev-suite").innerHTML = `<ol class="flow small-flow">
+      <li><b>Held-out loss</b> on ${r.eval_datasets.length ? r.eval_datasets.map((d) => `<b>${esc(d.title)}</b>`).join(", ") : "<i>no tokenized datasets yet</i>"}: ${s.windows} fixed windows of ${s.context} tokens from each validation split, the same positions for every model (models with a shorter context window read shorter windows). Datasets you add and tokenize in step 1 join the suite.</li>
+      <li><b>Generation</b>: ${s.prompts.length} fixed prompts, ${s.tokens} tokens each, with a fixed seed, decoded <b>greedy</b> and with the <b>Balanced</b> preset. Measures repetition (4-token runs seen before), variety (distinct word pairs), confidence, speed with the KV cache, and time to first token.</li>
+      <li><b>Size</b>: parameters, weights in memory, KV cache per token.</li></ol>`;
+  const evald = r.models.filter((m) => m.eval && m.eval.suite_version === s.version);
+  if (!evald.length) {
+    $("#ev-table").innerHTML = '<p class="muted">No results yet. Tick some models above and press <b>Evaluate selected models</b>.</p>';
+    $("#ev-chart").innerHTML = ""; $("#ev-samples").innerHTML = ""; return;
+  }
+  const dsKeys = [], titles = {};
+  evald.forEach((m) => Object.entries(m.eval.heldout || {}).forEach(([k, v]) => { if (!dsKeys.includes(k)) { dsKeys.push(k); titles[k] = v.title; } }));
+  const cols = [
+    ...dsKeys.map((k) => ({ label: `${titles[k]} loss`, get: (m) => m.eval.heldout?.[k]?.loss, fmt: (v, m) => `${v.toFixed(3)}<div class="muted small">ppl ${fmt(m.eval.heldout[k].perplexity >= 100 ? Math.round(m.eval.heldout[k].perplexity) : m.eval.heldout[k].perplexity)}</div>`, best: "min" })),
+    { label: "Greedy repetition", tip: "share of 4-token runs repeating earlier ones, greedy decoding", get: (m) => m.eval.generation.greedy_repeated_4grams, fmt: (v) => `${Math.round(v * 100)}%`, best: "min" },
+    { label: "Distinct pairs", tip: "Balanced preset: share of word pairs that are unique", get: (m) => m.eval.generation.balanced_distinct_2, fmt: (v) => `${Math.round(v * 100)}%`, best: "max" },
+    { label: "Confidence", get: (m) => m.eval.generation.balanced_avg_prob, fmt: (v) => `${Math.round(v * 100)}%` },
+    { label: "Speed", get: (m) => m.eval.generation.tokens_per_sec, fmt: (v) => `${Math.round(v)} tok/s`, best: "max" },
+    { label: "First token", get: (m) => m.eval.generation.ttft_ms, fmt: (v) => `${Math.round(v)} ms`, best: "min" },
+    { label: "Weights", get: (m) => m.eval.size.weights_bytes, fmt: (v, m) => `${bytes(v)}<div class="muted small">${short(m.eval.size.params)} params</div>` },
+    { label: "KV cache / token", get: (m) => m.eval.size.kv_bytes_per_token, fmt: (v) => bytes(v) },
+  ];
+  const bestOf = cols.map((c) => { const vals = evald.map(c.get).filter((v) => v != null); return !c.best || vals.length < 2 ? null : c.best === "min" ? Math.min(...vals) : Math.max(...vals); });
+  $("#ev-table").innerHTML = `<div class="ptable-scroll"><table class="ptable ev">
+    <thead><tr><th>Model</th>${cols.map((c) => `<th class="num" title="${esc(c.tip || "")}">${esc(c.label)}</th>`).join("")}</tr></thead>
+    <tbody>${evald.map((m, i) => `<tr><td><span class="sw-dot" style="background:${MODEL_COLORS[i % MODEL_COLORS.length]}"></span>${esc(m.name)}</td>${cols.map((c, j) => { const v = c.get(m); return `<td class="num">${v == null ? "–" : `<span class="${v === bestOf[j] ? "best" : ""}">${c.fmt(v, m)}</span>`}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div>
+    <p class="hint">A model scores best on the data it was trained on: compare models <i>within</i> a column. Loss is the average surprise per token (lower is better); perplexity is e<sup>loss</sup>, roughly how many tokens the model is choosing between. Read repetition and variety together with loss: a model that barely trained shows 100% distinct pairs because its output is noise.</p>`;
+  // grouped bars: held-out loss per dataset
+  const maxL = Math.max(...evald.flatMap((m) => dsKeys.map((k) => m.eval.heldout?.[k]?.loss || 0)));
+  $("#ev-chart").innerHTML = `<div class="ev-bars">${dsKeys.map((k) => `<div class="ev-group"><div class="ev-gtitle">${esc(titles[k])}</div>
+    ${evald.map((m, i) => { const v = m.eval.heldout?.[k]?.loss; return `<div class="kvm-row"><span class="muted small" title="${esc(m.name)}">${esc(m.name.split(" · ").slice(0, 2).join(" · "))}</span><div class="kvm-track"><div class="kvm-bar" style="width:${v ? (v / maxL) * 100 : 0}%;background:${MODEL_COLORS[i % MODEL_COLORS.length]}"></div></div><b>${v ? v.toFixed(2) : "–"}</b></div>`; }).join("")}</div>`).join("")}</div>`;
+  // samples
+  const sel = $("#ev-prompt");
+  if (sel.options.length !== s.prompts.length) sel.innerHTML = s.prompts.map((p, i) => `<option value="${i}">${esc(p)}</option>`).join("");
+  renderSamples();
+}
+
+function renderSamples() {
+  if (!lib.data) return;
+  const s = lib.data.suite, i = +$("#ev-prompt").value || 0, mode = $("#ev-mode").value;
+  const evald = lib.data.models.filter((m) => m.eval && m.eval.suite_version === s.version);
+  $("#ev-samples").innerHTML = evald.map((m, j) => {
+    const smp = m.eval.samples?.[i];
+    return `<div class="cmp-col"><div class="cmp-name"><span class="sw-dot" style="background:${MODEL_COLORS[j % MODEL_COLORS.length]}"></span>${esc(m.name)}</div>
+      <div class="doc cmp-text"><span class="prompt">${esc(smp?.prompt || s.prompts[i])}</span>${esc(smp?.[mode] || "")}</div></div>`;
+  }).join("");
+}
+
+async function libAction(fn) { await fn(); await loadModels(); await poll(); }
+
 // ---------- events ----------
 document.addEventListener("click", (e) => {
   const t = e.target;
@@ -1295,7 +1390,7 @@ $$("#t-preset button").forEach((b) => b.addEventListener("click", () => {
 }));
 TRAIN_FIELDS.forEach((f) => $(`#t-${f}`).addEventListener("input", () => highlightPreset(matchPreset(trainValues()))));
 $("#t-start").addEventListener("click", (e) => {
-  if (ui.status?.selection?.checkpoint && !confirm("This replaces the model already trained on this training data. Continue?")) return;
+  if (ui.status?.selection?.checkpoint && !confirm("This trains a new model for this training data. The current one is kept in the Models step's library. Continue?")) return;
   action(e.target, async () => { await api("/api/train", trainValues()); await poll(); });
 });
 $("#t-stop").addEventListener("click", (e) => action(e.target, () => api("/api/train/stop", {})));
@@ -1303,6 +1398,45 @@ $("#t-stop").addEventListener("click", (e) => action(e.target, () => api("/api/t
 $$("#g-temp, #g-topk, #g-len, #g-topp, #g-minp, #g-rep, #g-freq, #g-pres").forEach((i) => i.addEventListener("input", () => { syncSliders(); if (i.id !== "g-len") refreshDist(); }));
 $("#g-prompt").addEventListener("input", refreshDist);
 $("#cmp-run").addEventListener("click", (e) => action(e.target, runCompare));
+$("#lib-scan").addEventListener("click", (e) => action(e.target, () => libAction(async () => {
+  const r = await api("/api/models/scan", {});
+  toast(r.added.length ? `Added ${r.added.length}: ${r.added.join("; ")}` : "No new models found.");
+})));
+$("#lib-save").addEventListener("click", (e) => action(e.target, () => libAction(async () => {
+  const r = await api("/api/models/save-current", {});
+  toast(r.added ? `Saved as "${r.name}".` : `Already saved as "${r.name}".`);
+})));
+$("#lib-default").addEventListener("click", (e) => action(e.target, () => libAction(() => api("/api/models/use", { id: null }))));
+$("#ev-run").addEventListener("click", (e) => action(e.target, async () => {
+  if (!lib.picked.size) throw new Error("Tick at least one model in the table first.");
+  await api("/api/eval/run", { ids: [...lib.picked] });
+  ui.evalRunning = true;
+  await poll();
+}));
+$("#ev-prompt").addEventListener("change", renderSamples);
+$("#ev-mode").addEventListener("change", renderSamples);
+document.addEventListener("change", (e) => {
+  const p = e.target.closest("[data-pick]");
+  if (p) { p.checked ? lib.picked.add(p.dataset.pick) : lib.picked.delete(p.dataset.pick); $("#lib-all").checked = lib.data.models.every((m) => lib.picked.has(m.id)); }
+  if (e.target.id === "lib-all") { lib.picked = e.target.checked ? new Set(lib.data.models.map((m) => m.id)) : new Set(); renderLibrary(); }
+});
+document.addEventListener("click", (e) => {
+  const u = e.target.closest("[data-use]");
+  if (u) action(u, () => libAction(async () => { await api("/api/models/use", { id: u.dataset.use }); toast("Generate and Inside the transformer now use this model."); }));
+  const rn = e.target.closest("[data-rename]");
+  if (rn) {
+    const m = lib.data.models.find((x) => x.id === rn.dataset.rename);
+    const name = prompt("New name for this model:", m?.name || "");
+    if (name && name.trim()) action(rn, () => libAction(() => api("/api/models/rename", { id: rn.dataset.rename, name })));
+  }
+  const del = e.target.closest("[data-delete]");
+  if (del) {
+    const m = lib.data.models.find((x) => x.id === del.dataset.delete);
+    if (confirm(`Delete "${m?.name}" from the library? Its saved weights and evaluation results (${bytes(m?.bytes || 0)}) are removed for good. Models in data/ aren't touched.`)) {
+      action(del, () => libAction(() => api("/api/models/delete", { id: del.dataset.delete })));
+    }
+  }
+});
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-spreset]"); if (b) setSampling(SAMPLING_PRESETS[b.dataset.spreset]); });
 $("#g-color").addEventListener("change", (e) => $("#g-text").classList.toggle("plain", !e.target.checked));
 $("#g-run").addEventListener("click", (e) => action(e.target, generate));
