@@ -40,7 +40,9 @@ def setup_device():
     """
     if torch.cuda.is_available():
         device = "cuda"
-        dtype = "bfloat16" if torch.cuda.is_bf16_supported() else "float16"
+        # bfloat16 needs Ampere or newer (compute capability 8.0+: A100, L4, RTX 30xx/40xx). Older GPUs such as
+        # the T4 report bfloat16 as "supported" only through slow emulation, so they use float16 + GradScaler.
+        dtype = "bfloat16" if torch.cuda.get_device_capability()[0] >= 8 else "float16"
     elif torch.backends.mps.is_available():
         device, dtype = "mps", "float32"
     else:
