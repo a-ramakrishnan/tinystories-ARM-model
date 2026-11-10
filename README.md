@@ -342,6 +342,38 @@ undertrained, and a few settings made every step count for much less than it sho
 Token files made before the separator was added are detected (they have no `tokens.json`) and re-tokenized
 automatically the next time a dataset is used.
 
+### Measured: before and after
+
+Both runs used TinyStories on a Colab **Tesla T4** (float16).
+
+| | Old settings | New settings |
+|---|---|---|
+| Model | Large (124M) | Medium (51M) |
+| Steps / optimizer updates | 2,000 / 250 | 20,000 / 20,000 |
+| Validation loss at step 1,000 | 4.905 | **2.649** |
+| Validation loss at step 2,000 | 4.527 | **2.214** |
+| Best validation loss | 4.527 | **1.583** (step 19,000) |
+| Training time | 11.2 min | 101.2 min (26,991 tokens/s, 8.56 GB peak GPU memory) |
+
+The new settings beat the old ones at the same step even with a model less than half the size. Training
+and validation loss stayed equal the whole way, so the model is still learning rather than memorizing, and
+a longer run or a larger model would go lower still.
+
+![Training and validation loss for the 20,000-step Medium run on a T4](docs/screenshots/colab-loss-full.png)
+
+A story from the new model, generated on the Mac (MPS) from the prompt *"Once upon a time"*. It stopped by
+itself at `<|endoftext|>`:
+
+> Once upon a time, there was a little boy named Timmy. Timmy loved to play with his toys all day long. One
+> day, he accidentally broke his favorite toy car. He was very sad and didn't know what to do.
+>
+> Timmy's mom saw him crying and asked him what was wrong. Timmy told his mom that he broke his toy car and
+> he couldn't fix it. [...] But then, Timmy's mom made a present for him. She gave him a toy car to play
+> with instead. Timmy was happy again and played with his new toy car all day long.
+
+The stories now hold one plot and one set of characters from start to finish. Small slips remain, such as a
+character changing name mid-story or a sentence that doesn't follow.
+
 ## Training: what gets updated
 
 Each step runs a batch forward, measures the loss (the average of `−ln(p)`, where `p` is the probability
@@ -560,7 +592,9 @@ ways produced exactly the same text.
 
 **Back on the Mac.** The zip was imported with `import_run.py`, and the web app now uses the Large model.
 Its training history shows the T4 run, and it generates on the M5 at about 58 tokens per second with an
-average confidence of 19% (the 30M Small model from the Mac scores about 14%). Using the built-in browser
+average confidence of 19% (the 30M Small model from the Mac scores about 14%). That run used the original
+settings; a later 20,000-step Medium run with the new ones reached a validation loss of 1.583 and replaced
+it (see [Measured: before and after](#measured-before-and-after)). Using the built-in browser
 of the Claude desktop app, the download landed in the project folder rather than `~/Downloads`; result
 zips are git-ignored wherever they land.
 
