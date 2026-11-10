@@ -481,7 +481,9 @@ can be picked. The Generate step has all the common ones, applied in this order:
 | Min-p | Drops tokens less likely than min-p × the top token's probability | 0 |
 
 Presets set them in one click: **Greedy**, **Balanced** (temperature 0.8, top-p 0.9, repetition penalty
-1.15), **Creative** (temperature 1.1, min-p 0.05) and **Reset** (the original temperature 0.8, top-k 50).
+1.15), **Creative** (temperature 1.1, min-p 0.05) and **Old default** (temperature 0.8, top-k 50, no
+penalty). **Balanced is the default**: with the old default, the FineWeb model often fell into loops,
+repeating one sentence over and over (73% of 4-token runs repeated with greedy decoding, 0% with Balanced).
 
 **How the next token is picked** shows the model's top candidates for the token after your prompt and updates
 as you move the sliders: the model's own probability, the probability after the settings, which tokens a

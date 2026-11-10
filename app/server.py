@@ -305,10 +305,10 @@ class InspectReq(BaseModel):
 
 class SamplingReq(BaseModel):
     temperature: float = 0.8          # 0 = greedy (always the most likely token)
-    top_k: int = 50                   # 0 = off
-    top_p: float = 1.0                # 1 = off
+    top_k: int = 0                    # 0 = off
+    top_p: float = 0.9                # 1 = off   (defaults: the Balanced preset)
     min_p: float = 0.0                # 0 = off
-    repetition_penalty: float = 1.0   # 1 = off
+    repetition_penalty: float = 1.15  # 1 = off
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
 

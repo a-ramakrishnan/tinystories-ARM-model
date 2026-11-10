@@ -885,7 +885,7 @@ const SAMPLING_PRESETS = {
   greedy: { label: "Greedy (temperature 0)", temperature: 0, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
   balanced: { label: "Balanced: T 0.8, top-p 0.9, repetition 1.15", temperature: 0.8, top_k: 0, top_p: 0.9, min_p: 0, repetition_penalty: 1.15, frequency_penalty: 0, presence_penalty: 0 },
   creative: { label: "Creative: T 1.1, min-p 0.05", temperature: 1.1, top_k: 0, top_p: 1, min_p: 0.05, repetition_penalty: 1.05, frequency_penalty: 0, presence_penalty: 0 },
-  reset: { label: "Original default: T 0.8, top-k 50", temperature: 0.8, top_k: 50, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
+  reset: { label: "Old default: T 0.8, top-k 50, no penalty", temperature: 0.8, top_k: 50, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
   topk: { label: "Top-k 10, T 1.0", temperature: 1.0, top_k: 10, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
   penalty: { label: "Greedy + repetition penalty 1.3", temperature: 0, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1.3, frequency_penalty: 0, presence_penalty: 0 },
   wild: { label: "Wild: temperature 1.6, no filters", temperature: 1.6, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },

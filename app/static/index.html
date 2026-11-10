@@ -380,19 +380,19 @@
           <label class="block">Prompt <textarea id="g-prompt" rows="2" spellcheck="false">The water cycle is the process by which</textarea></label>
           <div class="fields three sliders">
             <label>Temperature <output id="g-temp-v"></output><input id="g-temp" type="range" min="0" max="2" step="0.1" value="0.8"></label>
-            <label>Top-k <output id="g-topk-v"></output><input id="g-topk" type="range" min="0" max="200" step="5" value="50"></label>
+            <label>Top-k <output id="g-topk-v"></output><input id="g-topk" type="range" min="0" max="200" step="5" value="0"></label>
             <label>Length <output id="g-len-v"></output><input id="g-len" type="range" min="20" max="500" step="10" value="200"></label>
           </div>
           <div class="fields three sliders">
-            <label>Top-p <output id="g-topp-v"></output><input id="g-topp" type="range" min="0.05" max="1" step="0.05" value="1"></label>
+            <label>Top-p <output id="g-topp-v"></output><input id="g-topp" type="range" min="0.05" max="1" step="0.05" value="0.9"></label>
             <label>Min-p <output id="g-minp-v"></output><input id="g-minp" type="range" min="0" max="0.3" step="0.01" value="0"></label>
-            <label>Repetition penalty <output id="g-rep-v"></output><input id="g-rep" type="range" min="1" max="2" step="0.05" value="1"></label>
+            <label>Repetition penalty <output id="g-rep-v"></output><input id="g-rep" type="range" min="1" max="2" step="0.05" value="1.15"></label>
           </div>
           <div class="fields three sliders">
             <label>Frequency penalty <output id="g-freq-v"></output><input id="g-freq" type="range" min="0" max="2" step="0.1" value="0"></label>
             <label>Presence penalty <output id="g-pres-v"></output><input id="g-pres" type="range" min="0" max="2" step="0.1" value="0"></label>
-            <div class="preset-chips"><span class="muted small">Presets</span>
-              <button class="chip-btn" data-spreset="greedy">Greedy</button><button class="chip-btn" data-spreset="balanced">Balanced</button><button class="chip-btn" data-spreset="creative">Creative</button><button class="chip-btn" data-spreset="reset">Reset</button>
+            <div class="preset-chips"><span class="muted small">Presets (Balanced is the default)</span>
+              <button class="chip-btn" data-spreset="greedy">Greedy</button><button class="chip-btn" data-spreset="balanced">Balanced</button><button class="chip-btn" data-spreset="creative">Creative</button><button class="chip-btn" data-spreset="reset" title="Temperature 0.8, top-k 50, no penalty: the default before Balanced">Old default</button>
             </div>
           </div>
           <details class="hint sampling-help"><summary>What do these do?</summary>
