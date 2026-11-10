@@ -381,6 +381,57 @@ itself at `<|endoftext|>`:
 The stories now hold one plot and one set of characters from start to finish. Small slips remain, such as a
 character changing name mid-story or a sentence that doesn't follow.
 
+### Measured: Mini FineWeb-Edu, the new default
+
+The **Large** model (123,849,984 parameters) trained on Mini FineWeb-Edu's `small` subset for **30,000
+steps** on a Colab **NVIDIA L4** (bfloat16): 245.8 million tokens in **161.7 minutes** at 25,330 tokens/s,
+with 11.1 GB of the L4's 23.7 GB at the peak.
+
+| Step | 1,000 | 2,000 | 5,000 | 10,000 | 15,000 | 20,000 | 25,000 | 29,000 |
+|---|---|---|---|---|---|---|---|---|
+| Validation loss | 5.428 | 4.870 | 4.287 | 4.006 | 3.847 | 3.734 | 3.628 | **3.603** |
+
+The best validation loss is **3.603** (perplexity about 37). That's much higher than TinyStories' 1.58, as
+expected: educational web pages use a far bigger vocabulary and range of topics than children's stories.
+Training and validation loss stayed equal throughout, and the loss was still falling at the end, so more
+data, more steps or a bigger model would all help.
+
+![Training and validation loss for the Large model on Mini FineWeb-Edu, 30,000 steps on an L4](docs/screenshots/fineweb-loss.png)
+
+**Generated text, and why sampling settings matter.** The same model on the Mac (MPS), with the same seed:
+
+> **Greedy** (69% of 4-token runs repeat earlier ones): *Photosynthesis is the process by which plants convert
+> sunlight into energy. It is the process by which plants convert sunlight into energy. The process of
+> photosynthesis is a process by which plants convert sunlight into energy. This process is called
+> photosynthesis. The process of photosynthesis is called photosynthesis. The process of photosynthesis is
+> called photosynthesis. …*
+
+> **Balanced** (temperature 0.8, top-p 0.9, repetition penalty 1.15; 0% repeated): *Photosynthesis is the
+> process of converting sunlight into energy. This process uses a variety of substances to produce a wide
+> range of goods and services, from cars to cars to industrial plants. The process is responsible for
+> producing more energy than you might think. It's important to note that not all energy-intensive
+> chemicals are toxic and should be treated to ensure safety and efficacy. …*
+
+> **Greedy** (74% repeated): *The French Revolution began in 1776 when the French Revolution was finally
+> broken. The French Revolution was a major turning point in the French Revolution. The French Revolution
+> was a major turning point in the French Revolution. …*
+
+> **Balanced** (0% repeated): *The French Revolution began in the 17th century when France signed the French
+> Crown. It was first issued a military service at its present time, and the French capital of Paris became
+> the property of France. In 1775, King Charles I of France moved to France for a military service …*
+
+Greedy decoding gets the first sentence right and then loops. With a small amount of randomness and a
+repetition penalty, the model writes fluent, varied, encyclopedia-style English, but the facts are invented:
+a 124M model trained on 246M tokens has learned how educational text *sounds*, not what is true.
+
+**The KV cache on the L4** (Step 9 of the notebook, the same text both ways): here the cache was slightly
+*slower*, 0.92× for short generations and 0.98× when filling the window. A data-center GPU runs this model's
+small matrix multiplications so fast that each step is mostly fixed launch overhead, and the cache adds a
+little bookkeeping. On the Apple M5 the same comparison saved 37% (see [The KV cache](#the-kv-cache)). The
+cache grows to 18.9 MB (73.7 KB per token in float32) when the 256-token window is full.
+
+![Time to generate with and without the KV cache on an NVIDIA L4, and the cache size](docs/screenshots/fineweb-kv-cache-l4.png)
+
 ## Training: what gets updated
 
 Each step runs a batch forward, measures the loss (the average of `−ln(p)`, where `p` is the probability
