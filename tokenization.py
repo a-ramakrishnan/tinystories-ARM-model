@@ -46,17 +46,29 @@ def tokenize_and_save(ds, data_dir, num_proc=8, total_batches=1024, progress=Non
         dtype = np.uint16  # (can do since enc.max_token_value == 50256 is < 2**16)
         arr = np.memmap(filename + ".tmp", dtype=dtype, mode="w+", shape=(arr_len,))
 
-        n_batches = max(1, min(total_batches, len(dset)))  # small splits: avoid empty shards
         idx = 0
-        for batch_idx in tqdm(range(n_batches), desc=f"writing {filename}"):
-            # Batch together samples for faster write
-            batch = dset.shard(num_shards=n_batches, index=batch_idx, contiguous=True).with_format("numpy")
-            arr_batch = np.concatenate(batch["ids"])
-            # Write into mmap
-            arr[idx: idx + len(arr_batch)] = arr_batch
-            idx += len(arr_batch)
-            if progress is not None:
-                progress(split, batch_idx + 1, n_batches)
+        if getattr(dset, "_indices", None) is None:
+            # Fast path: the token lists are stored as Arrow list arrays, so each chunk can be flattened into
+            # one numpy array without touching individual rows.
+            chunks = dset.data.column("ids").chunks
+            for n, chunk in enumerate(tqdm(chunks, desc=f"writing {filename}")):
+                values = chunk.flatten().to_numpy(zero_copy_only=False).astype(dtype, copy=False)
+                arr[idx: idx + len(values)] = values
+                idx += len(values)
+                if progress is not None:
+                    progress(split, n + 1, len(chunks))
+        else:
+            n_batches = max(1, min(total_batches, len(dset)))  # small splits: avoid empty shards
+            for batch_idx in tqdm(range(n_batches), desc=f"writing {filename}"):
+                # Batch together samples for faster write
+                batch = dset.shard(num_shards=n_batches, index=batch_idx, contiguous=True).with_format("numpy")
+                arr_batch = np.concatenate(batch["ids"])
+                # Write into mmap
+                arr[idx: idx + len(arr_batch)] = arr_batch
+                idx += len(arr_batch)
+                if progress is not None:
+                    progress(split, batch_idx + 1, n_batches)
+        assert idx == arr_len, f"wrote {idx} tokens, expected {arr_len}"
         arr.flush()
         del arr
         os.replace(filename + ".tmp", filename)
