@@ -125,3 +125,7 @@ config.local.json
 
 # Docker overrides
 docker-compose.override.yml
+
+# Notebook results
+outputs/
+tinystories-run-*.zip

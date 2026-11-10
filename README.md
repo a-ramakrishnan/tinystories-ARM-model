@@ -53,7 +53,7 @@ on Mac · TinyStories · nanoGPT · tokenization · Hugging Face datasets · dee
 |---|---|---|
 | **Web app** · `python3 app/server.py` | A local, step-by-step studio in your browser with explanations and live charts | Learning how it works, experimenting |
 | **Command line** · `python3 full-model.py` | Runs the whole pipeline in one go | Long training runs |
-| **Colab notebook** · badge above | The same steps as a notebook on Colab's free GPU | Trying it without a Mac |
+| **Notebook on Colab or Kaggle** · badge above | The same steps on a free cloud GPU; brings the model home as a zip | Bigger or longer training runs, or no Mac |
 
 ## Made for Apple Silicon
 
@@ -392,7 +392,8 @@ train_config.py            TrainConfig hyperparameters and setup_device() (MPS /
 pretrain.py                Training loop: AdamW, warmup + cosine LR schedule, gradient accumulation
 plots.py                   Loss curves
 inference.py               Checkpoints, streamed generation, KV cache benchmark, GPU memory, attention maps
-train_step_by_step.ipynb   Notebook version for Google Colab
+train_step_by_step.ipynb   Notebook for training on Google Colab or Kaggle
+import_run.py              Brings a model trained on Colab or Kaggle into data/ (from the notebook's results zip)
 docs/screenshots/          Screenshots used in this README
 ```
 
@@ -455,19 +456,65 @@ print(generate_text(model, get_tokenizer(), "Once upon a time there was a dragon
 For a model trained on several datasets, use `mix_paths([...dataset folders...])` from `data.py` instead of
 `dataset_paths`.
 
-## No Mac? Use Colab
+## Train on a cloud GPU: Google Colab or Kaggle
 
-Click the **Open in Colab** badge, choose *Runtime → Change runtime type → T4 GPU*, and run the cells from
-top to bottom. The notebook clones this repository, installs the dependencies, and walks through the main
-steps with form fields for the settings and the dataset. On a GPU it also shows:
+Everything runs on your Mac except, if you like, the training itself. The notebook
+[`train_step_by_step.ipynb`](train_step_by_step.ipynb) runs on **Google Colab** or **Kaggle**, trains on their
+Nvidia GPU, and packages the result into one zip that you bring back with `import_run.py`.
+
+On a GPU the notebook also shows:
 
 - the GPU's name, memory and utilization (`nvidia-smi`);
 - a **model size** dropdown up to **Large** (124M parameters, GPT-2 small size), which fits easily on a T4;
 - training throughput (tokens per second) and **peak GPU memory** after training;
-- **Step 9**: a KV cache benchmark at several lengths, with tokens per second with and without the cache,
-  cache size, rebuilds once the window is full, and GPU memory.
+- **Step 9**: a KV cache benchmark at several lengths (tokens per second with and without the cache, cache
+  size, rebuilds once the window is full, GPU memory);
+- **Step 10**: everything packaged into `tinystories-run-<dataset>-<date>.zip`.
 
 CUDA GPUs train with mixed precision (bfloat16 where supported, float16 otherwise).
+
+### Google Colab
+
+1. Click the **Open in Colab** badge at the top of this page.
+2. *Runtime → Change runtime type → T4 GPU* (free), or L4 / A100 with Colab Pro or compute units.
+3. Run the cells from top to bottom. Step 0 clones this repository and installs the dependencies.
+4. Set the run with the form fields: the dataset (Step 1), `model_size` (Step 4, e.g. `large`) and `mode`
+   (Step 5: `quick` or `full`).
+5. Step 10 downloads the results zip to your computer (allow the download if the browser asks). It's also
+   in the Files panel.
+
+Free Colab sessions can disconnect when idle or when usage limits are reached, and files in `/content` are
+lost when they do. Tokenizing all of TinyStories on Colab's small CPUs also takes a while on the first run
+of each session.
+
+### Kaggle
+
+1. On [kaggle.com](https://www.kaggle.com), *Create → New Notebook*, then *File → Import Notebook* and paste
+   the link to [`train_step_by_step.ipynb`](https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main/train_step_by_step.ipynb)
+   on GitHub.
+2. In the side panel, *Settings → Accelerator → GPU* (T4 or P100; one GPU is used) and switch **Internet
+   on**, which Kaggle only allows for phone-verified accounts.
+3. Run the cells from top to bottom. The Colab form fields appear as plain variables you can edit. The code
+   and data go to `/tmp`, so only the results zip is saved as the notebook's output.
+4. Download the zip from the **Output** panel (`/kaggle/working`). *Save Version → Save & Run All* runs the
+   whole notebook in the background, so you can close the tab.
+
+Kaggle sessions run for up to about 12 hours, with a weekly GPU quota (around 30 hours at the time of
+writing; your account page shows the current limit).
+
+### Bring the model home
+
+From the project folder on your Mac:
+
+```bash
+python3 import_run.py ~/Downloads/tinystories-run-roneneldan__tinystories-20261110-1430.zip
+```
+
+It puts the weights and config in `data/<dataset>/` (backing up the model already there to
+`data/<dataset>/backups/`), adds the run to the training history, and keeps the loss chart, GPU metrics and
+sample story in `data/<dataset>/imported/`. Start `python3 app/server.py` and the Generate and *Inside the
+transformer* steps use the GPU-trained model. If that dataset isn't on your Mac yet, add it in the Dataset
+step first.
 
 ## Credits
 
