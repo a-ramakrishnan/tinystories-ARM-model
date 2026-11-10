@@ -42,6 +42,74 @@ def generate_text(model, enc, prompt, device, max_new_tokens=200, temperature=1.
     return enc.decode(ids)
 
 
+# ---------- sampling: how the next token is picked ----------
+# Order (the usual one): penalties -> temperature -> top-k -> top-p -> min-p, then sample (or argmax when greedy).
+
+SAMPLING_DEFAULTS = {"top_p": 1.0, "min_p": 0.0, "repetition_penalty": 1.0, "frequency_penalty": 0.0,
+                     "presence_penalty": 0.0}
+
+
+def apply_penalties(logits, history, repetition_penalty=1.0, frequency_penalty=0.0, presence_penalty=0.0):
+    """Discourage tokens that already appear in `history` (1-D tensor of token ids).
+
+    repetition_penalty (CTRL-style): divides a seen token's logit by the penalty if positive, multiplies if
+    negative, so it always becomes less likely. frequency_penalty subtracts penalty × (times seen);
+    presence_penalty subtracts a flat amount from every token seen at least once (OpenAI-style).
+    Returns (new logits, counts).
+    """
+    counts = torch.zeros_like(logits).scatter_add_(0, history, torch.ones_like(history, dtype=logits.dtype))
+    if repetition_penalty == 1.0 and frequency_penalty == 0.0 and presence_penalty == 0.0:
+        return logits, counts
+    seen = counts > 0
+    if repetition_penalty != 1.0:
+        logits = torch.where(seen, torch.where(logits > 0, logits / repetition_penalty, logits * repetition_penalty), logits)
+    return logits - frequency_penalty * counts - presence_penalty * seen.to(logits.dtype), counts
+
+
+def sampling_distribution(logits, history, temperature=1.0, top_k=None, top_p=1.0, min_p=0.0,
+                          repetition_penalty=1.0, frequency_penalty=0.0, presence_penalty=0.0, stages=False):
+    """Turn one position's logits (1-D) into the distribution the next token is drawn from.
+
+    temperature <= 0 means greedy: all probability on the single most likely token (after penalties).
+    top_k keeps the k most likely tokens; top_p keeps the smallest set whose probability adds up to p
+    (nucleus sampling); min_p drops tokens less likely than min_p × the top token's probability.
+    Returns (probs, n_kept), or with stages=True a dict with every intermediate step (for the explorer).
+    """
+    logits = logits.float()
+    penalized, counts = apply_penalties(logits, history, repetition_penalty, frequency_penalty, presence_penalty)
+    greedy = temperature <= 0
+    scaled = penalized / (1.0 if greedy else temperature)
+    p = F.softmax(scaled, dim=-1)
+    cut_k = torch.zeros_like(p, dtype=torch.bool)
+    cut_p = torch.zeros_like(cut_k)
+    cut_min = torch.zeros_like(cut_k)
+    if greedy:
+        keep = torch.zeros_like(cut_k)
+        keep[torch.argmax(p)] = True
+        cut_k = ~keep   # reported as "greedy" by callers
+    else:
+        if top_k:
+            kth = torch.topk(p, min(int(top_k), p.numel())).values[-1]
+            cut_k = p < kth
+        if top_p < 1.0:
+            q = p.masked_fill(cut_k, 0)
+            sp, si = torch.sort(q, descending=True)
+            before = torch.cumsum(sp, 0) - sp            # probability of the tokens ranked above this one
+            drop = before >= top_p * q.sum()
+            cut_p = torch.zeros_like(cut_k).scatter_(0, si, drop) & ~cut_k
+        if min_p > 0.0:
+            cut_min = (p < min_p * p.max()) & ~cut_k & ~cut_p
+        keep = ~(cut_k | cut_p | cut_min)
+    final = p.masked_fill(~keep, 0)
+    final = final / final.sum()
+    n_kept = int(keep.sum())
+    if not stages:
+        return final, n_kept
+    return {"raw": F.softmax(logits, dim=-1), "penalized": F.softmax(penalized, dim=-1), "scaled": p, "final": final,
+            "counts": counts, "cut_k": cut_k, "cut_p": cut_p, "cut_min": cut_min, "greedy": greedy, "n_kept": n_kept,
+            "kept_mass": float(p[keep].sum())}
+
+
 def kv_cache_bytes(caches):
     """Memory held by a list of per-layer KV caches."""
     return sum(c[k].numel() * c[k].element_size() for c in caches for k in ("k", "v") if c.get(k) is not None)
@@ -74,10 +142,12 @@ def _sync(device):
 
 @torch.no_grad()
 def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1.0, top_k=None, n_alternatives=5,
-                    use_kv_cache=True, stats=None, stop_token=None):
+                    use_kv_cache=True, stats=None, stop_token=None, sampling=None):
     """Like GPT.generate, but yields each new token as soon as it's chosen, with timing and probabilities.
 
     stop_token: stop when the model picks this token (e.g. <|endoftext|>, the end of a story); it isn't yielded.
+    sampling: optional top_p, min_p, repetition_penalty, frequency_penalty, presence_penalty (see
+    sampling_distribution). temperature <= 0 picks the most likely token every time (greedy).
 
     Yields dicts: {"id", "prob", "alternatives": [(id, prob), ...], "ms"} where `prob` is the model's own
     probability for the chosen token (before temperature / top-k), and `ms` is the time since the start.
@@ -106,13 +176,10 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
         else:
             idx_cond = idx if idx.size(1) <= block else idx[:, -block:]
             logits, _ = model(idx_cond)
-        logits = logits[:, -1, :]
-        raw = F.softmax(logits, dim=-1)
-        scaled = logits / temperature
-        if top_k is not None:
-            v, _ = torch.topk(scaled, min(top_k, scaled.size(-1)))
-            scaled[scaled < v[:, [-1]]] = -float("Inf")
-        idx_next = torch.multinomial(F.softmax(scaled, dim=-1), num_samples=1)
+        logits = logits[0, -1, :]
+        raw = F.softmax(logits.float(), dim=-1).unsqueeze(0)
+        probs, n_kept = sampling_distribution(logits, idx[0, -block:], temperature, top_k, **{**SAMPLING_DEFAULTS, **(sampling or {})})
+        idx_next = (torch.argmax(probs) if temperature <= 0 else torch.multinomial(probs, num_samples=1)).view(1, 1)
         alt_p, alt_i = torch.topk(raw[0], n_alternatives)
         token = int(idx_next.item())  # .item() waits for the GPU, so the timing below is real
         if stop_token is not None and token == stop_token:
@@ -122,7 +189,7 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
         if stats is not None:
             stats.update(kv_cache_bytes=kv_cache_bytes(caches) if caches else 0, cache_tokens=cache_len if caches else 0,
                          recomputes=recomputes)
-        yield {"id": token, "prob": float(raw[0, token]),
+        yield {"id": token, "prob": float(raw[0, token]), "kept": n_kept,
                "alternatives": list(zip(alt_i.tolist(), [round(p, 4) for p in alt_p.tolist()])),
                "ms": (time.perf_counter() - t0) * 1000}
         idx = torch.cat((idx, idx_next), dim=1)

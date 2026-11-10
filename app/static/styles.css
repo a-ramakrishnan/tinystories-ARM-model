@@ -576,3 +576,35 @@ label.inline.grow input[type="range"] { flex: 1; }
 .kvm-bar.c { background: var(--accent); }
 @media (max-width: 760px) { #g-bench-charts { grid-template-columns: 1fr; } }
 .fields.three label > .select { width: 100%; min-width: 0; }
+
+/* ---------- sampling: presets, explorer, comparison ---------- */
+.preset-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; align-self: end; }
+.sampling-help summary { cursor: pointer; color: var(--accent); }
+.sampling-help ul { margin: 6px 0 0; padding-left: 18px; }
+.sampling-help li { margin: 3px 0; }
+.sd-chart { display: grid; gap: 4px; margin-top: 8px; }
+.sd-row { display: grid; grid-template-columns: 110px 1fr 120px 150px; align-items: center; gap: 10px; font-size: 12.5px; }
+.sd-tok { font-family: var(--mono); background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-bars { position: relative; height: 16px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.sd-bar { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; transition: width .25s; }
+.sd-bar.raw { background: var(--accent-soft); outline: 1px solid var(--accent); outline-offset: -1px; }
+.sd-bar.fin { background: var(--accent); top: 4px; bottom: 4px; }
+.sd-num { font-variant-numeric: tabular-nums; color: var(--muted); }
+.sd-num b { color: var(--text); }
+.sd-tag { color: var(--muted); font-size: 11.5px; }
+.sd-row.cut .sd-tok { opacity: .5; text-decoration: line-through; }
+.sd-row.cut .sd-tag { color: var(--bad); }
+.cmp-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 8px 0; }
+.cmp-pick label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.cmp-pick .select { width: 100%; min-width: 0; }
+.cmp-out { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 10px; }
+.cmp-col { display: grid; gap: 8px; align-content: start; }
+.cmp-name { font-weight: 650; font-size: 13px; }
+.cmp-text { font-size: 13px; max-height: 320px; overflow: auto; }
+.cmp-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.cmp-stats b { color: var(--text); }
+@media (max-width: 860px) {
+  .cmp-pick, .cmp-out { grid-template-columns: 1fr; }
+  .sd-row { grid-template-columns: 90px 1fr 110px; }
+  .sd-tag { grid-column: 2 / -1; }
+}

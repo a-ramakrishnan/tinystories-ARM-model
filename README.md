@@ -31,7 +31,9 @@ explains every stage of the **LLM training pipeline** in a local web app:
    heatmaps show the trained model's real attention.
 6. **Pre-training**: **AdamW**, warmup and **cosine learning-rate decay**, gradient accumulation and clipping,
    with live **loss curves**, optimizer updates, parameter updates and tokens processed.
-7. **Inference**: streamed **text generation** with temperature and top-k sampling and a **KV cache**, showing
+7. **Inference**: streamed **text generation** with **temperature, top-k, top-p, min-p, greedy and
+   repetition / frequency / presence penalties**, a next-token explorer, side-by-side comparison of sampling
+   settings, and a **KV cache**, showing
    tokens used, **time to first token**, decode speed, KV cache size, GPU memory and the model's confidence in
    every token, plus a with/without **KV cache benchmark** with per-token timing charts, an interactive
    **KV cache diagram** and a **KV cache memory calculator**.
@@ -407,7 +409,40 @@ The Generate step streams tokens as they are produced and reports:
 | Average confidence | The model's average probability for the tokens it picked |
 | Per-token timing chart | Time for each token; the first one is the slowest |
 
-Each generated token is colored by the model's probability for it, and hovering shows its top alternatives.
+Each generated token is colored by the model's probability for it, and hovering shows its top alternatives
+and how many candidates it was drawn from.
+
+### Sampling: how the next token is picked
+
+The model gives a probability to every one of the 50,257 tokens; **sampling settings** decide which of them
+can be picked. The Generate step has all the common ones, applied in this order:
+
+| Setting | What it does | Off |
+|---|---|---|
+| Repetition penalty | Divides the score of every token already in the context by the penalty (CTRL-style) | 1 |
+| Frequency / presence penalty | Subtracts penalty × times seen / a flat amount for tokens seen at all (OpenAI-style) | 0 |
+| Temperature | Sharpens (below 1) or flattens (above 1) the probabilities. **0 = greedy**: always the most likely token | – |
+| Top-k | Keeps the k most likely tokens | 0 |
+| Top-p (nucleus) | Keeps the smallest set of tokens whose probabilities add up to p | 1 |
+| Min-p | Drops tokens less likely than min-p × the top token's probability | 0 |
+
+Presets set them in one click: **Greedy**, **Balanced** (temperature 0.8, top-p 0.9, repetition penalty
+1.15), **Creative** (temperature 1.1, min-p 0.05) and **Reset** (the original temperature 0.8, top-k 50).
+
+**How the next token is picked** shows the model's top candidates for the token after your prompt and updates
+as you move the sliders: the model's own probability, the probability after the settings, which tokens a
+filter cut (and which one), which tokens the penalties pushed down, how many tokens are left and how much of
+the probability they hold.
+
+![The next-token candidates before and after sampling settings, with tokens cut by min-p](docs/screenshots/sampling-explorer.png)
+
+**Compare sampling settings** continues the same prompt with three settings side by side, with the same
+random seed, and measures each one: distinct word pairs, repeated 4-token runs, average confidence and
+candidates per token. With the TinyStories model, greedy decoding repeated 9% of its 4-token runs, the
+Balanced preset 0%, and temperature 1.6 without filters drew from all 50,257 tokens and fell apart into
+word salad. The Generate step also reports repetition and candidates per token for every generation.
+
+![Greedy, Balanced and temperature 1.6 continuing the same prompt side by side](docs/screenshots/sampling-compare.png)
 
 ### The KV cache
 

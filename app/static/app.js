@@ -866,15 +866,40 @@ function renderGenerateCard(s) {
     $$(".dev-name").forEach((e) => { e.textContent = { mps: "Apple GPU (Metal)", cuda: "Nvidia GPU", cpu: "CPU" }[s.device] || s.device; });
   }
   el.className = "note";
-  if (ui.kvKey !== key) { ui.kvKey = key; loadKvTokens().then(renderKv); renderKvMem(); }
+  if (ui.kvKey !== key) { ui.kvKey = key; loadKvTokens().then(renderKv); renderKvMem(); fillCompare(); refreshDist(); }
   const m = c.model, names = (c.datasets || s.datasets.map((d) => d.name)).map((n) => (n.startsWith("http") ? shortUrl(n) : n));
   el.innerHTML = `Using the model trained on <b>${esc(names.join(" + "))}</b>: ${m.n_layer} layers, ${m.n_head} heads, ${m.n_embd}-dim, ` +
     `${fmt(c.steps ?? 0)} steps${c.updates ? ` (${fmt(c.updates)} updates)` : ""}${c.stopped_early ? ", stopped early" : ""}, best validation loss <b>${fmtLoss(c.best_val)}</b>` +
     (c.trained_at ? ` · ${esc(c.trained_at)}` : "");
 }
 
+// ---------- sampling settings ----------
+const SAMPLING_PRESETS = {
+  greedy: { label: "Greedy (temperature 0)", temperature: 0, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
+  balanced: { label: "Balanced: T 0.8, top-p 0.9, repetition 1.15", temperature: 0.8, top_k: 0, top_p: 0.9, min_p: 0, repetition_penalty: 1.15, frequency_penalty: 0, presence_penalty: 0 },
+  creative: { label: "Creative: T 1.1, min-p 0.05", temperature: 1.1, top_k: 0, top_p: 1, min_p: 0.05, repetition_penalty: 1.05, frequency_penalty: 0, presence_penalty: 0 },
+  reset: { label: "Original default: T 0.8, top-k 50", temperature: 0.8, top_k: 50, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
+  topk: { label: "Top-k 10, T 1.0", temperature: 1.0, top_k: 10, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
+  penalty: { label: "Greedy + repetition penalty 1.3", temperature: 0, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1.3, frequency_penalty: 0, presence_penalty: 0 },
+  wild: { label: "Wild: temperature 1.6, no filters", temperature: 1.6, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
+};
+const SAMPLING_FIELDS = [["temperature", "#g-temp"], ["top_k", "#g-topk"], ["top_p", "#g-topp"], ["min_p", "#g-minp"],
+  ["repetition_penalty", "#g-rep"], ["frequency_penalty", "#g-freq"], ["presence_penalty", "#g-pres"]];
+const samplingBody = () => Object.fromEntries(SAMPLING_FIELDS.map(([k, sel]) => [k, +$(sel).value]));
+function setSampling(p) {
+  SAMPLING_FIELDS.forEach(([k, sel]) => { $(sel).value = p[k]; });
+  syncSliders();
+  refreshDist();
+}
+
 function syncSliders() {
-  $("#g-temp-v").textContent = Number($("#g-temp").value).toFixed(1);
+  const t = +$("#g-temp").value;
+  $("#g-temp-v").textContent = t === 0 ? "0 (greedy)" : t.toFixed(1);
+  $("#g-topp-v").textContent = +$("#g-topp").value >= 1 ? "off" : Number($("#g-topp").value).toFixed(2);
+  $("#g-minp-v").textContent = +$("#g-minp").value === 0 ? "off" : Number($("#g-minp").value).toFixed(2);
+  $("#g-rep-v").textContent = +$("#g-rep").value === 1 ? "off" : Number($("#g-rep").value).toFixed(2);
+  $("#g-freq-v").textContent = +$("#g-freq").value === 0 ? "off" : Number($("#g-freq").value).toFixed(1);
+  $("#g-pres-v").textContent = +$("#g-pres").value === 0 ? "off" : Number($("#g-pres").value).toFixed(1);
   $("#g-topk-v").textContent = $("#g-topk").value === "0" ? "off" : $("#g-topk").value;
   $("#g-len-v").textContent = `${$("#g-len").value} tokens`;
 }
@@ -894,6 +919,10 @@ function renderGenMetrics(m, live = false) {
       m.kv_bytes_per_token ? `${bytes(m.kv_bytes_per_token)} per token${m.recomputes ? ` · rebuilt ${fmt(m.recomputes)}×` : ""}` : ""),
     stat("Memory", m.weights_bytes ? bytes(m.weights_bytes) : "–", mem?.allocated != null ? `weights · ${bytes(mem.allocated)} in use on the GPU${mem.peak ? `, peak ${bytes(mem.peak)}` : ""}` : "weights"),
     stat("Average confidence", m.avg_prob != null ? `${Math.round(m.avg_prob * 100)}%` : "–", "model's probability for each chosen token"),
+    ...(m.avg_kept != null ? [
+      stat("Candidates per token", fmt(m.avg_kept), "tokens left after top-k / top-p / min-p, on average"),
+      stat("Repetition", m.repeated_4grams != null ? `${Math.round(m.repeated_4grams * 100)}%` : "–", m.distinct_2 != null ? `of 4-token runs repeat earlier ones · ${Math.round(m.distinct_2 * 100)}% distinct pairs` : "of 4-token runs repeat earlier ones"),
+    ] : []),
   ].join("");
 }
 
@@ -967,6 +996,67 @@ function drawBenchCharts(r) {
   ], { x0: 1, xLabel: "tokens generated", yLabel: "seconds", marks: marks.map((m) => ({ ...m, i: m.i + 1, label: "window full", shade: false })) });
   const saved = ca[ca.length - 1] - cb[cb.length - 1];
   $("#g-bench-saved").textContent = saved > 0 ? `cache saved ${saved.toFixed(2)} s (${Math.round((saved / ca[ca.length - 1]) * 100)}%)` : "no time saved on this run";
+}
+
+// ---------- sampling explorer: how the next token is picked ----------
+let distTimer = null, distSeq = 0;
+function refreshDist() {
+  if (!ui.status?.selection?.checkpoint) return;
+  clearTimeout(distTimer);
+  distTimer = setTimeout(async () => {
+    const seq = ++distSeq;
+    try {
+      const r = await api("/api/generate/distribution", { prompt: $("#g-prompt").value, ...samplingBody(), n: 16 });
+      if (seq === distSeq) renderDist(r);
+    } catch (e) { $("#sd-chart").innerHTML = `<p class="muted small">${esc(e.message)}</p>`; }
+  }, 250);
+}
+
+function renderDist(r) {
+  const max = Math.max(...r.rows.map((x) => Math.max(x.raw, x.final)), 1e-9);
+  const label = (t) => esc(JSON.stringify(t).slice(1, -1)).replace(/ /g, "␣");
+  $("#sd-summary").textContent = r.greedy ? "greedy: the top token is always picked"
+    : `${fmt(r.n_kept)} of ${fmt(r.vocab)} tokens kept · they held ${Math.round(r.kept_mass * 100)}% of the probability`;
+  $("#sd-chart").innerHTML = r.rows.map((x) => `
+    <div class="sd-row ${x.cut ? "cut" : ""}">
+      <code class="sd-tok" title="token id ${x.id}">${label(x.text)}</code>
+      <div class="sd-bars">
+        <div class="sd-bar raw" style="width:${(x.raw / max) * 100}%"></div>
+        <div class="sd-bar fin" style="width:${(x.final / max) * 100}%"></div>
+      </div>
+      <span class="sd-num">${(x.raw * 100).toFixed(1)}% → <b>${(x.final * 100).toFixed(1)}%</b></span>
+      <span class="sd-tag">${x.cut ? `cut by ${x.cut}` : ""}${x.seen ? `${x.cut ? " · " : ""}in context ×${x.seen}` : ""}</span>
+    </div>`).join("") +
+    `<p class="hint">Uncertainty (entropy): ${r.entropy_raw.toFixed(2)} nats for the model's own distribution, ${r.entropy_final.toFixed(2)} after sampling settings. Higher means more tokens are in play. <i>in context ×n</i> marks tokens the penalties push down.</p>`;
+}
+
+// ---------- compare sampling settings ----------
+function fillCompare() {
+  const opts = [["current", "Your settings (sliders above)"], ...Object.entries(SAMPLING_PRESETS).map(([k, p]) => [k, p.label])];
+  const defaults = ["greedy", "balanced", "wild"];
+  $$(".cmp-sel").forEach((s, i) => { if (!s.options.length) { s.innerHTML = opts.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join(""); s.value = defaults[i]; } });
+}
+
+async function runCompare() {
+  $("#cmp-busy").classList.remove("hidden");
+  try {
+    const keys = $$(".cmp-sel").map((s) => s.value);
+    const settings = keys.map((k) => (k === "current" ? samplingBody() : (({ label, ...p }) => p)(SAMPLING_PRESETS[k])));
+    const r = await api("/api/generate/compare", { prompt: $("#g-prompt").value, max_new_tokens: +$("#cmp-n").value, settings });
+    const names = $$(".cmp-sel").map((s) => s.options[s.selectedIndex].text);
+    $("#cmp-out").innerHTML = r.results.map((x, i) => `
+      <div class="cmp-col">
+        <div class="cmp-name">${"ABC"[i]} · ${esc(names[i])}</div>
+        <div class="doc cmp-text"><span class="prompt">${esc(r.prompt)}</span>${esc(x.text)}${x.stopped ? '<span class="story-end"> ⏹ end of text</span>' : ""}</div>
+        <div class="cmp-stats">
+          <span><b>${x.distinct_2 != null ? Math.round(x.distinct_2 * 100) + "%" : "–"}</b> distinct pairs</span>
+          <span><b>${x.repeated_4grams != null ? Math.round(x.repeated_4grams * 100) + "%" : "–"}</b> repeated 4-grams</span>
+          <span><b>${x.avg_prob != null ? Math.round(x.avg_prob * 100) + "%" : "–"}</b> avg confidence</span>
+          <span><b>${x.avg_kept ?? "–"}</b> candidates per token</span>
+          <span><b>${fmt(x.tokens)}</b> tokens · ${x.seconds} s</span>
+        </div>
+      </div>`).join("");
+  } finally { $("#cmp-busy").classList.add("hidden"); }
 }
 
 // ---------- KV cache: interactive diagram ----------
@@ -1090,7 +1180,7 @@ function drawLatency(ms) {
 }
 
 async function generate() {
-  const body = { prompt: $("#g-prompt").value, temperature: +$("#g-temp").value, top_k: +$("#g-topk").value, max_new_tokens: +$("#g-len").value, use_kv_cache: $("#g-kv").checked };
+  const body = { prompt: $("#g-prompt").value, ...samplingBody(), max_new_tokens: +$("#g-len").value, use_kv_cache: $("#g-kv").checked };
   const res = await fetch("/api/generate/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.detail || res.statusText); }
   // keep the previous output in the history
@@ -1124,7 +1214,7 @@ async function generate() {
         const alts = ev.alternatives.map((a) => `${JSON.stringify(a.text)} ${(a.prob * 100).toFixed(1)}%`).join("\n");
         const span = document.createElement("span");
         span.className = `gt ${confClass(ev.prob)}`;
-        span.title = `picked ${JSON.stringify(ev.text)} (${(ev.prob * 100).toFixed(1)}%)\nmodel's top choices:\n${alts}`;
+        span.title = `picked ${JSON.stringify(ev.text)} (${(ev.prob * 100).toFixed(1)}%), drawn from ${fmt(ev.kept)} candidate${ev.kept === 1 ? "" : "s"}\nmodel's top choices:\n${alts}`;
         // undertrained models emit long runs of blank lines: show at most one empty line in a row
         let shown = ev.text;
         if (/^\n+$/.test(shown)) { shown = "\n".repeat(Math.max(0, Math.min(shown.length, 2 - nlRun))); nlRun += ev.text.length; }
@@ -1210,7 +1300,10 @@ $("#t-start").addEventListener("click", (e) => {
 });
 $("#t-stop").addEventListener("click", (e) => action(e.target, () => api("/api/train/stop", {})));
 
-$$("#g-temp, #g-topk, #g-len").forEach((i) => i.addEventListener("input", syncSliders));
+$$("#g-temp, #g-topk, #g-len, #g-topp, #g-minp, #g-rep, #g-freq, #g-pres").forEach((i) => i.addEventListener("input", () => { syncSliders(); if (i.id !== "g-len") refreshDist(); }));
+$("#g-prompt").addEventListener("input", refreshDist);
+$("#cmp-run").addEventListener("click", (e) => action(e.target, runCompare));
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-spreset]"); if (b) setSampling(SAMPLING_PRESETS[b.dataset.spreset]); });
 $("#g-color").addEventListener("change", (e) => $("#g-text").classList.toggle("plain", !e.target.checked));
 $("#g-run").addEventListener("click", (e) => action(e.target, generate));
 $("#g-bench").addEventListener("click", (e) => action(e.target, runBenchmark));

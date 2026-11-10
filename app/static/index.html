@@ -379,16 +379,42 @@
         <div class="card">
           <label class="block">Prompt <textarea id="g-prompt" rows="2" spellcheck="false">The water cycle is the process by which</textarea></label>
           <div class="fields three sliders">
-            <label>Temperature <output id="g-temp-v"></output><input id="g-temp" type="range" min="0.1" max="2" step="0.1" value="0.8"></label>
+            <label>Temperature <output id="g-temp-v"></output><input id="g-temp" type="range" min="0" max="2" step="0.1" value="0.8"></label>
             <label>Top-k <output id="g-topk-v"></output><input id="g-topk" type="range" min="0" max="200" step="5" value="50"></label>
             <label>Length <output id="g-len-v"></output><input id="g-len" type="range" min="20" max="500" step="10" value="200"></label>
           </div>
-          <p class="hint">Lower temperature is safer and more repetitive, higher is more surprising. Top-k only picks among the k most likely next tokens (0 = no limit).</p>
+          <div class="fields three sliders">
+            <label>Top-p <output id="g-topp-v"></output><input id="g-topp" type="range" min="0.05" max="1" step="0.05" value="1"></label>
+            <label>Min-p <output id="g-minp-v"></output><input id="g-minp" type="range" min="0" max="0.3" step="0.01" value="0"></label>
+            <label>Repetition penalty <output id="g-rep-v"></output><input id="g-rep" type="range" min="1" max="2" step="0.05" value="1"></label>
+          </div>
+          <div class="fields three sliders">
+            <label>Frequency penalty <output id="g-freq-v"></output><input id="g-freq" type="range" min="0" max="2" step="0.1" value="0"></label>
+            <label>Presence penalty <output id="g-pres-v"></output><input id="g-pres" type="range" min="0" max="2" step="0.1" value="0"></label>
+            <div class="preset-chips"><span class="muted small">Presets</span>
+              <button class="chip-btn" data-spreset="greedy">Greedy</button><button class="chip-btn" data-spreset="balanced">Balanced</button><button class="chip-btn" data-spreset="creative">Creative</button><button class="chip-btn" data-spreset="reset">Reset</button>
+            </div>
+          </div>
+          <details class="hint sampling-help"><summary>What do these do?</summary>
+            <ul>
+              <li><b>Temperature</b> sharpens (below 1) or flattens (above 1) the model's probabilities before picking. At <b>0</b> it's <b>greedy</b>: always the single most likely token, so the same prompt always gives the same text.</li>
+              <li><b>Top-k</b> keeps only the k most likely tokens (0 = off).</li>
+              <li><b>Top-p</b> (nucleus sampling) keeps the smallest set of tokens whose probabilities add up to p. When the model is sure, that's a few tokens; when it's unsure, many (1 = off).</li>
+              <li><b>Min-p</b> drops tokens less likely than min-p × the top token's probability, so the cut-off follows the model's confidence (0 = off).</li>
+              <li><b>Repetition penalty</b> makes every token already in the context less likely (divides its score by the penalty). <b>Frequency penalty</b> grows with how many times a token has appeared; <b>presence penalty</b> is a flat cost for appearing at all. They're applied first, then temperature, top-k, top-p and min-p.</li>
+            </ul>
+          </details>
           <div class="actions">
             <button id="g-run" class="btn primary">Generate</button>
             <label class="switch"><input type="checkbox" id="g-kv" checked> Use KV cache</label>
             <label class="switch"><input type="checkbox" id="g-color" checked> Color tokens by confidence</label>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>How the next token is picked</h3><span id="sd-summary" class="muted small"></span></div>
+          <p class="muted small">The model's top candidates for the token after your prompt. The light bar is the model's own probability; the dark bar is the probability after the penalties, temperature and filters above, which is what the next token is actually drawn from. It updates as you move the sliders.</p>
+          <div id="sd-chart" class="sd-chart"></div>
         </div>
 
         <div id="g-live" class="hidden">
@@ -412,6 +438,22 @@
               </ol>
             </div>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Compare sampling settings</h3><span class="muted small">same prompt, same random seed</span></div>
+          <p class="muted small">Continue the prompt with up to three settings side by side. Watch for repetition (low <i>distinct pairs</i>, high <i>repeated 4-grams</i>) with greedy decoding, and for drifting off topic at high temperature.</p>
+          <div class="cmp-pick">
+            <label>A <select class="select cmp-sel"></select></label>
+            <label>B <select class="select cmp-sel"></select></label>
+            <label>C <select class="select cmp-sel"></select></label>
+          </div>
+          <div class="actions tight">
+            <label class="inline">Tokens <select id="cmp-n" class="select"><option>60</option><option selected>120</option><option>200</option></select></label>
+            <button id="cmp-run" class="btn">Compare</button>
+            <span id="cmp-busy" class="muted small hidden"><span class="spinner"></span> Generating…</span>
+          </div>
+          <div id="cmp-out" class="cmp-out"></div>
         </div>
 
         <div class="card">

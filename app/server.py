@@ -34,7 +34,8 @@ from catalog import DATASET_CATALOG  # noqa: E402
 from data import (DEFAULT_CONFIG, DEFAULT_DATASET, BatchLoader, SubsetNeeded, dataset_paths, get_dataset,  # noqa: E402
                   inspect_source, mix_paths, resolve_source, token_count)
 from inference import (attention_maps, benchmark_generation, device_memory, generate_stream,  # noqa: E402
-                       kv_bytes_per_token, load_model, load_model_config, next_token_probs, save_model_config)
+                       kv_bytes_per_token, load_model, load_model_config, next_token_probs, sampling_distribution,
+                       save_model_config)
 from model import GPT, GPTConfig, param_breakdown  # noqa: E402
 from pretrain import pretrain  # noqa: E402
 from tokenization import bin_files_exist, get_tokenizer, tokenize_and_save  # noqa: E402
@@ -261,12 +262,41 @@ class InspectReq(BaseModel):
     layer: int = 0
 
 
-class GenerateReq(BaseModel):
+class SamplingReq(BaseModel):
+    temperature: float = 0.8          # 0 = greedy (always the most likely token)
+    top_k: int = 50                   # 0 = off
+    top_p: float = 1.0                # 1 = off
+    min_p: float = 0.0                # 0 = off
+    repetition_penalty: float = 1.0   # 1 = off
+    frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
+
+    def clean(self):
+        """(temperature, top_k, extras for generate_stream), each clamped to a sensible range."""
+        t = 0.0 if self.temperature <= 0.001 else max(0.05, min(self.temperature, 3.0))
+        extras = {"top_p": max(0.01, min(self.top_p, 1.0)), "min_p": max(0.0, min(self.min_p, 1.0)),
+                  "repetition_penalty": max(1.0, min(self.repetition_penalty, 3.0)),
+                  "frequency_penalty": max(0.0, min(self.frequency_penalty, 2.0)),
+                  "presence_penalty": max(0.0, min(self.presence_penalty, 2.0))}
+        return t, (self.top_k if self.top_k > 0 else None), extras
+
+
+class GenerateReq(SamplingReq):
     prompt: str = "Once upon a time"
     max_new_tokens: int = 200
-    temperature: float = 0.8
-    top_k: int = 50
     use_kv_cache: bool = True
+
+
+class DistributionReq(SamplingReq):
+    prompt: str = "The water cycle is the process by which"
+    n: int = 24
+
+
+class CompareReq(BaseModel):
+    prompt: str = "The water cycle is the process by which"
+    max_new_tokens: int = 120
+    seed: int = 1234
+    settings: List[SamplingReq]
 
 
 class BenchmarkReq(BaseModel):
@@ -606,8 +636,7 @@ def generate_stream_endpoint(req: GenerateReq):
         raise HTTPException(400, "Type a prompt first.")
     block = model.config.block_size
     max_new = max(1, min(req.max_new_tokens, 1000))
-    temperature = max(0.05, min(req.temperature, 3.0))
-    top_k = req.top_k if req.top_k > 0 else None
+    temperature, top_k, extras = req.clean()
 
     def line(obj):
         return json.dumps(obj) + "\n"
@@ -617,14 +646,15 @@ def generate_stream_endpoint(req: GenerateReq):
         yield line({"type": "start", "prompt_tokens": len(ids), "context_window": block,
                     "prompt_truncated": len(ids) > block, "params": n_params, "device": S.dev.device,
                     "use_kv_cache": req.use_kv_cache})
-        out, times, probs, stats = [], [], [], {}
+        out, times, probs, kept, stats = [], [], [], [], {}
         for ev in generate_stream(model, ids, S.dev.device, max_new, temperature, top_k,
-                                  use_kv_cache=req.use_kv_cache, stats=stats, stop_token=S.enc.eot_token):
+                                  use_kv_cache=req.use_kv_cache, stats=stats, stop_token=S.enc.eot_token, sampling=extras):
             out.append(ev["id"])
             times.append(ev["ms"])
             probs.append(ev["prob"])
+            kept.append(ev["kept"])
             yield line({"type": "token", "text": S.enc.decode([ev["id"]]), "id": ev["id"], "prob": round(ev["prob"], 4),
-                        "ms": round(ev["ms"], 1),
+                        "ms": round(ev["ms"], 1), "kept": ev["kept"],
                         "alternatives": [{"text": S.enc.decode([i]), "prob": p} for i, p in ev["alternatives"]]})
         if not out:  # the model ended the story straight away
             yield line({"type": "done", "completion": "", "prompt_tokens": len(ids), "output_tokens": 0,
@@ -642,12 +672,83 @@ def generate_stream_endpoint(req: GenerateReq):
                     "token_ms": [round(b - a, 1) for a, b in zip([0.0] + times[:-1], times)],
                     "avg_prob": round(sum(probs) / len(probs), 4),
                     "prefill_tokens_per_sec": round(min(len(ids), block) / (first_ms / 1000), 1) if first_ms > 0 else None,
+                    "avg_kept": round(sum(kept) / len(kept), 1), **repetition_stats(out),
                     "use_kv_cache": req.use_kv_cache, "kv_cache_bytes": stats.get("kv_cache_bytes", 0),
                     "kv_bytes_per_token": kv_bytes_per_token(model.config), "recomputes": stats.get("recomputes", 0),
                     "weights_bytes": n_params * 4, "memory": device_memory(S.dev.device),
                     "stopped": stats.get("stopped", False)})
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+def repetition_stats(ids):
+    """How repetitive a generation is: share of distinct word pairs, and share of 4-token runs seen before."""
+    pairs = list(zip(ids, ids[1:]))
+    grams = [tuple(ids[i:i + 4]) for i in range(len(ids) - 3)]
+    seen, repeats = set(), 0
+    for g in grams:
+        repeats += g in seen
+        seen.add(g)
+    return {"distinct_2": round(len(set(pairs)) / len(pairs), 3) if pairs else None,
+            "repeated_4grams": round(repeats / len(grams), 3) if grams else None}
+
+
+@app.post("/api/generate/distribution")
+def generate_distribution(req: DistributionReq):
+    """The model's next-token distribution for a prompt, step by step through penalties and the sampling filters."""
+    require_datasets()
+    if training_running():
+        raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
+    model, _ = inference_model()
+    ids = S.enc.encode_ordinary(req.prompt[:4000])[-model.config.block_size:]
+    if not ids:
+        raise HTTPException(400, "Type a prompt first.")
+    temperature, top_k, extras = req.clean()
+    with torch.no_grad():
+        x = torch.tensor(ids, dtype=torch.long, device=S.dev.device).unsqueeze(0)
+        logits, _ = model(x)
+        st = sampling_distribution(logits[0, -1], x[0], temperature, top_k, stages=True, **extras)
+    n = max(5, min(req.n, 60))
+    order = torch.topk(st["raw"], n).indices.tolist()
+    order += [i for i in torch.topk(st["final"], n).indices.tolist() if i not in order and st["final"][i] > 0][:10]
+    ent = lambda p: float(-(p[p > 0] * p[p > 0].log()).sum())  # noqa: E731
+    rows = []
+    for i in order:
+        cut = ("greedy" if st["greedy"] else "top-k") if st["cut_k"][i] else "top-p" if st["cut_p"][i] else "min-p" if st["cut_min"][i] else None
+        rows.append({"id": i, "text": S.enc.decode([i]), "raw": round(float(st["raw"][i]), 5),
+                     "penalized": round(float(st["penalized"][i]), 5), "scaled": round(float(st["scaled"][i]), 5),
+                     "final": round(float(st["final"][i]), 5), "cut": cut, "seen": int(st["counts"][i])})
+    return {"rows": rows, "n_kept": st["n_kept"], "vocab": int(st["raw"].numel()), "kept_mass": round(st["kept_mass"], 4),
+            "entropy_raw": round(ent(st["raw"]), 3), "entropy_final": round(ent(st["final"]), 3),
+            "prompt_tokens": len(ids), "greedy": st["greedy"]}
+
+
+@app.post("/api/generate/compare")
+def generate_compare(req: CompareReq):
+    """Continue the same prompt with up to four sampling settings (same seed) and compare the results."""
+    require_datasets()
+    if training_running():
+        raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
+    model, _ = inference_model()
+    ids = S.enc.encode_ordinary(req.prompt[:2000])
+    if not ids:
+        raise HTTPException(400, "Type a prompt first.")
+    n = max(10, min(req.max_new_tokens, 400))
+    results = []
+    for s in req.settings[:4]:
+        temperature, top_k, extras = s.clean()
+        torch.manual_seed(req.seed)
+        out, probs, kept, stats, t0 = [], [], [], {}, time.time()
+        for ev in generate_stream(model, ids, S.dev.device, n, temperature, top_k, stats=stats,
+                                  stop_token=S.enc.eot_token, sampling=extras):
+            out.append(ev["id"])
+            probs.append(ev["prob"])
+            kept.append(ev["kept"])
+        results.append({"text": S.enc.decode(out), "tokens": len(out), "stopped": stats.get("stopped", False),
+                        "avg_prob": round(sum(probs) / len(probs), 4) if probs else None,
+                        "avg_kept": round(sum(kept) / len(kept), 1) if kept else None,
+                        "seconds": round(time.time() - t0, 2), **repetition_stats(out)})
+    return {"prompt": req.prompt, "results": results}
 
 
 @app.post("/api/generate/benchmark")
