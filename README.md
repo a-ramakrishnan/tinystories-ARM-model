@@ -471,7 +471,8 @@ On a GPU the notebook also shows:
   size, rebuilds once the window is full, GPU memory);
 - **Step 10**: everything packaged into `tinystories-run-<dataset>-<date>.zip`.
 
-CUDA GPUs train with mixed precision (bfloat16 where supported, float16 otherwise).
+CUDA GPUs train with mixed precision: bfloat16 on GPUs with native support (compute capability 8.0+, such
+as A100 and L4), float16 with a gradient scaler otherwise (such as the T4).
 
 ### Google Colab
 
@@ -483,9 +484,41 @@ CUDA GPUs train with mixed precision (bfloat16 where supported, float16 otherwis
 5. Step 10 downloads the results zip to your computer (allow the download if the browser asks). It's also
    in the Files panel.
 
-Free Colab sessions can disconnect when idle or when usage limits are reached, and files in `/content` are
-lost when they do. Tokenizing all of TinyStories on Colab's small CPUs also takes a while on the first run
-of each session.
+Things to know on Colab:
+
+- **"This notebook was not authored by Google".** Colab shows this warning for any notebook opened from
+  GitHub. The notebook doesn't mount Google Drive or ask for your Google data; choose *Run anyway*.
+- **Running everything except the download.** To run the whole notebook but decide later whether to download
+  the zip, select the Step 10 cell and use *Runtime → Run before*. Run Step 10 when you're ready.
+- **Changing code mid-session.** Step 0 runs `git pull` when the repository is already cloned. After pulling
+  new code, use *Runtime → Restart session* (files in `/content` are kept) so Python loads it.
+- **Precision.** GPUs with native bfloat16 (compute capability 8.0+: A100, L4) train in bfloat16. Older GPUs
+  such as the T4 train in float16 with a gradient scaler: the T4 reports bfloat16 as supported, but only
+  through slow emulation (1.4 s per step for the Large model, versus about 3.9 steps per second in float16).
+- **Sessions.** Free Colab sessions can disconnect when idle or when usage limits are reached, and files in
+  `/content` are lost when they do. On Colab Pro, GPU time uses compute units.
+
+### Measured on a Colab T4
+
+A real run of this notebook on Colab's free-tier **Tesla T4** (15.6 GB): TinyStories, the **Large** model
+(123,751,680 parameters) and the *Quick* preset (2,000 steps).
+
+| Stage | Time |
+|---|---|
+| Clone, install and download TinyStories | about 2 minutes |
+| Tokenize 2.1 million stories (2 CPU processes) | about 5 minutes |
+| Write `train.bin` and `validation.bin` | seconds (it took 16 minutes before the write was rewritten to use Arrow chunks) |
+| Train 2,000 steps | **11.2 minutes** |
+
+| Result | Value |
+|---|---|
+| Training speed | 3.9 steps/s, **12,202 tokens/s** (including evaluations) |
+| Optimizer updates × parameters | 250 × 123,751,680 = **30.9 billion parameter updates** |
+| Peak GPU memory | **7.03 GB** of 15.6 GB |
+| Best validation loss | **4.527** (the Small model on an M5 reaches 4.61 after the same 2,000 steps) |
+| Training tokens | 471,872,517 (identical to the Mac's `train.bin`) |
+
+![Training output on a Colab T4: 2,000 steps in 11.2 minutes, 12,202 tokens/s, 7.03 GB peak GPU memory](docs/screenshots/colab-training.png)
 
 ### Kaggle
 
