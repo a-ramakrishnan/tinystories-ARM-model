@@ -1,6 +1,7 @@
 # Tokenization: GPT-2 BPE via tiktoken, written to train.bin / validation.bin
 # Some functions from https://github.com/karpathy/nanoGPT/blob/master/data/openwebtext/prepare.py
 
+import json
 import os
 
 import numpy as np
@@ -9,6 +10,12 @@ from tqdm.auto import tqdm
 
 # Module-level so worker processes (num_proc > 1) can rebuild it on import
 _ENC = tiktoken.get_encoding("gpt2")
+EOT = _ENC.eot_token  # <|endoftext|> (id 50256): marks where one document ends and the next begins
+
+# Bumped when the token files change meaning. Format 2 puts <|endoftext|> after every document;
+# older files (no separators) are re-tokenized automatically.
+TOKEN_FORMAT = 2
+META_FILE = "tokens.json"
 
 
 def get_tokenizer():
@@ -17,12 +24,21 @@ def get_tokenizer():
 
 
 def bin_files_exist(data_dir):
-    """True if both tokenized splits are already on disk."""
-    return all(os.path.exists(os.path.join(data_dir, f)) for f in ("train.bin", "validation.bin"))
+    """True if both tokenized splits are on disk in the current format."""
+    if not all(os.path.exists(os.path.join(data_dir, f)) for f in ("train.bin", "validation.bin")):
+        return False
+    try:
+        with open(os.path.join(data_dir, META_FILE)) as f:
+            return json.load(f).get("format", 1) >= TOKEN_FORMAT
+    except (OSError, ValueError):
+        return False  # token files from before separators were added
 
 
 def process(example):
-    ids = _ENC.encode_ordinary(example["text"])  # encode_ordinary ignores any special tokens
+    # encode_ordinary ignores special tokens inside the text; then end the document with <|endoftext|>,
+    # so the model learns where stories end and training windows that cross documents see a boundary
+    ids = _ENC.encode_ordinary(example["text"])
+    ids.append(EOT)
     return {"ids": ids, "len": len(ids)}
 
 
@@ -72,3 +88,5 @@ def tokenize_and_save(ds, data_dir, num_proc=8, total_batches=1024, progress=Non
         arr.flush()
         del arr
         os.replace(filename + ".tmp", filename)
+    with open(os.path.join(data_dir, META_FILE), "w") as f:
+        json.dump({"format": TOKEN_FORMAT, "tokenizer": "gpt2", "eot_between_documents": True}, f)

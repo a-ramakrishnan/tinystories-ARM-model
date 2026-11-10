@@ -544,3 +544,4 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; font-size: 1
   .panel-head h1 { font-size: 23px; }
   main { padding: 20px 16px 48px; }
 }
+.story-end { color: var(--muted); font-size: 12px; font-style: italic; }

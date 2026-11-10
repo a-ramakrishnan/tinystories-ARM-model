@@ -8,18 +8,18 @@ import torch
 
 @dataclass
 class TrainConfig:
-    learning_rate: float = 1e-4             # more stable training, earlier 1e-4
-    min_lr: float = 1e-5                    # cosine decays down to this; must be below learning_rate
-    max_iters: int = 20000                  # increase from 25000
-    warmup_steps: int = 1000                # smoother initial train, earlier 100
-    eval_interval: int = 500                # evaluate every N iterations
-    eval_iters: int = 500                   # batches per evaluation, increased from 100
-    batch_size: int = 32                    # changed from 16, better gradient estimate
-    gradient_accumulation_steps: int = 32   # reduced from 50
+    learning_rate: float = 6e-4             # peak learning rate (as in nanoGPT); 1e-4 learned far too slowly
+    min_lr: float = 6e-5                    # cosine decays down to this (a tenth of the peak)
+    max_iters: int = 20000                  # training steps
+    warmup_steps: int = 1000                # linear warmup before the cosine decay
+    eval_interval: int = 1000               # evaluate every N steps
+    eval_iters: int = 100                   # batches per evaluation
+    batch_size: int = 32                    # sequences per batch
+    gradient_accumulation_steps: int = 1    # update the weights every step (32 meant only 625 updates in 20,000 steps)
     weight_decay: float = 0.1               # weight decay for regularization
-    betas: tuple = (0.9, 0.95)              # changed beta2 to 0.95
+    betas: tuple = (0.9, 0.95)              # beta2 0.95, as in GPT-style training
     eps: float = 1e-9
-    grad_clip: float = 0.5
+    grad_clip: float = 1.0
     best_model_path: str = "best_model_params.pt"
     seed: int = 42
 

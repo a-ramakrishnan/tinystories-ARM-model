@@ -24,8 +24,8 @@ const STEPS = [
 ];
 
 const TRAIN_PRESETS = {
-  quick: { max_iters: 2000, learning_rate: 1e-4, min_lr: 1e-5, warmup_steps: 200, eval_interval: 250, eval_iters: 50, gradient_accumulation_steps: 8 },
-  full: { max_iters: 20000, learning_rate: 1e-4, min_lr: 1e-5, warmup_steps: 1000, eval_interval: 500, eval_iters: 500, gradient_accumulation_steps: 32 },
+  quick: { max_iters: 2000, learning_rate: 6e-4, min_lr: 6e-5, warmup_steps: 200, eval_interval: 250, eval_iters: 50, gradient_accumulation_steps: 1 },
+  full: { max_iters: 20000, learning_rate: 6e-4, min_lr: 6e-5, warmup_steps: 1000, eval_interval: 1000, eval_iters: 100, gradient_accumulation_steps: 1 },
 };
 const TRAIN_FIELDS = Object.keys(TRAIN_PRESETS.quick);
 
@@ -373,7 +373,7 @@ const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head"
 function setModelFields(c) {
   $("#m-layer").value = c.n_layer; $("#m-head").value = c.n_head; $("#m-embd").value = c.n_embd;
   if (c.dropout != null) $("#m-drop").value = c.dropout;
-  else if (!$("#m-drop").value) $("#m-drop").value = 0.1;
+  else if (!$("#m-drop").value) $("#m-drop").value = 0;
   renderEstimate();
 }
 
@@ -972,7 +972,8 @@ async function generate() {
         if (count === 1 || count % 5 === 0) renderGenMetrics({ ...meta, output_tokens: count, ttft_ms: count === 1 ? ev.ms : undefined, total_ms: ev.ms, avg_prob: probSum / count }, true);
       } else if (ev.type === "done") {
         renderGenMetrics({ ...meta, ...ev });
-        drawLatency(ev.token_ms);
+        if (ev.token_ms.length) drawLatency(ev.token_ms);
+        if (ev.stopped) { const end = document.createElement("span"); end.className = "story-end"; end.textContent = " ⏹ end of story"; out.appendChild(end); }
         ui.lastGen = out.innerHTML;
         ui.generated = true;
       }

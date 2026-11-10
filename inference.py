@@ -35,7 +35,11 @@ def generate_text(model, enc, prompt, device, max_new_tokens=200, temperature=1.
     """Continue `prompt` with up to `max_new_tokens` tokens and return the decoded text."""
     context = torch.tensor(enc.encode_ordinary(prompt), dtype=torch.long, device=device).unsqueeze(0)
     out = model.generate(context, max_new_tokens, temperature=temperature, top_k=top_k)
-    return enc.decode(out[0].tolist())
+    ids = out[0].tolist()
+    new = ids[context.size(1):]
+    if enc.eot_token in new:  # the story ended: drop <|endoftext|> and anything after it
+        ids = ids[:context.size(1) + new.index(enc.eot_token)]
+    return enc.decode(ids)
 
 
 def kv_cache_bytes(caches):
@@ -70,8 +74,10 @@ def _sync(device):
 
 @torch.no_grad()
 def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1.0, top_k=None, n_alternatives=5,
-                    use_kv_cache=True, stats=None):
+                    use_kv_cache=True, stats=None, stop_token=None):
     """Like GPT.generate, but yields each new token as soon as it's chosen, with timing and probabilities.
+
+    stop_token: stop when the model picks this token (e.g. <|endoftext|>, the end of a story); it isn't yielded.
 
     Yields dicts: {"id", "prob", "alternatives": [(id, prob), ...], "ms"} where `prob` is the model's own
     probability for the chosen token (before temperature / top-k), and `ms` is the time since the start.
@@ -109,6 +115,10 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
         idx_next = torch.multinomial(F.softmax(scaled, dim=-1), num_samples=1)
         alt_p, alt_i = torch.topk(raw[0], n_alternatives)
         token = int(idx_next.item())  # .item() waits for the GPU, so the timing below is real
+        if stop_token is not None and token == stop_token:
+            if stats is not None:
+                stats["stopped"] = True
+            return
         if stats is not None:
             stats.update(kv_cache_bytes=kv_cache_bytes(caches) if caches else 0, cache_tokens=cache_len if caches else 0,
                          recomputes=recomputes)

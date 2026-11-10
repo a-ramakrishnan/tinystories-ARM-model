@@ -70,7 +70,7 @@ class State:
         self.memory = system_memory()
         self.datasets = {}             # root path -> {name, config_name, text_column, paths, ds, was_local}
         self.mix_mode = "size"         # how batches are drawn from several datasets: "size" or "equal"
-        self.batch = {"block_size": 128, "batch_size": 32, "seed": 42}
+        self.batch = {"block_size": 256, "batch_size": 32, "seed": 42}
         self.model_config = None
         self.model = None
         self.job = {"kind": None, "status": "idle", "message": "", "progress": None, "error": None}
@@ -234,7 +234,7 @@ class TextsReq(BaseModel):
 
 
 class BatchReq(BaseModel):
-    block_size: int = 128
+    block_size: int = 256
     batch_size: int = 32
     seed: int = 42
 
@@ -243,17 +243,17 @@ class ModelReq(BaseModel):
     n_layer: int = 6
     n_head: int = 6
     n_embd: int = 384
-    dropout: float = 0.1
+    dropout: float = 0.0
 
 
 class TrainReq(BaseModel):
     max_iters: int = 2000
-    learning_rate: float = 1e-4
-    min_lr: float = 1e-5
+    learning_rate: float = 6e-4
+    min_lr: float = 6e-5
     warmup_steps: int = 200
     eval_interval: int = 250
     eval_iters: int = 50
-    gradient_accumulation_steps: int = 8
+    gradient_accumulation_steps: int = 1
 
 
 class InspectReq(BaseModel):
@@ -616,13 +616,18 @@ def generate_stream_endpoint(req: GenerateReq):
                     "use_kv_cache": req.use_kv_cache})
         out, times, probs, stats = [], [], [], {}
         for ev in generate_stream(model, ids, S.dev.device, max_new, temperature, top_k,
-                                  use_kv_cache=req.use_kv_cache, stats=stats):
+                                  use_kv_cache=req.use_kv_cache, stats=stats, stop_token=S.enc.eot_token):
             out.append(ev["id"])
             times.append(ev["ms"])
             probs.append(ev["prob"])
             yield line({"type": "token", "text": S.enc.decode([ev["id"]]), "id": ev["id"], "prob": round(ev["prob"], 4),
                         "ms": round(ev["ms"], 1),
                         "alternatives": [{"text": S.enc.decode([i]), "prob": p} for i, p in ev["alternatives"]]})
+        if not out:  # the model ended the story straight away
+            yield line({"type": "done", "completion": "", "prompt_tokens": len(ids), "output_tokens": 0,
+                        "total_tokens": len(ids), "context_window": block, "stopped": True, "token_ms": [],
+                        "use_kv_cache": req.use_kv_cache, "memory": device_memory(S.dev.device)})
+            return
         total_ms, first_ms = times[-1], times[0]
         decode_ms = total_ms - first_ms
         yield line({"type": "done", "completion": S.enc.decode(out), "prompt_tokens": len(ids),
@@ -636,7 +641,8 @@ def generate_stream_endpoint(req: GenerateReq):
                     "prefill_tokens_per_sec": round(min(len(ids), block) / (first_ms / 1000), 1) if first_ms > 0 else None,
                     "use_kv_cache": req.use_kv_cache, "kv_cache_bytes": stats.get("kv_cache_bytes", 0),
                     "kv_bytes_per_token": kv_bytes_per_token(model.config), "recomputes": stats.get("recomputes", 0),
-                    "weights_bytes": n_params * 4, "memory": device_memory(S.dev.device)})
+                    "weights_bytes": n_params * 4, "memory": device_memory(S.dev.device),
+                    "stopped": stats.get("stopped", False)})
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
 

@@ -289,17 +289,17 @@ data/
 
 ## How many parameters?
 
-The default (Small) model has **29,995,392** parameters. The web app shows this table for whatever size you
-build:
+The default (Small) model, with its 256-token context window, has **30,044,544** parameters. The web app
+shows this table for whatever size you build:
 
 | Part | Formula | Small model |
 |---|---|---|
 | Token embeddings | `vocab_size × n_embd` | 50,257 × 384 = 19,298,688 |
-| Position embeddings | `block_size × n_embd` | 128 × 384 = 49,152 |
+| Position embeddings | `block_size × n_embd` | 256 × 384 = 98,304 |
 | Transformer blocks | `n_layer × (12·n_embd² + 13·n_embd)` | 6 × 1,774,464 = 10,646,784 |
 | Final LayerNorm | `2 × n_embd` | 768 |
 | Output layer | shares the token embeddings (weight tying) | 0 |
-| **Total** | | **29,995,392** |
+| **Total** | | **30,044,544** |
 
 Inside each block: query/key/value projection `n_embd × 3·n_embd + 3·n_embd`, attention output
 `n_embd² + n_embd`, feed-forward expand `n_embd × 4·n_embd + 4·n_embd`, feed-forward project back
@@ -313,13 +313,34 @@ parameters**: the heads split the embedding into smaller pieces (`n_embd / n_hea
 
 | Preset | Layers | Heads | Embedding | Parameters | Memory to train* |
 |---|---|---|---|---|---|
-| Tiny | 4 | 4 | 256 | 16,058,112 | 0.26 GB |
-| Small (default) | 6 | 6 | 384 | 29,995,392 | 0.48 GB |
-| Medium | 8 | 8 | 512 | 51,017,216 | 0.82 GB |
-| Large (GPT-2 small size) | 12 | 12 | 768 | 123,751,680 | 1.98 GB |
+| Tiny | 4 | 4 | 256 | 16,090,880 | 0.26 GB |
+| Small (default) | 6 | 6 | 384 | 30,044,544 | 0.48 GB |
+| Medium | 8 | 8 | 512 | 51,082,752 | 0.82 GB |
+| Large (GPT-2 small size) | 12 | 12 | 768 | 123,849,984 | 1.98 GB |
 
-\*Weights, gradients and AdamW state at 16 bytes per parameter, plus activations. Any combination up to 48
+Counts are for the default 256-token context window; the position table adds `block_size × n_embd`, so a
+128-token window has slightly fewer (e.g. 29,995,392 for Small). \*Weights, gradients and AdamW state at
+16 bytes per parameter, plus activations. Any combination up to 48
 layers, 32 heads and an embedding size of 2,048 can be set by hand, as long as it fits in memory.
+
+## Getting better stories
+
+The first versions of this project produced stories like *"She was a big house. She wanted to go to a big
+her mommy"*: grammatical fragments that never hold together. The model wasn't broken; it was badly
+undertrained, and a few settings made every step count for much less than it should. These changes fixed it:
+
+| Change | Before | Now | Why it matters |
+|---|---|---|---|
+| Separator between stories | none | `<|endoftext|>` after every story | Without it, stories ran straight into each other, so the model never learned where one ends and training windows spliced unrelated stories together. |
+| Learning rate | `1e-4` → `1e-5` | `6e-4` → `6e-5` | `1e-4` is too low for small GPTs; nanoGPT uses `6e-4` for the 124M GPT-2. |
+| Gradient accumulation | 8 (Quick), 32 (Full) | 1 | With accumulation, 2,000 steps gave only 250 weight updates (625 for 20,000). Now every step is an update. |
+| Context window | 128 tokens | 256 tokens | Many stories are longer than 128 tokens, so the model couldn't see the beginning of the story it was writing. |
+| Dropout | 0.1 | 0.0 | Train and validation loss were equal: the model was underfitting, not memorizing, so dropout only slowed it down. |
+| Gradient clipping | 0.5 | 1.0 | The usual setting; 0.5 clipped normal updates. |
+| Generation | ran to the length limit | stops at `<|endoftext|>` | A finished story ends instead of starting a new one mid-sentence. |
+
+Token files made before the separator was added are detected (they have no `tokens.json`) and re-tokenized
+automatically the next time a dataset is used.
 
 ## Training: what gets updated
 
@@ -327,9 +348,9 @@ Each step runs a batch forward, measures the loss (the average of `−ln(p)`, wh
 the model gave the correct next token), and computes gradients. Every `gradient_accumulation_steps` steps,
 AdamW updates **every parameter**. The app shows, live and for every past run:
 
-- **Optimizer updates**: `steps ÷ gradient_accumulation_steps` (the *Quick* preset: 2,000 ÷ 8 = 250).
-- **Parameters updated**: `parameters × updates` (Small, *Quick*: 29,995,392 × 250 ≈ 7.5 billion).
-- **Tokens processed**: `steps × batch_size × block_size` (*Quick*: 2,000 × 32 × 128 ≈ 8.2 million).
+- **Optimizer updates**: `steps ÷ gradient_accumulation_steps` (the *Quick* preset: 2,000 ÷ 1 = 2,000).
+- **Parameters updated**: `parameters × updates` (Small, *Quick*: 30,044,544 × 2,000 ≈ 60 billion).
+- **Tokens processed**: `steps × batch_size × block_size` (*Quick*: 2,000 × 32 × 256 ≈ 16.4 million).
 
 Every run is appended to `runs.jsonl` in the model's folder and listed in the Train step's history table.
 The command line prints the same summary at the end of a run.
@@ -404,11 +425,11 @@ docs/screenshots/          Screenshots used in this README
 ```python
 config = GPTConfig(
     vocab_size=50257,   # GPT-2 tokenizer
-    block_size=128,     # context window (tokens)
+    block_size=256,     # context window (tokens)
     n_layer=6,          # transformer blocks
     n_head=6,           # attention heads per block
     n_embd=384,         # embedding size
-    dropout=0.1,
+    dropout=0.0,
     bias=True
 )
 ```
@@ -418,18 +439,19 @@ config = GPTConfig(
 | Setting | Default | Meaning |
 |---|---|---|
 | `max_iters` | 20000 | Training steps |
-| `learning_rate` | 1e-4 | Peak learning rate |
-| `min_lr` | 1e-5 | Learning rate at the end of the cosine decay |
+| `learning_rate` | 6e-4 | Peak learning rate |
+| `min_lr` | 6e-5 | Learning rate at the end of the cosine decay |
 | `warmup_steps` | 1000 | Steps of linear warmup |
 | `batch_size` | 32 | Sequences per batch |
-| `gradient_accumulation_steps` | 32 | Batches averaged per optimizer update |
-| `eval_interval` | 500 | Evaluate every N steps |
-| `eval_iters` | 500 | Batches per evaluation |
+| `gradient_accumulation_steps` | 1 | Batches averaged per optimizer update (1 = update every step) |
+| `eval_interval` | 1000 | Evaluate every N steps |
+| `eval_iters` | 100 | Batches per evaluation |
 | `weight_decay` | 0.1 | AdamW weight decay |
-| `grad_clip` | 0.5 | Gradient norm clipping |
+| `grad_clip` | 1.0 | Gradient norm clipping |
 
-The web app's *Quick* preset uses 2,000 steps, 200 warmup, evaluation every 250 steps over 50 batches, and
-gradient accumulation of 8. *Full* uses the defaults above.
+The web app's *Quick* preset uses 2,000 steps, 200 warmup, and evaluation every 250 steps over 50 batches,
+with the same learning rate and no gradient accumulation. *Full* uses the defaults above. See
+[Getting better stories](#getting-better-stories) for why these settings replaced the original ones.
 
 ## Generating text from a trained model
 

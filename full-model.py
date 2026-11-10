@@ -39,11 +39,11 @@ DATA_ROOT = os.path.join(PROJECT_DIR, "data")  # one folder per dataset (git-ign
 # Model config
 config = GPTConfig(
     vocab_size=50257,     # use the tokenizer's vocab size
-    block_size=128,       # context window; also the length of each training sample
+    block_size=256,       # context window; also the length of each training sample (fits most stories)
     n_layer=6,
     n_head=6,
     n_embd=384,
-    dropout=0.1,
+    dropout=0.0,          # no dropout: with this much data the model underfits rather than memorizes
     bias=True
 )
 
