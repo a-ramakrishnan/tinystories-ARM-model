@@ -517,8 +517,30 @@ A real run of this notebook on Colab's free-tier **Tesla T4** (15.6 GB): TinySto
 | Peak GPU memory | **7.03 GB** of 15.6 GB |
 | Best validation loss | **4.527** (the Small model on an M5 reaches 4.61 after the same 2,000 steps) |
 | Training tokens | 471,872,517 (identical to the Mac's `train.bin`) |
+| Results zip | 495 MB (almost all of it the weights) |
 
-![Training output on a Colab T4: 2,000 steps in 11.2 minutes, 12,202 tokens/s, 7.03 GB peak GPU memory](docs/screenshots/colab-training.png)
+| Training output | Loss curves (from the results zip) |
+|---|---|
+| ![Training output on a Colab T4: 2,000 steps in 11.2 minutes, 12,202 tokens/s, 7.03 GB peak GPU memory](docs/screenshots/colab-training.png) | ![Training and validation loss for the Large model on a T4](docs/screenshots/colab-loss.png) |
+
+**Inference on the T4** (Step 9, the same text generated with and without the KV cache):
+
+| Tokens | Without cache | With KV cache | Ratio | Cache rebuilds |
+|---|---|---|---|---|
+| 25 | 145 tok/s | 149 tok/s | 1.02× | 0 |
+| 60 | 145 tok/s | 147 tok/s | 1.01× | 0 |
+| 110 | 123 tok/s | 111 tok/s | 0.90× | 0 |
+| 250 | 108 tok/s | 114 tok/s | 1.06× | 131 |
+
+On the T4 the cache made no real difference for this model: the GPU is fast enough that each step is
+dominated by Python and kernel-launch overhead rather than by the attention arithmetic the cache saves. Both
+ways produced exactly the same text.
+
+**Back on the Mac.** The zip was imported with `import_run.py`, and the web app now uses the Large model.
+Its training history shows the T4 run, and it generates on the M5 at about 58 tokens per second with an
+average confidence of 19% (the 30M Small model from the Mac scores about 14%). Using the built-in browser
+of the Claude desktop app, the download landed in the project folder rather than `~/Downloads`; result
+zips are git-ignored wherever they land.
 
 ### Kaggle
 
