@@ -174,6 +174,7 @@ function renderJobs(j) {
 
 function fillInputs(s) {
   $("#ds-name").value = s.default_dataset;
+  $("#ds-config").value = s.default_config || "";
   $("#b-block").value = s.batch.block_size;
   $("#b-batch").value = s.batch.batch_size;
   $("#b-seed").value = s.batch.seed;

@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 from catalog import DATASET_CATALOG  # noqa: E402
-from data import (DEFAULT_DATASET, BatchLoader, SubsetNeeded, dataset_paths, get_dataset,  # noqa: E402
+from data import (DEFAULT_CONFIG, DEFAULT_DATASET, BatchLoader, SubsetNeeded, dataset_paths, get_dataset,  # noqa: E402
                   inspect_source, mix_paths, resolve_source, token_count)
 from inference import (attention_maps, benchmark_generation, device_memory, generate_stream,  # noqa: E402
                        kv_bytes_per_token, load_model, load_model_config, next_token_probs, save_model_config)
@@ -213,7 +213,7 @@ def inference_model(allow_untrained=False):
 
 class DatasetReq(BaseModel):
     name: str = DEFAULT_DATASET
-    config_name: Optional[str] = None
+    config_name: Optional[str] = DEFAULT_CONFIG
     text_column: str = "text"
 
 
@@ -280,7 +280,7 @@ class BenchmarkReq(BaseModel):
 def status():
     return {
         "device": S.dev.device, "dtype": S.dev.dtype, "chip": S.chip, "memory": S.memory,
-        "torch": torch.__version__, "default_dataset": DEFAULT_DATASET,
+        "torch": torch.__version__, "default_dataset": DEFAULT_DATASET, "default_config": DEFAULT_CONFIG,
         "datasets": [dataset_info(d) for d in selected()],
         "selection": selection_info(),
         "batch": S.batch,
@@ -303,8 +303,10 @@ def catalog():
 
 
 def _clean_request(req):
-    name = req.name.strip() or DEFAULT_DATASET
+    name = req.name.strip()
     config_name = (req.config_name or "").strip() or None
+    if not name:
+        name, config_name = DEFAULT_DATASET, config_name or DEFAULT_CONFIG
     text_column = req.text_column.strip() or "text"
     try:
         src = resolve_source(name)

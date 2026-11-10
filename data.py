@@ -1,5 +1,5 @@
 # Dataset download and batch sampling
-# Default: Tiny Stories Data set -> https://huggingface.co/datasets/roneneldan/TinyStories
+# Default: Mini FineWeb-Edu, 'small' subset -> https://huggingface.co/datasets/BaoMinhTran/mini-fineweb-edu
 # A dataset can be given as:
 #   - a Hugging Face dataset name:   roneneldan/TinyStories
 #   - a Hugging Face dataset link:   https://huggingface.co/datasets/roneneldan/TinyStories
@@ -18,7 +18,8 @@ import torch
 from datasets import (Dataset, DatasetDict, Value, get_dataset_config_names, load_dataset, load_dataset_builder,
                       load_from_disk)
 
-DEFAULT_DATASET = "roneneldan/TinyStories"
+DEFAULT_DATASET = "BaoMinhTran/mini-fineweb-edu"
+DEFAULT_CONFIG = "small"   # ~500M tokens of educational web pages (subsets: debug, tiny, small, base, full)
 VALIDATION_SPLIT_NAMES = ("validation", "valid", "val", "test")
 
 HF_DATASET_URL = re.compile(r"^https?://(?:www\.)?huggingface\.co/datasets/([^/?#]+/[^/?#]+)/?(?:$|[?#]|/(?!resolve/))", re.I)

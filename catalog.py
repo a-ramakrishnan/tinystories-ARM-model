@@ -4,11 +4,20 @@
 
 DATASET_CATALOG = [
     {
+        "title": "Mini FineWeb-Edu",
+        "dataset": "BaoMinhTran/mini-fineweb-edu", "config": "small", "text_column": "text",
+        "description": "Educational web pages from FineWeb-Edu (Common Crawl CC-MAIN-2025-26), filtered for "
+                       "teaching value. The 'small' subset holds ~500M tokens; 'debug', 'tiny', 'base' and 'full' "
+                       "range from 10M to 2.9B. Harder than stories, so expect a higher loss.",
+        "tags": ["Web", "Education", "Default"], "rows": "595K pages", "size": "1.3 GB",
+        "url": "https://huggingface.co/datasets/BaoMinhTran/mini-fineweb-edu",
+    },
+    {
         "title": "TinyStories",
         "dataset": "roneneldan/TinyStories", "config": None, "text_column": "text",
         "description": "Short, simple stories written by GPT-3.5 and GPT-4 using words a young child knows. "
-                       "The dataset this project is built around.",
-        "tags": ["Stories", "Default"], "rows": "2.1M stories", "size": "1.0 GB",
+                       "The dataset this project started with; small models learn it quickly.",
+        "tags": ["Stories"], "rows": "2.1M stories", "size": "1.0 GB",
         "url": "https://huggingface.co/datasets/roneneldan/TinyStories",
     },
     {

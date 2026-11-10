@@ -1,5 +1,5 @@
 # Building a Small Language Model from Scratch, made for Apple Silicon Macs
-# Default dataset: Tiny Stories -> https://huggingface.co/datasets/roneneldan/TinyStories
+# Default dataset: Mini FineWeb-Edu ('small' subset) -> https://huggingface.co/datasets/BaoMinhTran/mini-fineweb-edu
 # Ramakrishnan A
 # 9th Nov 2026
 #
@@ -25,7 +25,7 @@ from dataclasses import asdict
 
 import torch
 
-from data import DEFAULT_DATASET, BatchLoader, dataset_paths, get_dataset, mix_paths, parse_dataset_spec
+from data import DEFAULT_CONFIG, DEFAULT_DATASET, BatchLoader, dataset_paths, get_dataset, mix_paths, parse_dataset_spec
 from inference import generate_text, load_model, save_model_config
 from model import GPT, GPTConfig
 from plots import plot_losses
@@ -48,12 +48,12 @@ config = GPTConfig(
 )
 
 PROMPTS = [
-    "Once upon a time there was a lady who .",
-    "A monster lay lurking in the woods ",
+    "The water cycle is",
+    "In the history of science,",
 ]
 
 
-def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=None, text_column="text", datasets=None, mix="size"):
+def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG, text_column="text", datasets=None, mix="size"):
     """Run the pipeline. `datasets` is an optional list of (name, subset, text_column) to train on a mix;
     otherwise the single `dataset` is used. `mix` is "size" (in proportion to tokens) or "equal"."""
     specs = datasets or [(dataset, dataset_config, text_column)]
@@ -111,7 +111,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Train a small GPT on a text dataset. Made for Apple Silicon.")
     p.add_argument("--dataset", action="append",
                    help="Hugging Face dataset name or link, or a link to a .txt/.jsonl/.json/.csv/.parquet file "
-                        f"(default: {DEFAULT_DATASET}). Repeat to train on several; each may be written "
+                        f"(default: {DEFAULT_DATASET}@{DEFAULT_CONFIG}). Repeat to train on several; each may be written "
                         "name@subset#column, e.g. Salesforce/wikitext@wikitext-2-raw-v1")
     p.add_argument("--dataset-config", default=None,
                    help="Dataset subset/config name, if it has one (e.g. wikitext-2-raw-v1)")
@@ -142,6 +142,6 @@ if __name__ == "__main__":
     elif args.dataset and len(args.dataset) > 1:
         main(datasets=[parse_dataset_spec(s) for s in args.dataset], mix=args.mix)
     else:
-        name, subset, column = parse_dataset_spec(args.dataset[0] if args.dataset else DEFAULT_DATASET)
+        name, subset, column = parse_dataset_spec(args.dataset[0] if args.dataset else f"{DEFAULT_DATASET}@{DEFAULT_CONFIG}")
         main(dataset=name, dataset_config=args.dataset_config or subset,
              text_column=args.text_column if args.text_column != "text" else column)
