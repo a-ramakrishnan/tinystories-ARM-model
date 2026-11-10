@@ -575,3 +575,4 @@ label.inline.grow input[type="range"] { flex: 1; }
 .kvm-bar.w { background: var(--series-train); }
 .kvm-bar.c { background: var(--accent); }
 @media (max-width: 760px) { #g-bench-charts { grid-template-columns: 1fr; } }
+.fields.three label > .select { width: 100%; min-width: 0; }

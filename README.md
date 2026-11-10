@@ -33,12 +33,16 @@ explains every stage of the **LLM training pipeline** in a local web app:
    with live **loss curves**, optimizer updates, parameter updates and tokens processed.
 7. **Inference**: streamed **text generation** with temperature and top-k sampling and a **KV cache**, showing
    tokens used, **time to first token**, decode speed, KV cache size, GPU memory and the model's confidence in
-   every token, plus a with/without **KV cache benchmark**.
+   every token, plus a with/without **KV cache benchmark** with per-token timing charts, an interactive
+   **KV cache diagram** and a **KV cache memory calculator**.
 
-The default dataset is [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories), 2.1 million
-short stories in simple English. The research behind it showed that even very small models can learn to
-write coherent English when trained on simple text, which makes it ideal for **on-device AI training**
-on a laptop. The code is adapted from Andrej Karpathy's **nanoGPT** and kept small and readable, so it
+The default dataset is [Mini FineWeb-Edu](https://huggingface.co/datasets/BaoMinhTran/mini-fineweb-edu)
+(its `small` subset, ~500M tokens), educational web pages filtered from Common Crawl for teaching value: the
+same kind of data modern small language models are pre-trained on. The project started with
+[TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories), 2.1 million short stories in simple
+English, which is still one click away. The research behind it showed that even very small models can learn
+to write coherent English when trained on simple text, which makes it ideal for **on-device AI training** on
+a laptop. The code is adapted from Andrej Karpathy's **nanoGPT** and kept small and readable, so it
 doubles as a hands-on **machine learning tutorial**: learn how **large language models (LLMs)** work by
 building and training one yourself, locally and privately on your own **MacBook, Mac mini, iMac or
 Mac Studio**.
@@ -66,7 +70,7 @@ on Mac · TinyStories · nanoGPT · tokenization · Hugging Face datasets · dee
 - **Unified memory.** Even the Large preset (124M parameters, about 2 GB to train) fits comfortably on a
   16 GB Mac. The app checks the memory before building a model that wouldn't fit.
 - **Measured speed.** On an M5 with 16 GB, the default model trains at about **2 steps per second**
-  (32 × 128 tokens per step). The *Quick* preset (2,000 steps) takes roughly 20 minutes and brings the
+  (32 × 128 tokens per step, measured with the original 128-token window). The *Quick* preset (2,000 steps) takes roughly 20 minutes and brings the
   validation loss from 10.8 down to about 4.6. The full run (20,000 steps) takes several hours. Generation
   with the KV cache runs at about 130–150 tokens per second for the default model.
 
@@ -252,7 +256,8 @@ Each of these was checked with the validation above. The web app shows them as a
 
 | Dataset | What it is | Size | Use with |
 |---|---|---|---|
-| [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) | Simple short stories (the default) | 2.1M stories · 1.0 GB | `--dataset roneneldan/TinyStories` |
+| [Mini FineWeb-Edu](https://huggingface.co/datasets/BaoMinhTran/mini-fineweb-edu) | Educational web pages (the default, `small` subset; also `debug`, `tiny`, `base`, `full`) | 595K pages · 1.3 GB | `--dataset BaoMinhTran/mini-fineweb-edu@small` |
+| [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) | Simple short stories | 2.1M stories · 1.0 GB | `--dataset roneneldan/TinyStories` |
 | [Tiny Shakespeare](https://github.com/karpathy/char-rnn/tree/master/data/tinyshakespeare) | A 1 MB selection of Shakespeare's plays | 1 text file · 1.1 MB | `--dataset https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt` |
 | [WikiText-2](https://huggingface.co/datasets/Salesforce/wikitext) | Good and featured Wikipedia articles | 37K lines · 7.7 MB | `--dataset Salesforce/wikitext@wikitext-2-raw-v1` |
 | [WikiText-103](https://huggingface.co/datasets/Salesforce/wikitext) | Over 100M tokens of Wikipedia | 1.8M lines · 315 MB | `--dataset Salesforce/wikitext@wikitext-103-raw-v1` |
@@ -394,7 +399,7 @@ The Generate step streams tokens as they are produced and reports:
 | Metric | What it means |
 |---|---|
 | Prompt tokens / generated tokens | Tokens in and out |
-| Context used | How many tokens the model could see at the end (at most the context window, 128) |
+| Context used | How many tokens the model could see at the end (at most the context window, 256) |
 | Time to first token | Reading the prompt (prefill) and picking the first token, with the prefill speed |
 | Total time, decode speed | Speed of the decode loop: one forward pass per new token |
 | KV cache | Size of the cache at the end, and per token (`2 × n_layer × n_embd × 4 bytes`, 18 KB for the default model) |
@@ -412,12 +417,47 @@ allocated once for the whole context window and filled in place. It's exact: cac
 match to within 2×10⁻⁶. The **KV cache: with vs without** card generates the same tokens both ways, with the
 same seed, and compares them.
 
-Measured on an Apple M5, the cache made the default (Small) model about **1.1× faster** and the Large model
-about **1.3× faster**. The gain is modest here because, with a small model and a 128-token window, each step
-is dominated by the fixed cost of launching work on the GPU. It grows with model size and context length,
-and for large language models reading thousands of tokens it is what makes generation practical. This
-model's positions are learned per slot, so once the 128-token window is full the cache has to be rebuilt
-every step (shown as "rebuilds").
+The gain grows with the number of tokens the model has to re-read. Measured on an Apple M5 with the 51M
+Medium model (256-token window), generating 328 tokens from an 8-token prompt:
+
+| | Without cache | With KV cache |
+|---|---|---|
+| Time per token | 42.1 ms | 26.7 ms |
+| Decode speed | 23.7 tok/s | 37.4 tok/s |
+| Total for 328 tokens | 13.8 s | **8.8 s (1.58× faster, 37% saved)** |
+| KV cache | none | 8.4 MB (33 KB per token) |
+| Same tokens generated | | ✓ |
+
+GPU timings vary from run to run (another run measured 1.28×), so run it a few times. With a small model,
+each step is dominated by the fixed cost of launching work on the GPU, so short generations gain little;
+for large language models reading thousands of tokens, the cache is what makes generation practical. This
+model's positions are learned per slot, so once the 256-token window is full the cache has to be rebuilt
+every step (shown as "rebuilds"), and the advantage disappears.
+
+**Per-token timing charts.** Pick *fill the window* or *past the window* as the length to see the whole
+story. Without the cache, each token gets slower as the context grows. With the cache, the time stays flat
+until the window is full, then jumps to meet the uncached line. The second chart shows the total time, and
+the gap between its lines is the time saved.
+
+![Time for each token and total time, with and without the KV cache, on an Apple M5](docs/screenshots/kv-timing.png)
+
+**How the KV cache works.** An interactive diagram of the cache for your prompt. Step through generation, or
+press Play, and see which keys and values each layer computes and which it reads back from the cache. Turn
+the cache off to see every earlier token recomputed instead. The counters show the work: with the cache,
+the number of tokens processed grows in a straight line; without it, with the square of the length.
+
+![Interactive KV cache diagram: keys and values per layer, computed now vs read from the cache](docs/screenshots/kv-diagram.png)
+
+**KV cache memory.** A calculator for `2 × layers × KV width × bytes × tokens × sequences`, for this model,
+GPT-2 and Llama models, with the context length, batch size and precision as sliders. It compares the cache
+with the size of the weights and shows when the cache becomes the bigger of the two: Llama 3.1 8B at 32K
+tokens for 8 users needs 34 GB of cache for 16 GB of weights. It also explains grouped-query attention,
+which shares one key/value head among several query heads to shrink the cache 4×.
+
+![KV cache memory calculator comparing cache size with model weights](docs/screenshots/kv-memory.png)
+
+The Colab and Kaggle notebook's Step 9 runs the same comparison on the cloud GPU and saves a chart of the
+time taken and the cache size (`kv_cache.png`) in the results zip.
 
 ## What happens on each run
 
@@ -425,7 +465,7 @@ every step (shown as "rebuilds").
 |---|---|---|---|
 | 1. Get the data | `data.py` | Validates, downloads and saves a local copy of each dataset | Loads the local copies |
 | 2. Tokenize | `tokenization.py` | Converts every document to GPT-2 token IDs | Skipped |
-| 3. Batches | `data.py` | Samples random 128-token windows (from several datasets if mixed) | Same (fresh batches every run) |
+| 3. Batches | `data.py` | Samples random 256-token windows (from several datasets if mixed) | Same (fresh batches every run) |
 | 4. Train | `pretrain.py` | Trains, saves the best weights and logs the run | Same |
 | 5. Plot | `plots.py` | Training and validation loss | Same |
 | 6. Generate | `inference.py` | Writes text from the prompts | Same |
