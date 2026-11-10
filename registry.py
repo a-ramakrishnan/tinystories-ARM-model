@@ -24,6 +24,7 @@ WEIGHTS = "best_model_params.pt"
 CONFIG = "model_config.json"
 META = "meta.json"
 EVAL = "eval.json"
+ACTIVE = "active.json"   # the model the web app uses for generation
 
 SIZE_NAMES = {(4, 256): "Tiny", (6, 384): "Small", (8, 512): "Medium", (12, 768): "Large"}
 DATASET_TITLES = {"roneneldan/TinyStories": "TinyStories", "BaoMinhTran/mini-fineweb-edu": "Mini FineWeb-Edu",
@@ -198,6 +199,23 @@ def load_eval(model_id, root=LIB_ROOT):
         return None
     with open(path) as f:
         return json.load(f)
+
+
+def load_active(root=LIB_ROOT):
+    """The saved model last chosen for generation in the web app, if it still exists."""
+    try:
+        with open(os.path.join(root, ACTIVE)) as f:
+            model_id = json.load(f).get("id")
+        model_dir(model_id, root)
+        return model_id
+    except (OSError, ValueError, KeyError, AttributeError):
+        return None
+
+
+def save_active(model_id, root=LIB_ROOT):
+    os.makedirs(root, exist_ok=True)
+    with open(os.path.join(root, ACTIVE), "w") as f:
+        json.dump({"id": model_id}, f)
 
 
 def scan(data_root=DATA_ROOT, root=LIB_ROOT):

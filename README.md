@@ -627,7 +627,8 @@ own name, and is never overwritten. The app's **Models** step (step 8) lists the
 ![The model library: every saved model with its size, training data and best validation loss](docs/screenshots/models-library.png)
 
 - **Use for generation** switches Generate and *Inside the transformer* to that model, whatever datasets
-  are selected. A model trained on Colab can be used without downloading its dataset.
+  are selected. A model trained on Colab can be used without downloading its dataset. The choice is remembered
+  across restarts (`models/active.json`).
 - **Find models on this Mac** adds the models already under `data/`, including the backups `import_run.py`
   made. **Save the current datasets' model** saves the one you're working with; training also saves the
   current model before replacing it.

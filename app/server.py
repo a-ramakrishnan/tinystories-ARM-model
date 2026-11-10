@@ -80,7 +80,7 @@ class State:
         self.train = None              # live training progress
         self.stop_requested = False
         self.inference_cache = None    # (checkpoint path, mtime, model, config)
-        self.active_model = None       # id of a saved model (models/) to use instead of the datasets' model
+        self.active_model = registry.load_active()  # saved model (models/) to use instead of the datasets' model
 
 
 S = State()
@@ -208,13 +208,19 @@ def _load_cached(weights, config_path):
     return S.inference_cache[2]
 
 
+def set_active(model_id):
+    """Choose the saved model Generate uses (None: the datasets' own model), and remember it across restarts."""
+    S.active_model = model_id
+    registry.save_active(model_id)
+
+
 def active_library_model():
     """The saved model chosen in the Models step, if it still exists."""
     if S.active_model:
         try:
             return registry.get_model(S.active_model)
         except (KeyError, ValueError):
-            S.active_model = None
+            set_active(None)
     return None
 
 
@@ -654,7 +660,7 @@ def train_endpoint(req: TrainReq):
             registry.add_model(paths.checkpoint, paths.model_config, source="trained")
         except Exception:
             traceback.print_exc()
-        S.active_model = None  # Generate switches to the model just trained
+        set_active(None)  # Generate switches to the model just trained
         with open(os.path.join(paths.root, "runs.jsonl"), "a") as f:
             f.write(json.dumps({**summary, "model": {k: getattr(config, k) for k in ("n_layer", "n_head", "n_embd", "block_size")},
                                 "max_iters": cfg.max_iters}) + "\n")
@@ -877,7 +883,7 @@ def models_use(req: ModelIdReq):
             registry.get_model(req.id)
         except (KeyError, ValueError) as e:
             raise HTTPException(404, str(e))
-    S.active_model = req.id or None
+    set_active(req.id or None)
     return {"active": S.active_model}
 
 
@@ -897,7 +903,7 @@ def models_delete(req: ModelIdReq):
     except (KeyError, ValueError) as e:
         raise HTTPException(404, str(e))
     if S.active_model == req.id:
-        S.active_model = None
+        set_active(None)
     if S.inference_cache and f"{os.sep}{req.id}{os.sep}" in S.inference_cache[0]:
         S.inference_cache = None
     return {"ok": True}
