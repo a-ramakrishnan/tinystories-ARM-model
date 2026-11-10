@@ -461,23 +461,50 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 5 | **Keep every model, measure every model the same way** | A model library and a fixed evaluation suite ([saved models](#saved-models-and-evaluation)) | A baseline to beat: **3.603** on FineWeb, 5.257 on WikiText-2, 73% greedy repetition |
 | 6 | **Resume training** | The full training state is saved at every evaluation; runs can be finished after an interruption or extended, in the app, on the command line and on Colab (with Google Drive) ([details](#resuming-and-extending-a-run)) | Tested on the Mac: a run stopped at step 25 resumed there and finished; a 60-step run extended to 90 kept its loss history and best checkpoint |
 
-### Planned
+### Next: the architecture
 
-| # | Step | Why | How it's measured |
-|---|---|---|---|
-| 7 | **Faster training** | `torch.compile`, gradient accumulation to ~100K tokens per step and a learning-rate check; batches of 32 × 256 tokens leave a cloud GPU mostly idle (25,330 tokens/s on the L4) | Tokens per second, and loss for the same compute units |
-| 8 | **Tokenize large datasets in little memory** | Stream the tokenizer over the dataset in chunks, so Mini FineWeb-Edu fits on a 16 GB Mac and joins the held-out tests | Peak memory while tokenizing |
-| 9 | **RoPE (rotary positions)** | Usually a lower loss and better long-context behavior than learned positions; removes the KV cache rebuilds once the window is full; used by modern LLMs and diffusion LMs | Held-out loss vs the same run with learned positions; the KV cache timing chart |
-| 10 | **Llama-style blocks** | RMSNorm, SwiGLU feed-forward, no biases: a few percent lower loss at the same compute | Held-out loss, speed and parameter count |
-| 11 | **Longer context (512 tokens)** | Educational pages average ~800 tokens; at 256 the model never sees a whole page | Held-out loss, speed, memory |
-| 12 | **Filter the data by quality** | Keep only Mini FineWeb-Edu pages with an educational score of 3 or more; higher-quality data beats more data for small models | Held-out loss on unfiltered data, generated samples |
-| 13 | **Mix in synthetic textbooks** | Cosmopedia: clean, explanatory text, the idea behind TinyStories applied to general knowledge | Same as 12 |
-| 14 | **One combined cloud run** | Everything that won in steps 9–13, ~1 billion tokens (about 10× the current run, towards the ~2.5B a 124M model can use) | The full evaluation suite against step 5's baseline |
-| 15 | **Instruction fine-tuning** | Train on question-and-answer pairs so the model answers questions instead of only continuing text; a Chat mode in Generate | Answers to held-out questions |
-| 16 | **A masked diffusion language model** | Generate a whole block at once and refine it, instead of left to right; reuses the data pipeline, RoPE and Llama-style blocks | The same suite, side by side with the autoregressive model |
+The focus now is the model itself rather than the training data: each idea is added as a switch, trained
+for a short run on the Mac (the Small model, 2,000 steps, the same data and seed) and kept only if the
+evaluation suite says it helps.
 
-Steps 9–13 are each tested with a short run on the Mac (the Small model, 2,000 steps) before anything
-goes into the cloud run in step 14.
+| # | Idea | What it is | Why it should help | How it's measured |
+|---|---|---|---|---|
+| A1 | **RoPE** (rotary position embeddings) | Encode positions by rotating queries and keys instead of adding a learned position vector | Usually lower loss; generalizes past the training length; the KV cache never needs rebuilding. Used by Llama, Mistral, Qwen and LLaDA | Held-out loss; the KV cache timing chart past the window |
+| A2 | **RMSNorm** | A simpler LayerNorm: scale only, no mean subtraction or bias | Same quality, a little faster | Loss and speed |
+| A3 | **SwiGLU feed-forward** | A gated feed-forward layer (`silu(xW) · xV`), sized to keep the parameter count | A few percent lower loss at the same size in most studies | Loss at equal parameters |
+| A4 | **No biases** | Drop the bias terms in linear layers | Fewer parameters, same quality, slightly more stable | Loss, parameters |
+| A5 | **QK-norm** | Normalize queries and keys before attention | Steadier training; tolerates a higher learning rate | Loss curve smoothness, best learning rate |
+| A6 | **Grouped-query attention (GQA)** | Several query heads share one key/value head | KV cache 2–8× smaller and faster generation, with almost the same quality | Loss, KV cache size, tokens/s |
+| A7 | **Deep and thin vs wide and shallow** | Same parameters, different shapes (e.g. 12 layers × 512 vs 6 × 768) | For small models, depth tends to beat width (MobileLLM) | Loss at equal parameters |
+| A8 | **Layer sharing** | Reuse each block's weights twice in a row | More depth for the same parameters and memory | Loss, parameters, speed |
+| A9 | **Multi-token prediction** | Extra heads that also predict the 2nd, 3rd… next token during training | Richer training signal; the extra heads can draft tokens for speculative decoding (I5) | Loss, and draft acceptance rate |
+| A10 | **Mixture of experts** | Several feed-forward "experts", each token routed to one or two | More parameters for the same compute per token | Loss at equal compute, memory |
+
+### Next: inference
+
+| # | Idea | What it is | Why it should help | How it's measured |
+|---|---|---|---|---|
+| I1 | **Sliding KV cache** (needs A1) | With RoPE, drop the oldest token's keys and values instead of rebuilding the cache when the window is full | Generation stays fast past the context window (today the cache is rebuilt every token there) | Timing chart past the window |
+| I2 | **Half-precision inference** | Run the model in float16 / bfloat16 on the Mac's GPU | About half the memory, often faster | tokens/s, memory, same outputs within tolerance |
+| I3 | **Quantized weights and KV cache** | 8-bit weights and/or 8-bit keys and values | 2–4× less memory | Loss increase, memory, speed |
+| I4 | **Better decoding algorithms** | Beam search, contrastive search, typical sampling, DRY (a smarter repetition penalty) | Fewer loops and better coherence without retraining | Repetition, distinct pairs, samples in the comparison card |
+| I5 | **Speculative decoding** | A small model (Tiny, or A9's extra heads) drafts several tokens; the large model checks them in one pass | 1.5–3× faster generation with identical output | Acceptance rate, tokens/s |
+| I6 | **Batched generation** | Generate for several prompts at once | Much higher throughput for a little extra latency | tokens/s vs batch size |
+| I7 | **Prefix caching** | Reuse the KV cache of a prompt prefix that's already been seen | Much shorter time to first token for repeated prompts | Time to first token |
+| I8 | **Compiled generation** | `torch.compile` and a fixed-size cache, CUDA graphs on Nvidia | Less per-token overhead, the main cost for small models | tokens/s on the Mac and on Colab |
+
+### Kept for later
+
+| # | Idea | Why |
+|---|---|---|
+| L1 | **Faster training** | `torch.compile`, gradient accumulation to ~100K tokens per step and a learning-rate check; batches of 32 × 256 tokens leave a cloud GPU mostly idle (25,330 tokens/s on the L4) |
+| L2 | **Tokenize large datasets in little memory** | Stream the tokenizer over the dataset in chunks, so Mini FineWeb-Edu fits on a 16 GB Mac and joins the held-out tests |
+| L3 | **Longer context (512 tokens)** | Educational pages average ~800 tokens; at 256 the model never sees a whole page (easier with A1) |
+| L4 | **Filter the data by quality** | Keep only Mini FineWeb-Edu pages with an educational score of 3 or more |
+| L5 | **Mix in synthetic textbooks** | Cosmopedia: clean, explanatory text, the idea behind TinyStories applied to general knowledge |
+| L6 | **One combined cloud run** | Everything that won above, with ~1 billion tokens (about 10× the current run) |
+| L7 | **Instruction fine-tuning** | Question-and-answer pairs so the model answers questions; a Chat mode in Generate |
+| L8 | **A masked diffusion language model** | Generate a whole block at once and refine it; reuses A1–A4 and the whole pipeline |
 
 ## Training: what gets updated
 
