@@ -435,6 +435,41 @@ cache grows to 18.9 MB (73.7 KB per token in float32) when the 256-token window 
 
 ![Time to generate with and without the KV cache on an NVIDIA L4, and the cache size](docs/screenshots/fineweb-kv-cache-l4.png)
 
+## Improving the model, step by step
+
+The steps taken so far to improve the model, and the ones planned next, in order. The rule from step 6 on:
+**change one thing at a time**, train it the same way as the baseline, and compare with the
+[evaluation suite](#the-evaluation-suite) before keeping it.
+
+### Done
+
+| # | Step | What changed | Result |
+|---|---|---|---|
+| 1 | **Fix undertraining** | `<\|endoftext\|>` between documents, learning rate 6e-4, no gradient accumulation, 256-token context, no dropout, clipping 1.0, stop at the end of a story ([details](#getting-better-stories)) | TinyStories validation loss after 2,000 steps: 4.527 → **2.214**, with a smaller model |
+| 2 | **Train longer on a cloud GPU** | 20,000 steps of the Medium model on a Colab T4 | Loss **1.583**: coherent short stories ([before and after](#measured-before-and-after)) |
+| 3 | **Harder, more realistic data** | Mini FineWeb-Edu as the default; the Large model for 30,000 steps on a Colab L4 | Loss **3.603** on educational web text ([results](#measured-mini-fineweb-edu-the-new-default)) |
+| 4 | **Better decoding** | Top-p, min-p, repetition / frequency / presence penalties, greedy; **Balanced** (temperature 0.8, top-p 0.9, repetition penalty 1.15) as the default ([sampling](#sampling-how-the-next-token-is-picked)) | The FineWeb model's repetition: **73% → 0%** of 4-token runs |
+| 5 | **Keep every model, measure every model the same way** | A model library and a fixed evaluation suite ([saved models](#saved-models-and-evaluation)) | A baseline to beat: **3.603** on FineWeb, 5.257 on WikiText-2, 73% greedy repetition |
+
+### Planned
+
+| # | Step | Why | How it's measured |
+|---|---|---|---|
+| 6 | **Resume training** | Save the optimizer state with each checkpoint and continue a run for more steps, instead of restarting; protects long cloud runs from disconnects | Loss keeps falling from where the run stopped |
+| 7 | **Faster training** | `torch.compile`, gradient accumulation to ~100K tokens per step and a learning-rate check; batches of 32 × 256 tokens leave a cloud GPU mostly idle (25,330 tokens/s on the L4) | Tokens per second, and loss for the same compute units |
+| 8 | **Tokenize large datasets in little memory** | Stream the tokenizer over the dataset in chunks, so Mini FineWeb-Edu fits on a 16 GB Mac and joins the held-out tests | Peak memory while tokenizing |
+| 9 | **RoPE (rotary positions)** | Usually a lower loss and better long-context behavior than learned positions; removes the KV cache rebuilds once the window is full; used by modern LLMs and diffusion LMs | Held-out loss vs the same run with learned positions; the KV cache timing chart |
+| 10 | **Llama-style blocks** | RMSNorm, SwiGLU feed-forward, no biases: a few percent lower loss at the same compute | Held-out loss, speed and parameter count |
+| 11 | **Longer context (512 tokens)** | Educational pages average ~800 tokens; at 256 the model never sees a whole page | Held-out loss, speed, memory |
+| 12 | **Filter the data by quality** | Keep only Mini FineWeb-Edu pages with an educational score of 3 or more; higher-quality data beats more data for small models | Held-out loss on unfiltered data, generated samples |
+| 13 | **Mix in synthetic textbooks** | Cosmopedia: clean, explanatory text, the idea behind TinyStories applied to general knowledge | Same as 12 |
+| 14 | **One combined cloud run** | Everything that won in steps 9–13, ~1 billion tokens (about 10× the current run, towards the ~2.5B a 124M model can use) | The full evaluation suite against step 5's baseline |
+| 15 | **Instruction fine-tuning** | Train on question-and-answer pairs so the model answers questions instead of only continuing text; a Chat mode in Generate | Answers to held-out questions |
+| 16 | **A masked diffusion language model** | Generate a whole block at once and refine it, instead of left to right; reuses the data pipeline, RoPE and Llama-style blocks | The same suite, side by side with the autoregressive model |
+
+Steps 9–13 are each tested with a short run on the Mac (the Small model, 2,000 steps) before anything
+goes into the cloud run in step 14.
+
 ## Training: what gets updated
 
 Each step runs a batch forward, measures the loss (the average of `−ln(p)`, where `p` is the probability
