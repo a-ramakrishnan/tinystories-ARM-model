@@ -203,6 +203,10 @@
             <label>Normalization <select id="m-norm" class="select"><option value="layernorm">LayerNorm (GPT-2)</option><option value="rmsnorm">RMSNorm (Llama)</option></select></label>
             <p class="hint span3" id="m-norm-hint"></p>
           </div>
+          <div class="fields four">
+            <label>Feed-forward <select id="m-mlp" class="select"><option value="gelu">GELU, 4× wide (GPT-2)</option><option value="swiglu">SwiGLU, gated (Llama)</option></select></label>
+            <p class="hint span3" id="m-mlp-hint"></p>
+          </div>
           <div id="m-estimate" class="estimate"></div>
           <p class="hint" id="m-hint"></p>
           <div class="actions"><button id="m-run" class="btn primary">Build model</button></div>

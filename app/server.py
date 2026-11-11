@@ -303,6 +303,7 @@ class ModelReq(BaseModel):
     dropout: float = 0.0
     pos_encoding: str = "learned"   # "learned" or "rope"
     norm: str = "layernorm"         # "layernorm" or "rmsnorm"
+    mlp: str = "gelu"               # "gelu" or "swiglu"
 
 
 class TrainReq(BaseModel):
@@ -546,9 +547,11 @@ def model_endpoint(req: ModelReq):
         raise HTTPException(400, "RoPE needs an even head size (n_embd / n_head).")
     if req.norm not in ("layernorm", "rmsnorm"):
         raise HTTPException(400, "Normalization must be 'layernorm' or 'rmsnorm'.")
+    if req.mlp not in ("gelu", "swiglu"):
+        raise HTTPException(400, "Feed-forward must be 'gelu' or 'swiglu'.")
     config = GPTConfig(vocab_size=S.enc.n_vocab, block_size=S.batch["block_size"], n_layer=req.n_layer,
                        n_head=req.n_head, n_embd=req.n_embd, dropout=req.dropout, bias=True, pos_encoding=req.pos_encoding,
-                       norm=req.norm)
+                       norm=req.norm, mlp=req.mlp)
     breakdown = param_breakdown(config)
     need = breakdown["total"] * BYTES_PER_PARAM_TRAINING
     if S.memory and need > 0.6 * S.memory:

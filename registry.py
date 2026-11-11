@@ -63,7 +63,8 @@ def default_name(info):
     steps = info.get("steps")
     steps = f"{steps / 1000:g}k steps" if steps and steps >= 1000 else f"{steps} steps" if steps else ""
     parts = [f"{size} {params / 1e6:.0f}M" + (" RoPE" if m.get("pos_encoding") == "rope" else "")
-                                       + (" RMSNorm" if m.get("norm") == "rmsnorm" else "") if params else size, data, steps]
+                                       + (" RMSNorm" if m.get("norm") == "rmsnorm" else "")
+                                       + (" SwiGLU" if m.get("mlp") == "swiglu" else "") if params else size, data, steps]
     return " · ".join(p for p in parts if p)
 
 

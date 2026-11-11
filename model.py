@@ -131,13 +131,34 @@ class MLP(nn.Module):
         return self.dropout(self.c_proj(self.gelu(self.c_fc(x))))
 
 
+def swiglu_hidden(n_embd):
+    """SwiGLU's hidden width: 8/3 · n_embd (a multiple of 32), so its three matrices hold about as many
+    parameters as the GELU MLP's two matrices of width 4 · n_embd (exactly as many for 384 and 768)."""
+    return 32 * round(8 * n_embd / 3 / 32)
+
+
+class SwiGLU(nn.Module):
+    """Gated feed-forward layer (Llama, Mistral, Qwen): silu(x W_gate) * (x W_up), then W_down.
+    The gate decides, feature by feature, how much of the "up" projection passes through."""
+    def __init__(self, config):
+        super().__init__()
+        h = swiglu_hidden(config.n_embd)
+        self.c_fc = nn.Linear(config.n_embd, 2 * h, bias=config.bias)  # gate and up projections in one matrix
+        self.c_proj = nn.Linear(h, config.n_embd, bias=config.bias)
+        self.dropout = nn.Dropout(config.dropout)
+
+    def forward(self, x):
+        gate, up = self.c_fc(x).chunk(2, dim=-1)
+        return self.dropout(self.c_proj(F.silu(gate) * up))
+
+
 class Block(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.ln1 = make_norm(config)
         self.attn = CausalSelfAttention(config)
         self.ln2 = make_norm(config)
-        self.mlp = MLP(config)
+        self.mlp = SwiGLU(config) if config.mlp == "swiglu" else MLP(config)
 
     def forward(self, x, kv_cache=None, rope=None):
         x = x + self.attn(self.ln1(x), kv_cache, rope)
@@ -157,6 +178,7 @@ class GPTConfig:
     pos_encoding: str = "learned"   # "learned": a trained vector per position (GPT-2); "rope": rotary (Llama)
     rope_theta: float = 10000.0     # RoPE base: sets the slowest rotation frequency
     norm: str = "layernorm"         # "layernorm" (GPT-2) or "rmsnorm" (Llama): scale only, no mean or bias
+    mlp: str = "gelu"               # "gelu" (GPT-2: 4x wide) or "swiglu" (Llama: gated, 8/3x wide)
 
 
 class GPT(nn.Module):
@@ -249,10 +271,15 @@ def param_breakdown(config):
     ln_formula = "n_embd" if rms or not b else "2 × n_embd"
     qkv = d * 3 * d + b * 3 * d              # c_attn
     attn_out = d * d + b * d                 # attention c_proj
-    mlp_in = d * 4 * d + b * 4 * d           # c_fc
-    mlp_out = 4 * d * d + b * d              # MLP c_proj
+    sw = config.mlp == "swiglu"
+    h = swiglu_hidden(d) if sw else 4 * d    # the feed-forward layer's hidden width
+    hs = f"{h}" if sw else "4·n_embd"
+    mlp_in = d * (2 if sw else 1) * h + b * (2 if sw else 1) * h   # c_fc (SwiGLU: gate and up together)
+    mlp_out = h * d + b * d                  # MLP c_proj
     block = 2 * ln + qkv + attn_out + mlp_in + mlp_out
-    linear_terms = f"{(9 if b else 0) + (2 if rms else 4 if b else 2)}·n_embd"
+    # biases (attention 4·n_embd, feed-forward 4·n_embd + n_embd, or 2·h + n_embd with SwiGLU) and norm weights
+    linear_terms = f"{(5 if sw else 9) * b + (2 if rms else 2 + 2 * b)}·n_embd" + (" + 2·h" if sw and b else "")
+    block_formula = f"4·n_embd² + 3·n_embd·h + {linear_terms}, h = {h}" if sw else f"12·n_embd² + {linear_terms}"
 
     def row(name, formula, expr, count, note=""):
         return {"name": name, "formula": formula, "expr": expr, "count": count, "note": note}
@@ -262,7 +289,7 @@ def param_breakdown(config):
             "Also used as the output layer (weight tying)"),
         row("Position embeddings", "block_size × n_embd", f"{T} × {d}", T * d) if config.pos_encoding == "learned" else
         row("Positions (RoPE)", "rotations of queries and keys", "0", 0, "No parameters: computed from each position"),
-        row("Transformer blocks", f"n_layer × (12·n_embd² + {linear_terms})", f"{L} × {block:,}", L * block),
+        row("Transformer blocks", f"n_layer × ({block_formula})", f"{L} × {block:,}", L * block),
         row(f"Final {norm_name}", ln_formula, f"{ln // d} × {d}", ln),
         row("Output layer", "shares the token embeddings", "0", 0),
     ]
@@ -271,10 +298,10 @@ def param_breakdown(config):
             f"{d} × {3 * d}" + (f" + {3 * d}" if b else ""), qkv),
         row("Attention: output projection", "n_embd × n_embd" + (" + n_embd" if b else ""),
             f"{d} × {d}" + (f" + {d}" if b else ""), attn_out),
-        row("MLP: expand", "n_embd × 4·n_embd" + (" + 4·n_embd" if b else ""),
-            f"{d} × {4 * d}" + (f" + {4 * d}" if b else ""), mlp_in),
-        row("MLP: project back", "4·n_embd × n_embd" + (" + n_embd" if b else ""),
-            f"{4 * d} × {d}" + (f" + {d}" if b else ""), mlp_out),
+        row("SwiGLU: gate and up" if sw else "MLP: expand", f"n_embd × {'2·' if sw else ''}{hs}" + (f" + {'2·' if sw else ''}{hs}" if b else ""),
+            f"{d} × {(2 if sw else 1) * h}" + (f" + {(2 if sw else 1) * h}" if b else ""), mlp_in),
+        row("SwiGLU: down" if sw else "MLP: project back", f"{hs} × n_embd" + (" + n_embd" if b else ""),
+            f"{h} × {d}" + (f" + {d}" if b else ""), mlp_out),
         row(f"Two {norm_name}s", f"2 × {ln_formula.replace(' × ', '·')}", f"2 × {ln}", 2 * ln),
     ]
     return {"total": sum(p["count"] for p in parts), "parts": parts, "per_block": per_block, "block": block}

@@ -21,8 +21,9 @@ that are easy to get wrong and rarely explained.
 10. [Never losing a run: resume training](#10-never-losing-a-run-resume-training)
 11. [Architecture, step one: rotary positions (RoPE)](#11-architecture-step-one-rotary-positions-rope)
 12. [Architecture, step two: RMSNorm](#12-architecture-step-two-rmsnorm)
-13. [Lessons](#13-lessons)
-14. [What's next](#14-whats-next)
+13. [Architecture, step three: a gated feed-forward layer (SwiGLU)](#13-architecture-step-three-a-gated-feed-forward-layer-swiglu)
+14. [Lessons](#14-lessons)
+15. [What's next](#15-whats-next)
 
 ---
 
@@ -358,7 +359,45 @@ activation here is the output layer's 32 × 256 × 50,257 logits: 1.6 GB in floa
 
 ---
 
-## 13. Lessons
+## 13. Architecture, step three: a gated feed-forward layer (SwiGLU)
+
+About two thirds of each block's parameters sit in the feed-forward layer. GPT-2's version widens each token's
+vector to 4 × n_embd, applies GELU, and narrows it back: two matrices. **SwiGLU** (Llama, Mistral, Qwen) uses
+three. Two project the vector up in parallel; one copy goes through SiLU and **multiplies** the other, feature by
+feature, so the model learns a gate deciding how much of each feature passes. Then one matrix projects back.
+
+To keep the comparison fair, the hidden width shrinks from 4 × to 8/3 × n_embd (1,536 → 1,024 for the Small
+model), so three narrower matrices hold the same number of weights as two wide ones: 29,949,312 parameters vs
+29,946,240 (the 3k difference is biases).
+
+It's a switch: **Feed-forward: GELU / SwiGLU** in the Model step, `--swiglu` on the command line, or
+`mlp = "swiglu"` in the notebook.
+
+**The A/B test.** RoPE + SwiGLU against the RoPE + GELU run from step 11, same data, seed and 1,000 updates.
+
+| | RoPE + GELU | RoPE + SwiGLU |
+|---|---|---|
+| Validation loss at updates 250 / 500 / 750 / 1,000 | 3.164 / 2.753 / 2.536 / 2.475 | **3.035 / 2.642 / 2.431 / 2.366** |
+| Held-out loss: TinyStories | 2.440 | **2.338** |
+| Held-out loss: WikiText-2 | **9.461** | 9.501 |
+| Held-out loss: Tiny Shakespeare | 8.040 | **8.019** |
+| Greedy / Balanced repetition | **8.9%** / 0.7% | 28.0% / **0.0%** |
+| Training speed (updates/s, this run) | 0.67 | 0.73 |
+
+**A clear win where it counts.** SwiGLU led by about 0.11 at every evaluation, the same size of gain as RoPE gave
+over learned positions, and it reached the baseline's final loss around update 700: roughly 30% fewer updates.
+On the two datasets neither model trained on, it's a wash (WikiText-2 slightly worse, Shakespeare slightly
+better); at losses above 8, a TinyStories model barely predicts either.
+
+One number went the wrong way: greedy decoding repeated itself more (28% of 4-token runs vs 9%). Greedy
+repetition over 6 prompts is noisy, and the Balanced default had none, but it's worth watching in the next steps.
+
+**Lesson.** The two changes that helped (RoPE, SwiGLU) both change *what the model can express*: relative
+positions, multiplicative gating. The one that didn't (RMSNorm) only changes how it's kept numerically stable.
+
+---
+
+## 14. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -374,11 +413,13 @@ activation here is the output layer's 32 × 256 × 50,257 logits: 1.6 GB in floa
    efficiency, not quality.** Know which kind you're testing.
 9. **When training suddenly slows, check memory before code.** Gradient accumulation trades a little speed
    for a lot of memory, without changing the maths.
+10. **Compare at equal parameters.** SwiGLU's win only means something because its hidden layer was narrowed to
+    keep the count the same.
 
-## 14. What's next
+## 15. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** SwiGLU, no biases, QK-norm, grouped-query attention, depth vs width, layer
+- **Architecture:** no biases, QK-norm, grouped-query attention, depth vs width, layer
   sharing, multi-token prediction, mixture of experts.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.

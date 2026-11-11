@@ -374,11 +374,14 @@ function renderBatch(r) {
 }
 
 // ---------- 4. model ----------
+const swigluHidden = (d) => 32 * Math.round((8 * d) / 3 / 32);
 function estimateParams(L, d, T) {
   const rms = $("#m-norm")?.value === "rmsnorm";  // RMSNorm: a scale per feature, no shift
-  return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + L * (12 * d * d + (rms ? 11 : 13) * d) + (rms ? 1 : 2) * d;
+  const sw = $("#m-mlp")?.value === "swiglu", h = sw ? swigluHidden(d) : 4 * d;  // SwiGLU: three matrices, 8/3 wide
+  const ffn = sw ? 3 * d * h + 2 * h + d : 8 * d * d + 5 * d;
+  return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + L * (4 * d * d + 4 * d + ffn + (rms ? 2 : 4) * d) + (rms ? 1 : 2) * d;
 }
-const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value, norm: $("#m-norm").value });
+const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value, norm: $("#m-norm").value, mlp: $("#m-mlp").value });
 const POS_HINTS = {
   learned: "Each of the context window's positions has its own trained vector, added to the token embedding (block_size × n_embd parameters). The model only knows positions it was trained on, so a full KV cache has to be rebuilt when the window slides.",
   rope: "Rotary position embeddings: no position vectors. Each query and key is rotated by an angle that grows with its position, so attention scores depend on how far apart two tokens are. No parameters, used by Llama, Mistral and Qwen, and the KV cache can slide past the window without being rebuilt (a close approximation of recomputing the window).",
@@ -386,6 +389,10 @@ const POS_HINTS = {
 const NORM_HINTS = {
   layernorm: "Before attention and the feed-forward layer, each vector is normalized: subtract its mean, divide by its standard deviation, then a learned scale and shift (GPT-2).",
   rmsnorm: "Divide each vector by its root mean square, then a learned scale: no mean subtraction and no shift. Fewer operations and parameters; used by Llama, Mistral and Qwen.",
+};
+const MLP_HINTS = {
+  gelu: "Each token's vector is widened to 4 × n_embd, passed through GELU, and narrowed back (GPT-2).",
+  swiglu: "Two projections to about 8/3 × n_embd: one goes through SiLU and acts as a gate that scales the other, feature by feature, then one projection back. Three matrices instead of two, narrower, so about the same parameters. Used by Llama, Mistral and Qwen.",
 };
 const normName = (c) => c.norm === "rmsnorm" ? "RMSNorm" : "LayerNorm";
 
@@ -397,6 +404,8 @@ function setModelFields(c) {
   $("#m-pos-hint").textContent = POS_HINTS[$("#m-pos").value];
   if (c.norm) $("#m-norm").value = c.norm;
   $("#m-norm-hint").textContent = NORM_HINTS[$("#m-norm").value];
+  if (c.mlp) $("#m-mlp").value = c.mlp;
+  $("#m-mlp-hint").textContent = MLP_HINTS[$("#m-mlp").value];
   renderEstimate();
 }
 
@@ -458,7 +467,9 @@ function renderArchitecture(c, b) {
       </div>
       <div class="sub-flow">
         <div class="mini ln">${normName(c)}</div><div class="arr r">→</div>
-        <div class="abox ffn"><div><div class="at">Feed-forward network (MLP)</div><div class="as">Linear ${c.n_embd} → ${4 * c.n_embd} · GELU · Linear ${4 * c.n_embd} → ${c.n_embd}</div></div></div>
+        <div class="abox ffn"><div>${c.mlp === "swiglu"
+          ? `<div class="at">Feed-forward network (SwiGLU)</div><div class="as">two Linears ${c.n_embd} → ${swigluHidden(c.n_embd)} · SiLU(gate) × up · Linear ${swigluHidden(c.n_embd)} → ${c.n_embd}</div>`
+          : `<div class="at">Feed-forward network (MLP)</div><div class="as">Linear ${c.n_embd} → ${4 * c.n_embd} · GELU · Linear ${4 * c.n_embd} → ${c.n_embd}</div>`}</div></div>
         <div class="arr r">→</div>${drop}<div class="arr r">→</div><div class="resid">+ residual</div>
       </div>
     </div>${arrow}
@@ -652,7 +663,8 @@ const STAGES = [
         </div>
         ${dropNote("is applied to the FFN output while training.")}
         <div class="calc">residual: h ${vec(w.H[i])} + FFN ${vec(w.F[i])} = <b>${vec(w.X2[i])}</b> → the block's output for “${tokLabel(w.tokens[i])}”</div>
-        <p class="muted small">Toy sizes 4 → 16 → 4. Your model goes ${c.n_embd} → ${4 * c.n_embd} → ${c.n_embd}; the FFN holds about two thirds of each block's parameters.</p>`;
+        <p class="muted small">Toy sizes 4 → 16 → 4. Your model goes ${c.n_embd} → ${c.mlp === "swiglu" ? swigluHidden(c.n_embd) : 4 * c.n_embd} → ${c.n_embd}; the FFN holds about two thirds of each block's parameters.</p>
+        ${c.mlp === "swiglu" ? `<p class="note">This model uses <b>SwiGLU</b> instead: the token is projected twice, to ${swigluHidden(c.n_embd)} numbers each. One copy goes through SiLU (a smooth GELU-like curve) and <b>multiplies</b> the other, feature by feature, like a learned gate, before projecting back. Three matrices instead of two, each narrower, so the parameter count stays about the same.</p>` : ""}`;
     },
   },
   {
@@ -1307,7 +1319,7 @@ function renderLibrary() {
     <tbody>${models.map((m) => `<tr class="${m.active ? "in-use" : ""}">
       <td><input type="checkbox" data-pick="${esc(m.id)}" ${lib.picked.has(m.id) ? "checked" : ""}></td>
       <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}</div>
-        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
+        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}${m.model.mlp === "swiglu" ? " · SwiGLU" : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
         <div class="lib-actions">${m.active ? "" : `<button class="btn small" data-use="${esc(m.id)}">Use for generation</button>`}<button class="btn small ghost" data-rename="${esc(m.id)}">Rename</button><button class="btn small ghost danger" data-delete="${esc(m.id)}">Delete</button></div></td>
       <td>${esc(shortData(m.datasets))}<div class="muted small">${m.steps ? `${fmt(m.steps)} steps` : ""}${m.chip ? ` · ${esc(m.chip)}` : ""}${m.platform ? ` (${esc(m.platform)})` : ""}</div><div class="muted small">${when(m.trained_at)}</div></td>
       <td class="num">${fmtLoss(m.best_val)}<div class="muted small">on its own data</div></td>
@@ -1407,6 +1419,7 @@ $("#b-run").addEventListener("click", (e) => action(e.target, async () => {
 }));
 
 $$("#m-layer, #m-head, #m-embd").forEach((i) => i.addEventListener("input", renderEstimate));
+$("#m-mlp").addEventListener("change", () => { $("#m-mlp-hint").textContent = MLP_HINTS[$("#m-mlp").value]; renderEstimate(); renderModelPresets(); });
 $("#m-norm").addEventListener("change", () => { $("#m-norm-hint").textContent = NORM_HINTS[$("#m-norm").value]; renderEstimate(); renderModelPresets(); });
 $("#m-pos").addEventListener("change", () => { $("#m-pos-hint").textContent = POS_HINTS[$("#m-pos").value]; renderEstimate(); renderModelPresets(); });
 $("#m-run").addEventListener("click", (e) => action(e.target, async () => {
