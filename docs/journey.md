@@ -24,8 +24,9 @@ that are easy to get wrong and rarely explained.
 13. [Architecture, step three: a gated feed-forward layer (SwiGLU)](#13-architecture-step-three-a-gated-feed-forward-layer-swiglu)
 14. [Architecture, step four: no biases](#14-architecture-step-four-no-biases)
 15. [Architecture, step five: QK-norm, and moving the A/B tests to a GPU](#15-architecture-step-five-qk-norm-and-moving-the-ab-tests-to-a-gpu)
-16. [Lessons](#16-lessons)
-17. [What's next](#17-whats-next)
+16. [A learning-rate sweep, and what QK-norm is really for](#16-a-learning-rate-sweep-and-what-qk-norm-is-really-for)
+17. [Lessons](#17-lessons)
+18. [What's next](#18-whats-next)
 
 ---
 
@@ -478,7 +479,43 @@ are testing.
 
 ---
 
-## 16. Lessons
+## 16. A learning-rate sweep, and what QK-norm is really for
+
+Step 15 showed that tripling the learning rate helped more than QK-norm. So before testing more architecture,
+a sweep: the same model at five peak learning rates, with and without QK-norm (8 new variants on the L4, about 25
+minutes; the 6e-4 points come from step 15, and the repeated 1.8e-3 pair matched it to the last digit).
+
+| Best validation loss | 6e-4 | 1.8e-3 | 3e-3 | 6e-3 | 1.2e-2 |
+|---|---|---|---|---|---|
+| RoPE + SwiGLU, no biases | 2.369 | 2.266 | 2.666 | 2.997 | 3.325 |
+| … + QK-norm | 2.336 | **2.251** | 2.376 | 2.550 | 2.553 |
+
+![Best validation loss against learning rate, with and without QK-norm](screenshots/lr-sweep.png)
+
+Three things stand out:
+
+1. **The best learning rate is about 1.8e-3**, three times the 6e-4 every earlier A/B used, for both versions.
+2. **Without QK-norm, training falls apart above it.** Not with spikes (there were none in any run), but by
+   stalling: at 1.2e-2 the loss is 3.33, worse than after a quarter of the run at the best rate. Large updates
+   push attention scores so far that the softmax saturates, and learning crawls.
+3. **With QK-norm, the curve flattens.** At 1.2e-2, twenty times the original rate, it still reaches 2.55: 0.77
+   better than without it. That's the stability QK-norm is famous for. It barely changes the best result, but it
+   makes the learning rate much less critical, which matters when you can't afford a sweep (big models, long runs).
+
+The costs: QK-norm made each update about 10% slower on the L4 (6.6 vs 7.3 updates/s; two small extra
+normalizations per layer that PyTorch doesn't fuse), and at high learning rates both versions lose more on the
+unseen datasets.
+
+**The new baseline** for the next A/B tests: RoPE + SwiGLU, no biases, QK-norm, learning rate 1.8e-3, at
+**2.251**. That's 0.38 better than the step 11 baseline (learned positions, 2.631) on the same budget of 1,000
+updates.
+
+**Lesson.** A sweep is cheap insurance. One afternoon of GPU time showed that every comparison had been running
+at a third of the best learning rate, and gave QK-norm the test it needed.
+
+---
+
+## 17. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -501,11 +538,12 @@ are testing.
 12. **Re-check the hyperparameters as the model changes.** The learning rate mattered more than QK-norm.
 13. **Move experiments to where they're cheap.** The same A/B took 25 minutes per variant on the Mac and 2½ on
     a cloud GPU, with the same results, so more ideas get tested and with longer runs.
+14. **Some changes don't move the best score but widen the safe range.** QK-norm hardly changed the best loss,
+    but made a 7× higher learning rate cost 0.3 instead of 1.06.
 
-## 17. What's next
+## 18. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **A learning-rate sweep**, with and without QK-norm, to find the best rate and where training breaks.
 - **Architecture:** grouped-query attention, depth vs width, layer
   sharing, multi-token prediction, mixture of experts.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
