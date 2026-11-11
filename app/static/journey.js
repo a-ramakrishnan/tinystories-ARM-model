@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-11 21:40", kind: "win", area: "Data", best: true, title: "The same designs on harder data",
+    decision: "Train GPT-2 style, our best dense and our best with experts on Mini FineWeb-Edu (web pages), 5,000 updates each, from the Lab via a Colab run spec.",
+    why: "Everything had been measured on children's stories. Would the same choices hold on harder text?",
+    result: { label: "Validation loss on Mini FineWeb-Edu, 5,000 updates", steps: [["GPT-2 style", 4.495], ["Our best, dense", 4.206], ["Our best + experts", 4.143]],
+      extra: "the gains double on web text: 0.35 vs 0.17 on TinyStories" },
+    calc: ["best dense passes GPT-2 style's final loss (4.495) near update 2,900 (4.560 at 2,500, 4.343 at 3,750) → ~40% fewer updates",
+      "WikiText-2 held-out: 6.24–6.53 here vs 9.5–9.9 for the TinyStories models"],
+    cost: "3 runs, about 45 min on a Colab L4 (including downloading and tokenizing 1.3 GB)", anchor: "23-the-same-designs-on-harder-data-mini-fineweb-edu" },
   { when: "2026-11-11 16:19", kind: "win", area: "Architecture", best: true, title: "All the wins together, over a longer run",
     decision: "Train the GPT-2-style model and the combined best designs for 5,000 updates each, five times the A/B budget.",
     why: "Every earlier result came from a short run, one change at a time. Do the gains add up, and do they last?",

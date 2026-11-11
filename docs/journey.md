@@ -31,8 +31,9 @@ that are easy to get wrong and rarely explained.
 20. [Architecture, step nine: predicting several tokens at once](#20-architecture-step-nine-predicting-several-tokens-at-once)
 21. [Architecture, step ten: a mixture of experts](#21-architecture-step-ten-a-mixture-of-experts)
 22. [Putting it together: the original model vs all the wins](#22-putting-it-together-the-original-model-vs-all-the-wins)
-23. [Lessons](#23-lessons)
-24. [What's next](#24-whats-next)
+23. [The same designs on harder data: Mini FineWeb-Edu](#23-the-same-designs-on-harder-data-mini-fineweb-edu)
+24. [Lessons](#24-lessons)
+25. [What's next](#25-whats-next)
 
 ---
 
@@ -783,7 +784,42 @@ clear list of what to fix next.
 
 ---
 
-## 23. Lessons
+## 23. The same designs on harder data: Mini FineWeb-Edu
+
+Everything above was measured on TinyStories, children's stories with a small vocabulary. Would the same choices
+hold on harder text? The three models from step 22 were trained again, the same way (5,000 updates on a Colab L4),
+on **Mini FineWeb-Edu**, educational web pages. This was the first run launched from the web app's **Lab**: it
+packs every setting into a run spec, which the `lab_run.ipynb` notebook runs on a cloud GPU (Mini FineWeb-Edu
+isn't tokenized on the Mac), and the results zip comes back into the model library with one click.
+
+| Mini FineWeb-Edu, 5,000 updates, L4 | GPT-2 style | Our best, dense | Our best + experts |
+|---|---|---|---|
+| Validation loss at updates 1,250 / 2,500 / 3,750 / 5,000 | 5.331 / 4.878 / 4.621 / 4.495 | 4.930 / 4.560 / 4.343 / 4.206 | 4.909 / 4.522 / 4.286 / **4.143** |
+| Held-out: Mini FineWeb-Edu | 4.580 | 4.301 | **4.245** |
+| Held-out: WikiText-2 / Tiny Shakespeare | 6.528 / 6.296 | 6.276 / 6.138 | **6.240 / 6.121** |
+| Top-1 accuracy: next token | 28.5% | 30.9% | **31.8%** |
+| Greedy / Balanced repetition | 79.7% / 0.0% | 76.1% / 0.0% | 76.5% / 0.3% |
+| Training (updates/s) / generation (tokens/s) | **8.57 / 226** | 7.21 / 128 | 5.56 / 66 |
+
+![Validation and training loss on Mini FineWeb-Edu for the three designs](screenshots/fineweb-designs.png)
+
+**The ranking holds, and the gaps double.** On TinyStories the best model was 0.17 ahead of GPT-2 style after
+5,000 updates; on web text it's **0.35** ahead (4.495 → 4.143), with the dense best 0.29 ahead. Harder data has
+more to learn, so a design that learns faster pays off more. The best dense model reached GPT-2 style's final
+loss (4.495) at about update 2,900, between its checkpoints at 2,500 (4.560) and 3,750 (4.343): the same quality
+in about 40% fewer updates.
+
+The models trained on web text are also far better on the two unseen datasets than the TinyStories models were
+(WikiText-2: 6.2–6.5 against 9.5–9.9), because their training text is closer to them. Greedy decoding still loops
+on web text at this size (76–80% repeated 4-token runs); the Balanced default avoids it.
+
+For scale: the 124M Large model from step 6 reached 3.603 on the same data, with four times the parameters and
+six times the updates. These 30M models are 0.5 behind after 5,000 updates.
+
+**Lesson.** Check results on the data you care about. The choices made on TinyStories transferred to web text,
+and mattered more there: a short, cheap benchmark was a good guide, but the size of a gain depends on the task.
+
+## 24. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -819,8 +855,9 @@ clear list of what to fix next.
     compute per token; compare models on both, and on speed in your own implementation.
 20. **Check that short-run wins survive a long run.** Here they did, and added up: 1.903 → 1.732 at 5,000
     updates. That's what made the short A/B tests worth trusting.
+21. **Check on the data you care about.** The TinyStories choices held on web text, and gained twice as much.
 
-## 24. What's next
+## 25. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
 - **Inference, first:** win back the generation speed the new architecture lost (cached RoPE tables, compiled

@@ -354,7 +354,8 @@ async function labLoadModels() {
 
 const tr = (m) => m.training || {};
 const groupOf = (m) => (m.training?.experiment && m.training?.experiment !== "Lab" ? m.training.experiment : m.training?.experiment === "Lab" || m.platform === "lab" ? "Lab runs" : "Earlier runs");
-const labelOf = (m) => (tr(m).experiment && tr(m).experiment !== "Lab" && tr(m).variant ? tr(m).variant : m.name);
+// A/B variants go by their short variant name; Lab runs (here or in the cloud) by the name given in the Lab
+const labelOf = (m) => (tr(m).experiment?.startsWith("Lab") ? (tr(m).description || m.name) : tr(m).experiment && tr(m).variant ? tr(m).variant : m.name);
 
 function archTags(c) {
   if (!c) return [];
