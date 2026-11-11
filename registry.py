@@ -69,7 +69,8 @@ def default_name(info):
                                        + (" QK-norm" if m.get("qk_norm") else "")
                                        + (f" GQA-{m['n_kv_head']}" if m.get("n_kv_head") and m["n_kv_head"] != m.get("n_head") else "")
                                        + (f" shared ×{m['block_repeat']}" if (m.get("block_repeat") or 1) > 1 else "")
-                                       + (f" MTP-{m['mtp_heads']}" if (m.get("mtp_heads") or 1) > 1 else "") if params else size, data, steps]
+                                       + (f" MTP-{m['mtp_heads']}" if (m.get("mtp_heads") or 1) > 1 else "")
+                                       + (f" MoE {m['n_experts']}×top{m.get('moe_top_k', 1)}" if (m.get("n_experts") or 1) > 1 else "") if params else size, data, steps]
     return " · ".join(p for p in parts if p)
 
 

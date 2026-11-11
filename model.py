@@ -174,13 +174,51 @@ class SwiGLU(nn.Module):
         return self.dropout(self.c_proj(F.silu(gate) * up))
 
 
+class MoE(nn.Module):
+    """Mixture of experts (Switch Transformer, Mixtral, DeepSeek): n_experts feed-forward layers, and a router
+    that sends each token to its top_k experts, weighted by the router's probabilities. More parameters, but each
+    token only uses top_k experts' worth of compute. A load-balancing loss keeps the router from favouring a few."""
+    def __init__(self, config):
+        super().__init__()
+        self.top_k = config.moe_top_k
+        self.router = nn.Linear(config.n_embd, config.n_experts, bias=False)
+        expert = SwiGLU if config.mlp == "swiglu" else MLP
+        self.experts = nn.ModuleList([expert(config) for _ in range(config.n_experts)])
+        self.aux_loss = None     # load-balancing loss of the last forward pass
+        self.usage = None        # share of tokens each expert got in the last forward pass
+
+    def forward(self, x):
+        B, T, C = x.shape
+        flat = x.reshape(-1, C)
+        E = len(self.experts)
+        probs = self.router(flat).float().softmax(-1)               # (tokens, experts)
+        top_p, top_i = probs.topk(self.top_k, dim=-1)
+        top_p = top_p / top_p.sum(-1, keepdim=True)                 # weights over the chosen experts
+        out = torch.zeros(flat.shape, dtype=torch.float32, device=flat.device)
+        for e, expert in enumerate(self.experts):
+            chosen = top_i == e                                       # (tokens, top_k)
+            rows = chosen.any(-1).nonzero(as_tuple=True)[0]
+            if rows.numel():
+                w = (top_p * chosen).sum(-1)[rows].unsqueeze(-1)
+                out.index_add_(0, rows, expert(flat[rows]).float() * w)
+        # Switch Transformer's balancing loss: E · Σ (share of tokens sent to e) · (mean router probability of e),
+        # which is 1 when the load is even and grows when a few experts get most tokens
+        share = F.one_hot(top_i, E).float().sum(1).mean(0) / self.top_k
+        self.aux_loss = E * (share * probs.mean(0)).sum()
+        self.usage = share.detach()
+        return out.to(x.dtype).view(B, T, C)
+
+
 class Block(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.ln1 = make_norm(config)
         self.attn = CausalSelfAttention(config)
         self.ln2 = make_norm(config)
-        self.mlp = SwiGLU(config) if config.mlp == "swiglu" else MLP(config)
+        if config.n_experts > 1:
+            self.mlp = MoE(config)
+        else:
+            self.mlp = SwiGLU(config) if config.mlp == "swiglu" else MLP(config)
 
     def forward(self, x, kv_cache=None, rope=None):
         x = x + self.attn(self.ln1(x), kv_cache, rope)
@@ -205,6 +243,9 @@ class GPTConfig:
     n_kv_head: int = 0              # key/value heads for grouped-query attention; 0 = n_head (ordinary attention)
     block_repeat: int = 1           # layer sharing (MobileLLM): apply each block this many times in a row, with the
                                     # same weights; more depth and compute, no more parameters
+    n_experts: int = 1              # mixture of experts: feed-forward layers per block (1 = an ordinary dense layer)
+    moe_top_k: int = 1              # experts each token is sent to
+    moe_aux_weight: float = 0.01    # weight of the load-balancing loss (Switch Transformer)
     mtp_heads: int = 1              # multi-token prediction (Gloeckle et al. 2024, DeepSeek-V3): 1 = next token only;
                                     # n = n - 1 extra heads, one transformer block each, also predict tokens 2…n ahead
                                     # during training. Generation and validation loss use the next-token head only.
@@ -283,6 +324,9 @@ class GPT(nn.Module):
                     lk = self.lm_head(self.transformer.ln_f(head(trunk, None, rope)))
                     losses.append(F.cross_entropy(lk.view(-1, lk.size(-1)), tk.view(-1), ignore_index=-1))
                 loss = torch.stack(losses).mean()  # equal weight per head (as Gloeckle et al.)
+            if self.training and self.config.n_experts > 1:  # keep the experts evenly loaded
+                aux = [m.aux_loss for m in self.modules() if isinstance(m, MoE) and m.aux_loss is not None]
+                loss = loss + self.config.moe_aux_weight * torch.stack(aux).mean()
             return logits, loss
         else:
             logits = self.lm_head(x[:, [-1], :])
@@ -349,7 +393,10 @@ def param_breakdown(config):
     mlp_in = d * (2 if sw else 1) * h + b * (2 if sw else 1) * h   # c_fc (SwiGLU: gate and up together)
     mlp_out = h * d + b * d                  # MLP c_proj
     qkn = 2 * hd if config.qk_norm else 0     # QK-norm: a scale per head dimension, for queries and for keys
-    block = 2 * ln + qkv + attn_out + mlp_in + mlp_out + qkn
+    E, k = max(1, getattr(config, "n_experts", 1)), getattr(config, "moe_top_k", 1)
+    router = d * E if E > 1 else 0           # mixture of experts: a router, and E copies of the feed-forward layer
+    block = 2 * ln + qkv + attn_out + E * (mlp_in + mlp_out) + router + qkn
+    active_block = block - (E - min(k, E)) * (mlp_in + mlp_out)  # parameters a token actually uses
     # weights: attention (queries + output 2·n_embd², keys and values 2·n_embd·kv), feed-forward; then biases and norms
     attn_w = "2·n_embd² + 2·n_embd·kv" if gqa else "4·n_embd²"
     ffn_w = "3·n_embd·h" if sw else "8·n_embd²"
@@ -358,6 +405,8 @@ def param_breakdown(config):
     extra = (" + 2·kv" if gqa and b else "") + (" + 2·h" if sw and b else "")
     block_formula = f"{weights} + {coef}·n_embd{extra}"
     block_formula += " + 2·head_dim" if config.qk_norm else ""
+    if E > 1:
+        block_formula = f"{block_formula}, with the feed-forward layer × {E} experts + a {d} × {E} router"
     block_formula += (f", kv = {kvd}" if gqa else "") + (f", h = {h}" if sw else "")
 
     def row(name, formula, expr, count, note=""):
@@ -370,7 +419,9 @@ def param_breakdown(config):
         row("Positions (RoPE)", "rotations of queries and keys", "0", 0, "No parameters: computed from each position"),
         row("Transformer blocks", f"n_layer × ({block_formula})", f"{L} × {block:,}", L * block,
             f"Each block is applied {config.block_repeat}× in a row: {L * config.block_repeat} layers deep, no extra parameters"
-            if getattr(config, "block_repeat", 1) > 1 else ""),
+            if getattr(config, "block_repeat", 1) > 1 else
+            f"Each token uses {k} of {E} experts: {L * active_block:,} of these parameters are active per token"
+            if E > 1 else ""),
         row(f"Final {norm_name}", ln_formula, f"{ln // d} × {d}", ln),
         row("Output layer", "shares the token embeddings", "0", 0),
         *([row("Multi-token heads", "(mtp_heads − 1) × one block", f"{config.mtp_heads - 1} × {block:,}",
@@ -388,10 +439,14 @@ def param_breakdown(config):
             f"{d} × {(2 if sw else 1) * h}" + (f" + {(2 if sw else 1) * h}" if b else ""), mlp_in),
         row("SwiGLU: down" if sw else "MLP: project back", f"{hs} × n_embd" + (" + n_embd" if b else ""),
             f"{h} × {d}" + (f" + {d}" if b else ""), mlp_out),
+        *([row("Mixture of experts: router", "n_embd × n_experts", f"{d} × {E}", router,
+               f"Picks {k} of {E} experts per token; the two rows above are per expert, × {E}")] if E > 1 else []),
         row(f"Two {norm_name}s", f"2 × {ln_formula.replace(' × ', '·')}", f"2 × {ln}", 2 * ln),
         *([row("QK-norm", "2 × head_dim", f"2 × {hd}", qkn, "Scales for the normalized queries and keys")] if config.qk_norm else []),
     ]
-    return {"total": sum(p["count"] for p in parts), "parts": parts, "per_block": per_block, "block": block}
+    total = sum(p["count"] for p in parts)
+    return {"total": total, "parts": parts, "per_block": per_block, "block": block,
+            "active": total - L * (block - active_block)}
 
 
 def estimate_loss(model, loader, eval_iters, ctx):

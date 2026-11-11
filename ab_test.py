@@ -12,6 +12,7 @@
 #   kv=2                    grouped-query attention with 2 key/value heads
 #   repeat=2                layer sharing: each block applied twice in a row (same weights)
 #   mtp=2                   multi-token prediction: extra heads also learn to predict 2… tokens ahead
+#   experts=4 topk=1        mixture of experts: 4 feed-forward experts per block, each token sent to 1
 #   size=tiny|small|medium|large (default small), or a custom shape: layers=12 embd=256 heads=4
 # Anything not given is the GPT-2 default (learned, layernorm, gelu, bias, no QK-norm).
 #
@@ -84,6 +85,10 @@ def parse_variant(spec):
             cfg["block_repeat"] = int(t[7:])
         elif t.startswith("mtp=") and t[4:].isdigit():
             cfg["mtp_heads"] = int(t[4:])
+        elif t.startswith("experts=") and t[8:].isdigit():
+            cfg["n_experts"] = int(t[8:])
+        elif t.startswith("topk=") and t[5:].isdigit():
+            cfg["moe_top_k"] = int(t[5:])
         elif t.startswith("lr="):
             lr = float(t[3:])
         elif t.startswith("size=") and t[5:] in SIZES:
@@ -111,6 +116,7 @@ def describe(cfg, lr, size):
     parts += [f"kv={cfg['n_kv_head']}"] if cfg.get("n_kv_head") else []
     parts += [f"repeat={cfg['block_repeat']}"] if cfg.get("block_repeat", 1) > 1 else []
     parts += [f"mtp={cfg['mtp_heads']}"] if cfg.get("mtp_heads", 1) > 1 else []
+    parts += [f"experts={cfg['n_experts']} topk={cfg.get('moe_top_k', 1)}"] if cfg.get("n_experts", 1) > 1 else []
     return " ".join(parts) + f" lr={lr:g}"
 
 
@@ -160,6 +166,8 @@ def train_variant(name, cfg, lr, size, steps, data_root, dataset_name, out_dir, 
     _, val = pretrain(model, loader, tcfg, dev, callback=cb, save_state=False)
     secs = time.time() - t0
     n = sum(p.numel() for p in model.parameters())
+    from model import param_breakdown
+    active = param_breakdown(config).get("active", n)
     finite = [v for v in val if math.isfinite(v)]
     save_model_config(os.path.join(folder, "model_config.json"), config,
                       {"datasets": [dataset_name], "steps": steps, "updates": steps, "params": n,
@@ -168,7 +176,7 @@ def train_variant(name, cfg, lr, size, steps, data_root, dataset_name, out_dir, 
                        "platform": "ab_test", "tokens": steps * BATCH * BLOCK})
     del model
     return {"name": name, "steps": steps, "options": cfg, "lr": lr, "size": size, "description": describe(cfg, lr, size),
-            "params": n, "val_curve": [round(v, 4) for v in val], "eval_every": max(1, steps // 4),
+            "params": n, "active_params": active, "val_curve": [round(v, 4) for v in val], "eval_every": max(1, steps // 4),
             "best_val": round(min(finite), 4) if finite else None, "seconds": round(secs, 1),
             "updates_per_sec": round(steps / secs, 2), "step_losses": step_losses,
             "loss_spikes": spikes(step_losses), "config": asdict(config)}
@@ -199,12 +207,13 @@ def evaluate_variant(r, out_dir, dataset_name, dev, eval_sets, title=None, say=p
     ids = get_tokenizer().encode_ordinary(BENCH_PROMPT)
     bench = benchmark_generation(model, ids, dev.device, n_tokens=BLOCK - len(ids) + 80)
     acc, agree = head_accuracy(model, eval_sets[0]["path"], dev.device)
+    busiest = expert_usage(model, eval_sets[0]["path"], dev.device)
     del model
     r.update({"model_id": meta["id"], "heldout": {k: v["loss"] for k, v in ev["heldout"].items()},
               "heldout_titles": {k: v["title"] for k, v in ev["heldout"].items()}, "generation": ev["generation"],
               "kv_speedup": bench["speedup"], "kv_recomputes": bench["kv_cache"]["recomputes"],
               "kv_bytes_per_token": ev["size"]["kv_bytes_per_token"], "tokens_per_sec": bench["kv_cache"]["tokens_per_sec"],
-              "head_accuracy": acc, "draft_agreement": agree})
+              "head_accuracy": acc, "draft_agreement": agree, "expert_busiest_share": busiest})
     if dev.device == "mps":
         torch.mps.empty_cache()
     elif dev.device == "cuda":
@@ -235,6 +244,23 @@ def head_accuracy(model, val_path, device, windows=32, context=BLOCK):
     return acc, agree
 
 
+@torch.no_grad()
+def expert_usage(model, val_path, device, windows=8, context=BLOCK):
+    """For mixture-of-experts models: the share of tokens the busiest expert gets, averaged over layers
+    (1 / n_experts is a perfectly even load). None for dense models."""
+    import numpy as np
+    from model import MoE
+    layers = [m for m in model.modules() if isinstance(m, MoE)]
+    if not layers:
+        return None
+    data = np.memmap(val_path, dtype=np.uint16, mode="r")
+    step = max(1, (len(data) - context) // windows)
+    x = torch.stack([torch.from_numpy(data[i * step:i * step + context].astype(np.int64)) for i in range(windows)]).to(device)
+    model.eval()
+    model(x)
+    return round(sum(m.usage.max().item() for m in layers) / len(layers), 4)
+
+
 def _pct(x):
     return f"{x * 100:.1f}%" if x is not None else "–"
 
@@ -245,7 +271,9 @@ def table(results):
         return ""
     keys = list(results[0].get("heldout", {}))
     titles = results[0].get("heldout_titles", {})
+    moe = any(r.get("options", {}).get("n_experts", 1) > 1 for r in results)
     rows = [("Options", lambda r: r["description"]), ("Parameters", lambda r: f"{r['params']:,}"),
+            *([("Active parameters per token", lambda r: f"{r.get('active_params', r['params']):,}")] if moe else []),
             ("Validation loss (each quarter)", lambda r: " / ".join(f"{v:.3f}" for v in r["val_curve"])),
             ("Best validation loss", lambda r: f"{r['best_val']:.3f}" if r["best_val"] is not None else "diverged")]
     rows += [(f"Held-out: {titles.get(k, k)}", lambda r, k=k: f"{r['heldout'][k]:.3f}" if k in r.get("heldout", {}) else "–")
@@ -256,6 +284,8 @@ def table(results):
               lambda r: " / ".join(_pct(a) for a in r.get("head_accuracy", [])) or "–"),
              *([("Extra heads agree with the main head", lambda r: " / ".join(_pct(a) for a in r.get("draft_agreement", [])) or "–")]
                if any(r.get("draft_agreement") for r in results) else []),
+             *([("Busiest expert's share of tokens", lambda r: _pct(r.get("expert_busiest_share")) if r.get("expert_busiest_share") else "–")]
+               if moe else []),
              ("KV cache per token", lambda r: f"{r['kv_bytes_per_token']:,} bytes" if "kv_bytes_per_token" in r else "–"),
              ("Generation, tokens/s (KV cache)", lambda r: f"{r['tokens_per_sec']:.0f}" if "tokens_per_sec" in r else "–"),
              ("Loss spikes", lambda r: str(r["loss_spikes"])),

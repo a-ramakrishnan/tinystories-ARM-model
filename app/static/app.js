@@ -385,10 +385,11 @@ function estimateParams(L, d, T) {
   const qkn = $("#m-qkn")?.value === "1" ? 2 * hd : 0;  // QK-norm scales
   const kvd = (+$("#m-kv")?.value || H) * hd;            // keys and values: n_kv_head · head_dim wide
   const attn = 2 * d * d + 2 * d * kvd + b * (2 * d + 2 * kvd);
-  const blk = attn + ffn + 2 * norm + qkn, mtp = (+$("#m-mtp")?.value || 1) - 1;  // extra heads: one block each
+  const E = +$("#m-exp")?.value || 1;                     // mixture of experts: E copies of the feed-forward + a router
+  const blk = attn + E * ffn + (E > 1 ? d * E : 0) + 2 * norm + qkn, mtp = (+$("#m-mtp")?.value || 1) - 1;  // extra heads: one block each
   return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + (L + mtp) * blk + norm;
 }
-const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value, norm: $("#m-norm").value, mlp: $("#m-mlp").value, bias: $("#m-bias").value !== "0", qk_norm: $("#m-qkn").value === "1", n_kv_head: +$("#m-kv").value || 0, block_repeat: +$("#m-rep").value || 1, mtp_heads: +$("#m-mtp").value || 1 });
+const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value, norm: $("#m-norm").value, mlp: $("#m-mlp").value, bias: $("#m-bias").value !== "0", qk_norm: $("#m-qkn").value === "1", n_kv_head: +$("#m-kv").value || 0, block_repeat: +$("#m-rep").value || 1, mtp_heads: +$("#m-mtp").value || 1, n_experts: +$("#m-exp").value || 1, moe_top_k: Math.min(+$("#m-topk").value || 1, +$("#m-exp").value || 1) });
 const POS_HINTS = {
   learned: "Each of the context window's positions has its own trained vector, added to the token embedding (block_size × n_embd parameters). The model only knows positions it was trained on, so a full KV cache has to be rebuilt when the window slides.",
   rope: "Rotary position embeddings: no position vectors. Each query and key is rotated by an angle that grows with its position, so attention scores depend on how far apart two tokens are. No parameters, used by Llama, Mistral and Qwen, and the KV cache can slide past the window without being rebuilt (a close approximation of recomputing the window).",
@@ -433,6 +434,13 @@ function renderMtpHint() {
     ? "Training teaches the model to predict the next token only."
     : `Multi-token prediction (Meta 2024, DeepSeek-V3): ${n - 1} extra head${n > 2 ? "s" : ""} (one transformer block each, sharing the output layer) also learn to predict ${n === 2 ? "the token 2 ahead" : `the tokens 2 to ${n} ahead`}. A richer training signal; the extra heads are only used in training (and could draft tokens for speculative decoding). Generating and the validation loss use the next-token head.`;
 }
+function renderExpHint() {
+  const E = +$("#m-exp").value || 1, k = Math.min(+$("#m-topk").value || 1, E);
+  $("#m-topk").disabled = E === 1;
+  $("#m-exp-hint").textContent = E === 1
+    ? "One feed-forward layer per block, used by every token."
+    : `Mixture of experts (Switch Transformer, Mixtral, DeepSeek): ${E} feed-forward layers per block and a small router that sends each token to ${k} of them. About ${E}× the feed-forward parameters, but each token only runs ${k}, so compute per token grows ${k === 1 ? "barely" : `about ${k}× in the feed-forward part`}. A balancing loss keeps all experts busy.`;
+}
 const normName = (c) => c.norm === "rmsnorm" ? "RMSNorm" : "LayerNorm";
 
 function setModelFields(c) {
@@ -453,6 +461,9 @@ function setModelFields(c) {
   renderRepHint();
   if (c.mtp_heads != null) $("#m-mtp").value = String(c.mtp_heads || 1);
   renderMtpHint();
+  if (c.n_experts != null) $("#m-exp").value = String(c.n_experts || 1);
+  if (c.moe_top_k != null) $("#m-topk").value = String(c.moe_top_k || 1);
+  renderExpHint();
   $("#m-qkn-hint").textContent = QKN_HINTS[$("#m-qkn").value];
   renderEstimate();
 }
@@ -515,7 +526,9 @@ function renderArchitecture(c, b) {
       </div>
       <div class="sub-flow">
         <div class="mini ln">${normName(c)}</div><div class="arr r">→</div>
-        <div class="abox ffn"><div>${c.mlp === "swiglu"
+        <div class="abox ffn"><div>${(c.n_experts || 1) > 1
+          ? `<div class="at">Mixture of experts: ${c.n_experts} feed-forward networks</div><div class="as">a router sends each token to ${c.moe_top_k || 1} of the ${c.n_experts} experts (each ${c.mlp === "swiglu" ? `SwiGLU, ${c.n_embd} → ${swigluHidden(c.n_embd)} → ${c.n_embd}` : `GELU, ${c.n_embd} → ${4 * c.n_embd} → ${c.n_embd}`}); their outputs are mixed by the router's weights</div>`
+          : c.mlp === "swiglu"
           ? `<div class="at">Feed-forward network (SwiGLU)</div><div class="as">two Linears ${c.n_embd} → ${swigluHidden(c.n_embd)} · SiLU(gate) × up · Linear ${swigluHidden(c.n_embd)} → ${c.n_embd}</div>`
           : `<div class="at">Feed-forward network (MLP)</div><div class="as">Linear ${c.n_embd} → ${4 * c.n_embd} · GELU · Linear ${4 * c.n_embd} → ${c.n_embd}</div>`}</div></div>
         <div class="arr r">→</div>${drop}<div class="arr r">→</div><div class="resid">+ residual</div>
@@ -1371,7 +1384,7 @@ function renderLibrary() {
     <tbody>${models.map((m) => `<tr class="${m.active ? "in-use" : ""}">
       <td><input type="checkbox" data-pick="${esc(m.id)}" ${lib.picked.has(m.id) ? "checked" : ""}></td>
       <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}</div>
-        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}${m.model.mlp === "swiglu" ? " · SwiGLU" : ""}${m.model.bias === false ? " · no biases" : ""}${m.model.qk_norm ? " · QK-norm" : ""}${m.model.n_kv_head && m.model.n_kv_head !== m.model.n_head ? ` · ${m.model.n_kv_head} KV heads` : ""}${(m.model.block_repeat || 1) > 1 ? ` · blocks shared ×${m.model.block_repeat}` : ""}${(m.model.mtp_heads || 1) > 1 ? ` · trained to predict ${m.model.mtp_heads} tokens` : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
+        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}${m.model.mlp === "swiglu" ? " · SwiGLU" : ""}${m.model.bias === false ? " · no biases" : ""}${m.model.qk_norm ? " · QK-norm" : ""}${m.model.n_kv_head && m.model.n_kv_head !== m.model.n_head ? ` · ${m.model.n_kv_head} KV heads` : ""}${(m.model.block_repeat || 1) > 1 ? ` · blocks shared ×${m.model.block_repeat}` : ""}${(m.model.mtp_heads || 1) > 1 ? ` · trained to predict ${m.model.mtp_heads} tokens` : ""}${(m.model.n_experts || 1) > 1 ? ` · ${m.model.n_experts} experts, ${m.model.moe_top_k || 1} per token` : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
         <div class="lib-actions">${m.active ? "" : `<button class="btn small" data-use="${esc(m.id)}">Use for generation</button>`}<button class="btn small ghost" data-rename="${esc(m.id)}">Rename</button><button class="btn small ghost danger" data-delete="${esc(m.id)}">Delete</button></div></td>
       <td>${esc(shortData(m.datasets))}<div class="muted small">${m.steps ? `${fmt(m.steps)} steps` : ""}${m.chip ? ` · ${esc(m.chip)}` : ""}${m.platform ? ` (${esc(m.platform)})` : ""}</div><div class="muted small">${when(m.trained_at)}</div></td>
       <td class="num">${fmtLoss(m.best_val)}<div class="muted small">on its own data</div></td>
@@ -1471,6 +1484,8 @@ $("#b-run").addEventListener("click", (e) => action(e.target, async () => {
 }));
 
 $$("#m-layer, #m-head, #m-embd").forEach((i) => i.addEventListener("input", renderEstimate));
+$("#m-exp").addEventListener("change", () => { renderExpHint(); renderEstimate(); renderModelPresets(); });
+$("#m-topk").addEventListener("change", () => { renderExpHint(); renderEstimate(); });
 $("#m-mtp").addEventListener("change", () => { renderMtpHint(); renderEstimate(); renderModelPresets(); });
 $("#m-rep").addEventListener("change", () => { renderRepHint(); renderEstimate(); });
 $("#m-layer").addEventListener("input", () => renderRepHint());
