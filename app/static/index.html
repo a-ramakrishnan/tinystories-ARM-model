@@ -223,6 +223,10 @@
             <label>Repeat each block <select id="m-rep" class="select"><option value="1">Once (no sharing)</option><option value="2">2× (layer sharing)</option><option value="3">3×</option><option value="4">4×</option></select></label>
             <p class="hint span3" id="m-rep-hint"></p>
           </div>
+          <div class="fields four">
+            <label>Tokens predicted (training) <select id="m-mtp" class="select"><option value="1">1, the next (GPT-2)</option><option value="2">2 (multi-token)</option><option value="3">3</option><option value="4">4</option></select></label>
+            <p class="hint span3" id="m-mtp-hint"></p>
+          </div>
           <div id="m-estimate" class="estimate"></div>
           <p class="hint" id="m-hint"></p>
           <div class="actions"><button id="m-run" class="btn primary">Build model</button></div>

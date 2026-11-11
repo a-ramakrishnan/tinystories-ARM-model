@@ -205,6 +205,9 @@ class GPTConfig:
     n_kv_head: int = 0              # key/value heads for grouped-query attention; 0 = n_head (ordinary attention)
     block_repeat: int = 1           # layer sharing (MobileLLM): apply each block this many times in a row, with the
                                     # same weights; more depth and compute, no more parameters
+    mtp_heads: int = 1              # multi-token prediction (Gloeckle et al. 2024, DeepSeek-V3): 1 = next token only;
+                                    # n = n - 1 extra heads, one transformer block each, also predict tokens 2…n ahead
+                                    # during training. Generation and validation loss use the next-token head only.
 
 
 def effective_layers(config):
@@ -223,6 +226,9 @@ class GPT(nn.Module):
             h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f=make_norm(config),
         ))
+        # multi-token prediction: extra heads (a block each) on top of the trunk, sharing ln_f and the output layer
+        if config.mtp_heads > 1:
+            self.mtp = nn.ModuleList([Block(config) for _ in range(config.mtp_heads - 1)])
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight  # weight tying
 
@@ -262,15 +268,43 @@ class GPT(nn.Module):
             for _ in range(max(1, self.config.block_repeat)):  # layer sharing: the same block again, same weights
                 x = block(x, kv_caches[i] if kv_caches is not None else None, rope)  # each pass has its own cache
                 i += 1
+        trunk = x
         x = self.transformer.ln_f(x)
 
         if targets is not None:
             logits = self.lm_head(x)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+            if self.training and self.config.mtp_heads > 1:
+                # head k predicts the token k steps ahead: targets shifted by k - 1, the last k - 1 positions have none
+                losses = [loss]
+                for k, head in enumerate(self.mtp, start=2):
+                    tk = torch.full_like(targets, -1)
+                    tk[:, :t - (k - 1)] = targets[:, k - 1:]
+                    lk = self.lm_head(self.transformer.ln_f(head(trunk, None, rope)))
+                    losses.append(F.cross_entropy(lk.view(-1, lk.size(-1)), tk.view(-1), ignore_index=-1))
+                loss = torch.stack(losses).mean()  # equal weight per head (as Gloeckle et al.)
             return logits, loss
         else:
             logits = self.lm_head(x[:, [-1], :])
             return logits, None
+
+    @torch.no_grad()
+    def mtp_logits(self, idx):
+        """Logits of every head for every position: a list, [next token, 2 ahead, …]."""
+        t = idx.size(1)
+        pos = torch.arange(t, device=idx.device)
+        x, rope = self.transformer.wte(idx), None
+        if self.config.pos_encoding == "rope":
+            rope = rope_cos_sin(pos, self.config.n_embd // self.config.n_head, self.config.rope_theta)
+        else:
+            x = x + self.transformer.wpe(pos)
+        for block in self.transformer.h:
+            for _ in range(max(1, self.config.block_repeat)):
+                x = block(x, None, rope)
+        out = [self.lm_head(self.transformer.ln_f(x))]
+        for head in getattr(self, "mtp", []):
+            out.append(self.lm_head(self.transformer.ln_f(head(x, None, rope))))
+        return out
 
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
@@ -339,6 +373,9 @@ def param_breakdown(config):
             if getattr(config, "block_repeat", 1) > 1 else ""),
         row(f"Final {norm_name}", ln_formula, f"{ln // d} × {d}", ln),
         row("Output layer", "shares the token embeddings", "0", 0),
+        *([row("Multi-token heads", "(mtp_heads − 1) × one block", f"{config.mtp_heads - 1} × {block:,}",
+                (config.mtp_heads - 1) * block, "Training only: predict tokens 2… ahead; not used to generate")]
+          if getattr(config, "mtp_heads", 1) > 1 else []),
     ]
     per_block = [
         row("Attention: query, key, value", (f"n_embd × (n_embd + 2·kv)" + (" + n_embd + 2·kv" if b else "")) if gqa

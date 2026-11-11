@@ -11,6 +11,7 @@
 #   qk-norm                 normalize queries and keys  lr=1.8e-3               peak learning rate (default 6e-4)
 #   kv=2                    grouped-query attention with 2 key/value heads
 #   repeat=2                layer sharing: each block applied twice in a row (same weights)
+#   mtp=2                   multi-token prediction: extra heads also learn to predict 2… tokens ahead
 #   size=tiny|small|medium|large (default small), or a custom shape: layers=12 embd=256 heads=4
 # Anything not given is the GPT-2 default (learned, layernorm, gelu, bias, no QK-norm).
 #
@@ -81,6 +82,8 @@ def parse_variant(spec):
             cfg["n_kv_head"] = int(t[3:])
         elif t.startswith("repeat=") and t[7:].isdigit():
             cfg["block_repeat"] = int(t[7:])
+        elif t.startswith("mtp=") and t[4:].isdigit():
+            cfg["mtp_heads"] = int(t[4:])
         elif t.startswith("lr="):
             lr = float(t[3:])
         elif t.startswith("size=") and t[5:] in SIZES:
@@ -107,6 +110,7 @@ def describe(cfg, lr, size):
     parts += ["qk-norm"] if cfg.get("qk_norm") else []
     parts += [f"kv={cfg['n_kv_head']}"] if cfg.get("n_kv_head") else []
     parts += [f"repeat={cfg['block_repeat']}"] if cfg.get("block_repeat", 1) > 1 else []
+    parts += [f"mtp={cfg['mtp_heads']}"] if cfg.get("mtp_heads", 1) > 1 else []
     return " ".join(parts) + f" lr={lr:g}"
 
 
@@ -194,15 +198,41 @@ def evaluate_variant(r, out_dir, dataset_name, dev, eval_sets, title=None, say=p
     model = load_model(config, os.path.join(folder, "best_model_params.pt"), dev.device)
     ids = get_tokenizer().encode_ordinary(BENCH_PROMPT)
     bench = benchmark_generation(model, ids, dev.device, n_tokens=BLOCK - len(ids) + 80)
+    acc, agree = head_accuracy(model, eval_sets[0]["path"], dev.device)
     del model
     r.update({"model_id": meta["id"], "heldout": {k: v["loss"] for k, v in ev["heldout"].items()},
               "heldout_titles": {k: v["title"] for k, v in ev["heldout"].items()}, "generation": ev["generation"],
               "kv_speedup": bench["speedup"], "kv_recomputes": bench["kv_cache"]["recomputes"],
-              "kv_bytes_per_token": ev["size"]["kv_bytes_per_token"], "tokens_per_sec": bench["kv_cache"]["tokens_per_sec"]})
+              "kv_bytes_per_token": ev["size"]["kv_bytes_per_token"], "tokens_per_sec": bench["kv_cache"]["tokens_per_sec"],
+              "head_accuracy": acc, "draft_agreement": agree})
     if dev.device == "mps":
         torch.mps.empty_cache()
     elif dev.device == "cuda":
         torch.cuda.empty_cache()
+
+
+@torch.no_grad()
+def head_accuracy(model, val_path, device, windows=32, context=BLOCK):
+    """How often each head's top guess is right on held-out text: head 1 is the next token, head k the token k
+    ahead. For the extra heads, also how often their guess matches the main head's own guess for that position
+    (what speculative decoding with these heads as drafters would accept, roughly)."""
+    import numpy as np
+    data = np.memmap(val_path, dtype=np.uint16, mode="r")
+    step = max(1, (len(data) - context - 1) // windows)
+    w = torch.stack([torch.from_numpy(data[i * step:i * step + context + 1].astype(np.int64)) for i in range(windows)])
+    x, y = w[:, :-1].to(device), w[:, 1:].to(device)
+    model.eval()
+    if not hasattr(model, "mtp_logits"):
+        return [], []
+    chunks = [[o.argmax(-1) for o in model.mtp_logits(x[i:i + 8])] for i in range(0, windows, 8)]  # 8 at a time: less memory
+    outs = [torch.cat([c[k] for c in chunks]) for k in range(len(chunks[0]))]
+    acc, agree = [], []
+    for k, pred in enumerate(outs):          # k = 0: next token; k: k + 1 tokens ahead
+        T = context - k
+        acc.append(round((pred[:, :T] == y[:, k:]).float().mean().item(), 4))
+        if k:
+            agree.append(round((pred[:, :T] == outs[0][:, k:]).float().mean().item(), 4))
+    return acc, agree
 
 
 def _pct(x):
@@ -222,6 +252,10 @@ def table(results):
              for k in keys]
     rows += [("Greedy / Balanced repetition", lambda r: f"{_pct(r['generation']['greedy_repeated_4grams'])} / "
               f"{_pct(r['generation']['balanced_repeated_4grams'])}" if "generation" in r else "–"),
+             ("Top-1 accuracy: next token" + (" / 2, 3… ahead" if any(len(r.get("head_accuracy", [])) > 1 for r in results) else ""),
+              lambda r: " / ".join(_pct(a) for a in r.get("head_accuracy", [])) or "–"),
+             *([("Extra heads agree with the main head", lambda r: " / ".join(_pct(a) for a in r.get("draft_agreement", [])) or "–")]
+               if any(r.get("draft_agreement") for r in results) else []),
              ("KV cache per token", lambda r: f"{r['kv_bytes_per_token']:,} bytes" if "kv_bytes_per_token" in r else "–"),
              ("Generation, tokens/s (KV cache)", lambda r: f"{r['tokens_per_sec']:.0f}" if "tokens_per_sec" in r else "–"),
              ("Loss spikes", lambda r: str(r["loss_spikes"])),
