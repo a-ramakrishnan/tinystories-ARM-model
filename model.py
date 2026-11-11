@@ -56,7 +56,12 @@ class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
-        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        # Grouped-query attention (Llama 2 70B, Mistral, Qwen): n_kv_head key/value heads, each shared by
+        # n_head / n_kv_head query heads, so the keys and values (and the KV cache) are that many times smaller
+        self.n_kv_head = config.n_kv_head or config.n_head
+        assert config.n_head % self.n_kv_head == 0, "n_head must be a multiple of n_kv_head"
+        self.kv_dim = self.n_kv_head * (config.n_embd // config.n_head)
+        self.c_attn = nn.Linear(config.n_embd, config.n_embd + 2 * self.kv_dim, bias=config.bias)
         self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
@@ -73,6 +78,11 @@ class CausalSelfAttention(nn.Module):
             self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
                                  .view(1, 1, config.block_size, config.block_size))
 
+    def _expand(self, t):
+        """Repeat each key/value head for the query heads that share it (a no-op without GQA)."""
+        rep = self.n_head // self.n_kv_head
+        return t if rep == 1 else t.repeat_interleave(rep, dim=1)
+
     def forward(self, x, kv_cache=None, rope=None):
         """kv_cache: optional dict for fast generation. It holds the keys and values of earlier tokens;
         the new tokens' keys and values are added, so only the new tokens need computing.
@@ -82,10 +92,11 @@ class CausalSelfAttention(nn.Module):
         it's full (RoPE models only, see GPT.forward) the newest token overwrites the oldest slot, like a ring:
         attention doesn't care about the order of keys, because each key carries its position in its rotation."""
         B, T, C = x.size()
-        q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
-        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        hd = C // self.n_head
+        q, k, v = self.c_attn(x).split([self.n_embd, self.kv_dim, self.kv_dim], dim=2)
+        q = q.view(B, T, self.n_head, hd).transpose(1, 2)
+        k = k.view(B, T, self.n_kv_head, hd).transpose(1, 2)
+        v = v.view(B, T, self.n_kv_head, hd).transpose(1, 2)
         if self.qk_norm:
             q, k = self.q_norm(q), self.k_norm(k)
         if rope is not None:
@@ -94,7 +105,7 @@ class CausalSelfAttention(nn.Module):
         if kv_cache is not None:
             written, size = kv_cache.get("written", 0), kv_cache["max_len"]
             if "kbuf" not in kv_cache:  # allocate the whole window once, then write into it in place
-                shape = (B, self.n_head, size, C // self.n_head)
+                shape = (B, self.n_kv_head, size, hd)  # only the shared key/value heads are cached
                 kv_cache["kbuf"] = torch.empty(shape, dtype=k.dtype, device=k.device)
                 kv_cache["vbuf"] = torch.empty(shape, dtype=v.dtype, device=v.device)
             assert written == 0 or T == 1, "with a filled cache, feed one new token at a time"
@@ -111,11 +122,14 @@ class CausalSelfAttention(nn.Module):
             kv_cache["len"] = n
             k, v = kv_cache["kbuf"][:, :, :n], kv_cache["vbuf"][:, :, :n]
             kv_cache["k"], kv_cache["v"] = k, v  # views of the filled part (used to report the cache size)
+            k, v = self._expand(k), self._expand(v)
             # first pass (prefill): causal over the prompt; later: the single new query may see every cached key
             y = F.scaled_dot_product_attention(q, k, v, is_causal=written == 0)
         elif self.flash:
+            k, v = self._expand(k), self._expand(v)
             y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.attn_dropout.p if self.training else 0.0, is_causal=True)
         else:
+            k, v = self._expand(k), self._expand(v)
             att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
             att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
             att = F.softmax(att, dim=-1)
@@ -188,6 +202,7 @@ class GPTConfig:
     norm: str = "layernorm"         # "layernorm" (GPT-2) or "rmsnorm" (Llama): scale only, no mean or bias
     mlp: str = "gelu"               # "gelu" (GPT-2: 4x wide) or "swiglu" (Llama: gated, 8/3x wide)
     qk_norm: bool = False           # RMS-normalize queries and keys per head before attention (OLMo 2, Qwen3)
+    n_kv_head: int = 0              # key/value heads for grouped-query attention; 0 = n_head (ordinary attention)
 
 
 class GPT(nn.Module):
@@ -278,21 +293,28 @@ def param_breakdown(config):
     ln = d if rms else (1 + b) * d           # LayerNorm: weight (+ bias); RMSNorm: weight only
     norm_name = "RMSNorm" if rms else "LayerNorm"
     ln_formula = "n_embd" if rms or not b else "2 × n_embd"
-    qkv = d * 3 * d + b * 3 * d              # c_attn
+    hd = d // config.n_head
+    nkv = config.n_kv_head or config.n_head
+    gqa = nkv != config.n_head
+    kvd = nkv * hd                           # key/value width (n_kv_head · head_dim; = n_embd without GQA)
+    qkv = d * (d + 2 * kvd) + b * (d + 2 * kvd)  # c_attn: queries, then the (shared) keys and values
     attn_out = d * d + b * d                 # attention c_proj
     sw = config.mlp == "swiglu"
     h = swiglu_hidden(d) if sw else 4 * d    # the feed-forward layer's hidden width
     hs = f"{h}" if sw else "4·n_embd"
     mlp_in = d * (2 if sw else 1) * h + b * (2 if sw else 1) * h   # c_fc (SwiGLU: gate and up together)
     mlp_out = h * d + b * d                  # MLP c_proj
-    hd = d // config.n_head
     qkn = 2 * hd if config.qk_norm else 0     # QK-norm: a scale per head dimension, for queries and for keys
     block = 2 * ln + qkv + attn_out + mlp_in + mlp_out + qkn
-    # biases (attention 4·n_embd, feed-forward 4·n_embd + n_embd, or 2·h + n_embd with SwiGLU) and norm weights
-    linear_terms = f"{(5 if sw else 9) * b + (2 if rms else 2 + 2 * b)}·n_embd" + (" + 2·h" if sw and b else "")
-    block_formula = f"4·n_embd² + 3·n_embd·h + {linear_terms}" if sw else f"12·n_embd² + {linear_terms}"
+    # weights: attention (queries + output 2·n_embd², keys and values 2·n_embd·kv), feed-forward; then biases and norms
+    attn_w = "2·n_embd² + 2·n_embd·kv" if gqa else "4·n_embd²"
+    ffn_w = "3·n_embd·h" if sw else "8·n_embd²"
+    weights = ("10·n_embd² + 2·n_embd·kv" if gqa else "12·n_embd²") if not sw else f"{attn_w} + {ffn_w}"
+    coef = b * ((2 if gqa else 4) + (1 if sw else 5)) + (2 if rms else 2 + 2 * b)
+    extra = (" + 2·kv" if gqa and b else "") + (" + 2·h" if sw and b else "")
+    block_formula = f"{weights} + {coef}·n_embd{extra}"
     block_formula += " + 2·head_dim" if config.qk_norm else ""
-    block_formula += f", h = {h}" if sw else ""
+    block_formula += (f", kv = {kvd}" if gqa else "") + (f", h = {h}" if sw else "")
 
     def row(name, formula, expr, count, note=""):
         return {"name": name, "formula": formula, "expr": expr, "count": count, "note": note}
@@ -307,8 +329,10 @@ def param_breakdown(config):
         row("Output layer", "shares the token embeddings", "0", 0),
     ]
     per_block = [
-        row("Attention: query, key, value", "n_embd × 3·n_embd" + (" + 3·n_embd" if b else ""),
-            f"{d} × {3 * d}" + (f" + {3 * d}" if b else ""), qkv),
+        row("Attention: query, key, value", (f"n_embd × (n_embd + 2·kv)" + (" + n_embd + 2·kv" if b else "")) if gqa
+            else "n_embd × 3·n_embd" + (" + 3·n_embd" if b else ""),
+            f"{d} × {d + 2 * kvd}" + (f" + {d + 2 * kvd}" if b else ""), qkv,
+            f"{nkv} key/value heads shared by {config.n_head} query heads (kv = {nkv} × {hd})" if gqa else ""),
         row("Attention: output projection", "n_embd × n_embd" + (" + n_embd" if b else ""),
             f"{d} × {d}" + (f" + {d}" if b else ""), attn_out),
         row("SwiGLU: gate and up" if sw else "MLP: expand", f"n_embd × {'2·' if sw else ''}{hs}" + (f" + {'2·' if sw else ''}{hs}" if b else ""),

@@ -381,10 +381,13 @@ function estimateParams(L, d, T) {
   const b = $("#m-bias")?.value === "0" ? 0 : 1;   // bias terms in linear layers and LayerNorms
   const ffn = sw ? 3 * d * h + b * (2 * h + d) : 8 * d * d + b * 5 * d;
   const norm = rms ? d : (1 + b) * d;
-  const qkn = $("#m-qkn")?.value === "1" ? 2 * Math.round(d / (+$("#m-head")?.value || 1)) : 0;  // QK-norm scales
-  return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + L * (4 * d * d + b * 4 * d + ffn + 2 * norm + qkn) + norm;
+  const H = +$("#m-head")?.value || 1, hd = Math.round(d / H);
+  const qkn = $("#m-qkn")?.value === "1" ? 2 * hd : 0;  // QK-norm scales
+  const kvd = (+$("#m-kv")?.value || H) * hd;            // keys and values: n_kv_head · head_dim wide
+  const attn = 2 * d * d + 2 * d * kvd + b * (2 * d + 2 * kvd);
+  return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + L * (attn + ffn + 2 * norm + qkn) + norm;
 }
-const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value, norm: $("#m-norm").value, mlp: $("#m-mlp").value, bias: $("#m-bias").value !== "0", qk_norm: $("#m-qkn").value === "1" });
+const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value, norm: $("#m-norm").value, mlp: $("#m-mlp").value, bias: $("#m-bias").value !== "0", qk_norm: $("#m-qkn").value === "1", n_kv_head: +$("#m-kv").value || 0 });
 const POS_HINTS = {
   learned: "Each of the context window's positions has its own trained vector, added to the token embedding (block_size × n_embd parameters). The model only knows positions it was trained on, so a full KV cache has to be rebuilt when the window slides.",
   rope: "Rotary position embeddings: no position vectors. Each query and key is rotated by an angle that grows with its position, so attention scores depend on how far apart two tokens are. No parameters, used by Llama, Mistral and Qwen, and the KV cache can slide past the window without being rebuilt (a close approximation of recomputing the window).",
@@ -405,6 +408,17 @@ const QKN_HINTS = {
   0: "Queries and keys go into attention as they are. Their dot products can grow large during training, which makes attention very peaked and training less stable at high learning rates.",
   1: "Each head's query and key are RMS-normalized before attention (a learned scale per dimension), so attention scores stay in a steady range. Steadier training that tolerates a higher learning rate; used by OLMo 2, Gemma 3 and Qwen3.",
 };
+function renderKvOptions(want) {
+  // key/value heads must divide the number of query heads
+  const H = +$("#m-head").value || 1, sel = $("#m-kv"), cur = want ?? (+sel.value || H);
+  const opts = Array.from({ length: H }, (_, i) => i + 1).filter((k) => H % k === 0).reverse();
+  sel.innerHTML = opts.map((k) => `<option value="${k}">${k === H ? `${k} (one per head)` : k === 1 ? "1 (multi-query)" : `${k} (groups of ${H / k})`}</option>`).join("");
+  sel.value = opts.includes(cur) ? cur : H;
+  const k = +sel.value, hd = Math.round((+$("#m-embd").value || 0) / H);
+  $("#m-kv-hint").textContent = k === H
+    ? "Ordinary multi-head attention: every query head has its own key and value head, and the KV cache stores all of them."
+    : `Grouped-query attention: ${H} query heads share ${k} key/value head${k > 1 ? "s" : ""} (${H / k} each). Keys and values are ${k * hd} numbers per token and layer instead of ${H * hd}, so the KV cache is ${H / k}× smaller and generation reads less memory. Used by Llama 2 70B, Llama 3, Mistral and Qwen.`;
+}
 const normName = (c) => c.norm === "rmsnorm" ? "RMSNorm" : "LayerNorm";
 
 function setModelFields(c) {
@@ -419,6 +433,7 @@ function setModelFields(c) {
   $("#m-mlp-hint").textContent = MLP_HINTS[$("#m-mlp").value];
   if (c.bias != null) $("#m-bias").value = c.bias ? "1" : "0";
   $("#m-bias-hint").textContent = BIAS_HINTS[$("#m-bias").value];
+  renderKvOptions(c.n_kv_head || (c.n_kv_head === 0 ? c.n_head : undefined));
   if (c.qk_norm != null) $("#m-qkn").value = c.qk_norm ? "1" : "0";
   $("#m-qkn-hint").textContent = QKN_HINTS[$("#m-qkn").value];
   renderEstimate();
@@ -477,7 +492,7 @@ function renderArchitecture(c, b) {
       <div class="stack-title">Transformer block <span class="ap">${short(b.block)} each</span></div>
       <div class="sub-flow">
         <div class="mini ln">${normName(c)}</div><div class="arr r">→</div>
-        <div class="abox attn"><div><div class="at">Masked multi-head self-attention ${dec}</div><div class="as">${c.n_head} heads × ${hs} dims${c.qk_norm ? " · queries and keys normalized (QK-norm)" : ""} · causal mask: each token sees only earlier tokens · attention dropout</div><div class="heads">${heads}</div></div></div>
+        <div class="abox attn"><div><div class="at">Masked multi-head self-attention ${dec}</div><div class="as">${c.n_head} heads × ${hs} dims${c.n_kv_head && c.n_kv_head !== c.n_head ? ` · ${c.n_kv_head} shared key/value head${c.n_kv_head > 1 ? "s" : ""} (grouped-query)` : ""}${c.qk_norm ? " · queries and keys normalized (QK-norm)" : ""} · causal mask: each token sees only earlier tokens · attention dropout</div><div class="heads">${heads}</div></div></div>
         <div class="arr r">→</div>${drop}<div class="arr r">→</div><div class="resid">+ residual</div>
       </div>
       <div class="sub-flow">
@@ -1147,7 +1162,8 @@ async function loadKvTokens() {
 
 function kvModel() {
   const m = ui.status?.active?.model || ui.status?.model?.config || { n_layer: 6, n_embd: 384, block_size: 256 };
-  return { n_layer: m.n_layer, n_embd: m.n_embd, block: m.block_size, perToken: 2 * m.n_layer * m.n_embd * 4 };
+  const kvw = ((m.n_kv_head || m.n_head || 1) * m.n_embd) / (m.n_head || 1);  // stored key/value width
+  return { n_layer: m.n_layer, n_embd: kvw, block: m.block_size, perToken: 2 * m.n_layer * kvw * 4 };
 }
 
 function renderKv() {
@@ -1207,7 +1223,9 @@ function kvPlay() {
 // ---------- KV cache: memory calculator ----------
 function kvModels() {
   const c = ui.status?.active, m = c?.model || ui.status?.model?.config;
-  const own = m ? [{ name: `This model (${short(c?.params?.total || ui.status?.model?.params || 0)} parameters)`, layers: m.n_layer, width: m.n_embd, params: c?.params?.total || ui.status?.model?.params || 0, max: m.block_size }] : [];
+  const kvh = m ? m.n_kv_head || m.n_head : 0, grouped = m && m.n_kv_head && m.n_kv_head !== m.n_head;
+  const own = m ? [{ name: `This model (${short(c?.params?.total || ui.status?.model?.params || 0)} parameters)`, layers: m.n_layer, width: (kvh * m.n_embd) / m.n_head, params: c?.params?.total || ui.status?.model?.params || 0, max: m.block_size,
+    gqa: grouped ? `${m.n_head} query heads share ${kvh} key/value heads, so it stores ${(kvh * m.n_embd) / m.n_head} numbers per layer instead of ${m.n_embd}` : "" }] : [];
   return own.concat([
     { name: "GPT-2 small (124M)", layers: 12, width: 768, params: 124e6, max: 1024 },
     { name: "GPT-2 XL (1.5B)", layers: 48, width: 1600, params: 1.56e9, max: 1024 },
@@ -1334,7 +1352,7 @@ function renderLibrary() {
     <tbody>${models.map((m) => `<tr class="${m.active ? "in-use" : ""}">
       <td><input type="checkbox" data-pick="${esc(m.id)}" ${lib.picked.has(m.id) ? "checked" : ""}></td>
       <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}</div>
-        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}${m.model.mlp === "swiglu" ? " · SwiGLU" : ""}${m.model.bias === false ? " · no biases" : ""}${m.model.qk_norm ? " · QK-norm" : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
+        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}${m.model.mlp === "swiglu" ? " · SwiGLU" : ""}${m.model.bias === false ? " · no biases" : ""}${m.model.qk_norm ? " · QK-norm" : ""}${m.model.n_kv_head && m.model.n_kv_head !== m.model.n_head ? ` · ${m.model.n_kv_head} KV heads` : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
         <div class="lib-actions">${m.active ? "" : `<button class="btn small" data-use="${esc(m.id)}">Use for generation</button>`}<button class="btn small ghost" data-rename="${esc(m.id)}">Rename</button><button class="btn small ghost danger" data-delete="${esc(m.id)}">Delete</button></div></td>
       <td>${esc(shortData(m.datasets))}<div class="muted small">${m.steps ? `${fmt(m.steps)} steps` : ""}${m.chip ? ` · ${esc(m.chip)}` : ""}${m.platform ? ` (${esc(m.platform)})` : ""}</div><div class="muted small">${when(m.trained_at)}</div></td>
       <td class="num">${fmtLoss(m.best_val)}<div class="muted small">on its own data</div></td>
@@ -1434,6 +1452,8 @@ $("#b-run").addEventListener("click", (e) => action(e.target, async () => {
 }));
 
 $$("#m-layer, #m-head, #m-embd").forEach((i) => i.addEventListener("input", renderEstimate));
+$("#m-kv").addEventListener("change", () => { renderKvOptions(); renderEstimate(); renderModelPresets(); });
+$$("#m-head, #m-embd").forEach((i) => i.addEventListener("input", () => { renderKvOptions(); renderEstimate(); }));
 $("#m-qkn").addEventListener("change", () => { $("#m-qkn-hint").textContent = QKN_HINTS[$("#m-qkn").value]; renderEstimate(); renderModelPresets(); });
 $("#m-bias").addEventListener("change", () => { $("#m-bias-hint").textContent = BIAS_HINTS[$("#m-bias").value]; renderEstimate(); renderModelPresets(); });
 $("#m-mlp").addEventListener("change", () => { $("#m-mlp-hint").textContent = MLP_HINTS[$("#m-mlp").value]; renderEstimate(); renderModelPresets(); });

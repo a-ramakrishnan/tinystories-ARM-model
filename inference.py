@@ -116,8 +116,10 @@ def kv_cache_bytes(caches):
 
 
 def kv_bytes_per_token(config, dtype_bytes=4):
-    """Each token stores a key and a value vector of n_embd numbers in every layer."""
-    return 2 * config.n_layer * config.n_embd * dtype_bytes
+    """Each token stores a key and a value vector in every layer: n_embd numbers each, or n_kv_head · head_dim
+    with grouped-query attention."""
+    kv_heads = getattr(config, "n_kv_head", 0) or config.n_head
+    return 2 * config.n_layer * kv_heads * (config.n_embd // config.n_head) * dtype_bytes
 
 
 def device_memory(device):
@@ -272,14 +274,17 @@ def attention_maps(model, prompt_ids, device, layer=0):
     for i, block in enumerate(model.transformer.h):
         if i == layer:
             a = block.attn
-            q, k, _ = a.c_attn(block.ln1(x)).split(a.n_embd, dim=2)
+            kv_dim = getattr(a, "kv_dim", a.n_embd)
+            q, k, _ = a.c_attn(block.ln1(x)).split([a.n_embd, kv_dim, kv_dim], dim=2)
             hs = a.n_embd // a.n_head
             q = q.view(1, T, a.n_head, hs).transpose(1, 2)
-            k = k.view(1, T, a.n_head, hs).transpose(1, 2)
+            k = k.view(1, T, kv_dim // hs, hs).transpose(1, 2)
             if getattr(a, "qk_norm", False):
                 q, k = a.q_norm(q), a.k_norm(k)
             if rope is not None:
                 q, k = apply_rope(q, *rope), apply_rope(k, *rope)
+            if hasattr(a, "_expand"):
+                k = a._expand(k)
             att = (q @ k.transpose(-2, -1)) / math.sqrt(hs)
             att = att.masked_fill(torch.ones(T, T, device=device).tril() == 0, float("-inf"))
             return F.softmax(att, dim=-1)[0]

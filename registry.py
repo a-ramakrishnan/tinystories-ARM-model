@@ -66,7 +66,8 @@ def default_name(info):
                                        + (" RMSNorm" if m.get("norm") == "rmsnorm" else "")
                                        + (" SwiGLU" if m.get("mlp") == "swiglu" else "")
                                        + (" no-bias" if m.get("bias") is False else "")
-                                       + (" QK-norm" if m.get("qk_norm") else "") if params else size, data, steps]
+                                       + (" QK-norm" if m.get("qk_norm") else "")
+                                       + (f" GQA-{m['n_kv_head']}" if m.get("n_kv_head") and m["n_kv_head"] != m.get("n_head") else "") if params else size, data, steps]
     return " · ".join(p for p in parts if p)
 
 

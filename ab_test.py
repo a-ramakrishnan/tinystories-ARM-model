@@ -9,6 +9,7 @@
 #   learned | rope          position encoding           layernorm | rmsnorm     normalization
 #   gelu | swiglu           feed-forward layer          bias | no-bias          bias terms
 #   qk-norm                 normalize queries and keys  lr=1.8e-3               peak learning rate (default 6e-4)
+#   kv=2                    grouped-query attention with 2 key/value heads
 #   size=tiny|small|medium|large (default small)
 # Anything not given is the GPT-2 default (learned, layernorm, gelu, bias, no QK-norm).
 #
@@ -75,6 +76,8 @@ def parse_variant(spec):
             cfg["bias"] = t == "bias"
         elif t == "qk-norm":
             cfg["qk_norm"] = True
+        elif t.startswith("kv=") and t[3:].isdigit():
+            cfg["n_kv_head"] = int(t[3:])
         elif t.startswith("lr="):
             lr = float(t[3:])
         elif t.startswith("size=") and t[5:] in SIZES:
@@ -88,6 +91,7 @@ def describe(cfg, lr, size):
     parts = [size, cfg.get("pos_encoding", "learned"), cfg.get("norm", "layernorm"), cfg.get("mlp", "gelu")]
     parts += [] if cfg.get("bias", True) else ["no-bias"]
     parts += ["qk-norm"] if cfg.get("qk_norm") else []
+    parts += [f"kv={cfg['n_kv_head']}"] if cfg.get("n_kv_head") else []
     return " ".join(parts) + f" lr={lr:g}"
 
 
@@ -177,7 +181,8 @@ def evaluate_variant(r, out_dir, dataset_name, dev, eval_sets, title=None, say=p
     del model
     r.update({"model_id": meta["id"], "heldout": {k: v["loss"] for k, v in ev["heldout"].items()},
               "heldout_titles": {k: v["title"] for k, v in ev["heldout"].items()}, "generation": ev["generation"],
-              "kv_speedup": bench["speedup"], "kv_recomputes": bench["kv_cache"]["recomputes"]})
+              "kv_speedup": bench["speedup"], "kv_recomputes": bench["kv_cache"]["recomputes"],
+              "kv_bytes_per_token": ev["size"]["kv_bytes_per_token"], "tokens_per_sec": bench["kv_cache"]["tokens_per_sec"]})
     if dev.device == "mps":
         torch.mps.empty_cache()
     elif dev.device == "cuda":
@@ -201,6 +206,8 @@ def table(results):
              for k in keys]
     rows += [("Greedy / Balanced repetition", lambda r: f"{_pct(r['generation']['greedy_repeated_4grams'])} / "
               f"{_pct(r['generation']['balanced_repeated_4grams'])}" if "generation" in r else "–"),
+             ("KV cache per token", lambda r: f"{r['kv_bytes_per_token']:,} bytes" if "kv_bytes_per_token" in r else "–"),
+             ("Generation, tokens/s (KV cache)", lambda r: f"{r['tokens_per_sec']:.0f}" if "tokens_per_sec" in r else "–"),
              ("Loss spikes", lambda r: str(r["loss_spikes"])),
              ("Updates / s", lambda r: f"{r['updates_per_sec']:.2f}")]
     out = ["| | " + " | ".join(r["name"] for r in results) + " |", "|---|" + "---|" * len(results)]

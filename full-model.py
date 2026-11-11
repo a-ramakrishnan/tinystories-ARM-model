@@ -55,7 +55,7 @@ PROMPTS = [
 
 
 def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG, text_column="text", datasets=None, mix="size",
-         resume=False, max_iters=None, pos_encoding=None, norm=None, mlp=None, bias=None, qk_norm=None):
+         resume=False, max_iters=None, pos_encoding=None, norm=None, mlp=None, bias=None, qk_norm=None, n_kv_head=None):
     """Run the pipeline. `datasets` is an optional list of (name, subset, text_column) to train on a mix;
     otherwise the single `dataset` is used. `mix` is "size" (in proportion to tokens) or "equal".
     resume: continue the saved training state for these datasets (see pretrain.py); max_iters: total steps
@@ -73,7 +73,8 @@ def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG,
         roots.append(dpaths.root)
     paths = mix_paths(roots, DATA_ROOT)  # one dataset: its own folder; several: data/mix-.../
     os.makedirs(paths.root, exist_ok=True)
-    model_cfg = replace(config, **{k: v for k, v in (("pos_encoding", pos_encoding), ("norm", norm), ("mlp", mlp), ("bias", bias), ("qk_norm", qk_norm)) if v is not None})
+    model_cfg = replace(config, **{k: v for k, v in (("pos_encoding", pos_encoding), ("norm", norm), ("mlp", mlp), ("bias", bias), ("qk_norm", qk_norm),
+                                                         ("n_kv_head", n_kv_head)) if v is not None})
     if resume:
         state = read_state_meta(paths.root)
         if state is None:
@@ -145,6 +146,8 @@ def parse_args():
                    help="Drop the bias terms in linear layers and LayerNorms (as in Llama)")
     p.add_argument("--qk-norm", action="store_true",
                    help="Normalize queries and keys per head before attention (as in OLMo 2 and Qwen3)")
+    p.add_argument("--kv-heads", type=int, default=None, metavar="N",
+                   help="Grouped-query attention: N key/value heads shared by the query heads (must divide n_head)")
     p.add_argument("--resume", action="store_true",
                    help="Continue the saved training run for these datasets (after an interruption, or to train longer)")
     p.add_argument("--max-iters", type=int, default=None,
@@ -173,11 +176,11 @@ if __name__ == "__main__":
         main(datasets=[parse_dataset_spec(s) for s in args.dataset], mix=args.mix, resume=args.resume, max_iters=args.max_iters,
              pos_encoding="rope" if args.rope else None, norm="rmsnorm" if args.rmsnorm else None,
              mlp="swiglu" if args.swiglu else None, bias=False if args.no_bias else None,
-             qk_norm=True if args.qk_norm else None)
+             qk_norm=True if args.qk_norm else None, n_kv_head=args.kv_heads)
     else:
         name, subset, column = parse_dataset_spec(args.dataset[0] if args.dataset else f"{DEFAULT_DATASET}@{DEFAULT_CONFIG}")
         main(dataset=name, dataset_config=args.dataset_config or subset,
              text_column=args.text_column if args.text_column != "text" else column, resume=args.resume, max_iters=args.max_iters,
              pos_encoding="rope" if args.rope else None, norm="rmsnorm" if args.rmsnorm else None,
              mlp="swiglu" if args.swiglu else None, bias=False if args.no_bias else None,
-             qk_norm=True if args.qk_norm else None)
+             qk_norm=True if args.qk_norm else None, n_kv_head=args.kv_heads)
