@@ -129,4 +129,5 @@ docker-compose.override.yml
 # Notebook results
 outputs/
 tinystories-run-*.zip
+ab-*.zip
 models/

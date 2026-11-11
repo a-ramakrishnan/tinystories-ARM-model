@@ -471,6 +471,7 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 8 | **RMSNorm** (A2) | Scale-only normalization instead of LayerNorm (**Normalization** in the Model step, `--rmsnorm`) ([the A/B](docs/journey.md#12-architecture-step-two-rmsnorm)) | **A tie**, on top of RoPE: validation loss 2.475 → 2.483, held-out WikiText-2 9.461 → 9.454; 5k fewer parameters and a ~17% faster training step on the Mac. Kept as an option |
 | 9 | **SwiGLU feed-forward** (A3) | A gated feed-forward layer, `silu(xW) · xV`, 8/3 × wide instead of 4 × so the parameter count stays the same (**Feed-forward** in the Model step, `--swiglu`) ([the A/B](docs/journey.md#13-architecture-step-three-a-gated-feed-forward-layer-swiglu)) | **A win**, on top of RoPE: validation loss 2.475 → **2.366**, held-out TinyStories 2.440 → **2.338**, the baseline's loss reached ~30% sooner; unseen datasets about the same; greedy repetition up (9% → 28%), Balanced 0% |
 | 10 | **No biases** (A4) | No bias terms in linear layers or LayerNorms (**Biases** in the Model step, `--no-bias`) ([the A/B](docs/journey.md#14-architecture-step-four-no-biases)) | **A tie**, on top of RoPE + SwiGLU: validation loss 2.366 → 2.365 with 29k fewer parameters; greedy repetition back to 7.5%, so the jump in step 9 was noise. Kept as an option |
+| 11 | **QK-norm** (A5), and A/B tests on a cloud GPU | RMS-normalize each head's queries and keys before attention (**QK-norm** in the Model step, `--qk-norm`); `ab_test.py` and the notebook's A/B section run comparisons on Colab ([the A/B](docs/journey.md#15-architecture-step-five-qk-norm-and-moving-the-ab-tests-to-a-gpu)) | **A small win**: 2.369 → 2.336 at 6e-4, 2.266 → 2.251 at 1.8e-3, less greedy repetition; no loss spikes at either rate. **Tripling the learning rate helped more** (2.369 → 2.266): 6e-4 is too low for these short runs. Each variant took 2½ min on an L4 vs ~25 on the Mac |
 
 ### Next: the architecture
 
@@ -492,7 +493,7 @@ python3 ab_test.py --title "A5 QK-norm" --variant "baseline: rope swiglu no-bias
 | ~~A2~~ | ~~**RMSNorm**~~ | Done: step 8 above | | |
 | ~~A3~~ | ~~**SwiGLU feed-forward**~~ | Done: step 9 above | | |
 | ~~A4~~ | ~~**No biases**~~ | Done: step 10 above | | |
-| A5 | **QK-norm** | Normalize queries and keys before attention | Steadier training; tolerates a higher learning rate | Loss curve smoothness, best learning rate |
+| ~~A5~~ | ~~**QK-norm**~~ | Done: step 11 above | | |
 | A6 | **Grouped-query attention (GQA)** | Several query heads share one key/value head | KV cache 2–8× smaller and faster generation, with almost the same quality | Loss, KV cache size, tokens/s |
 | A7 | **Deep and thin vs wide and shallow** | Same parameters, different shapes (e.g. 12 layers × 512 vs 6 × 768) | For small models, depth tends to beat width (MobileLLM) | Loss at equal parameters |
 | A8 | **Layer sharing** | Reuse each block's weights twice in a row | More depth for the same parameters and memory | Loss, parameters, speed |

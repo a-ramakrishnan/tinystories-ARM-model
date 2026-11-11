@@ -23,8 +23,9 @@ that are easy to get wrong and rarely explained.
 12. [Architecture, step two: RMSNorm](#12-architecture-step-two-rmsnorm)
 13. [Architecture, step three: a gated feed-forward layer (SwiGLU)](#13-architecture-step-three-a-gated-feed-forward-layer-swiglu)
 14. [Architecture, step four: no biases](#14-architecture-step-four-no-biases)
-15. [Lessons](#15-lessons)
-16. [What's next](#16-whats-next)
+15. [Architecture, step five: QK-norm, and moving the A/B tests to a GPU](#15-architecture-step-five-qk-norm-and-moving-the-ab-tests-to-a-gpu)
+16. [Lessons](#16-lessons)
+17. [What's next](#17-whats-next)
 
 ---
 
@@ -430,7 +431,54 @@ not to read too much into one small metric.
 
 ---
 
-## 15. Lessons
+## 15. Architecture, step five: QK-norm, and moving the A/B tests to a GPU
+
+Attention scores are dot products of queries and keys. Nothing stops those vectors from growing during
+training, and when they do, the softmax becomes extremely peaked: one token gets all the attention, gradients
+vanish elsewhere, and the loss can spike. **QK-norm** (OLMo 2, Gemma 3, Qwen3) RMS-normalizes each head's query
+and key before the dot product, with a learned scale per dimension, so scores stay in a steady range. The usual
+claim is not lower loss but **stability**, which lets you train with a higher learning rate.
+
+It's a switch: **QK-norm** in the Model step, `--qk-norm` on the command line, `qk_norm` in the notebook. It
+adds 2 × head_dim = 128 parameters per layer.
+
+**Testing a stability claim needs more than one run**, so this A/B had four variants: QK-norm off and on, at
+the usual learning rate (6e-4) and at three times it (1.8e-3). Every update's loss was recorded to count spikes.
+
+At about 25 minutes per variant, that was too slow for the Mac, so the A/B tests moved to the cloud. `ab_test.py`
+trains named variants the same way, evaluates each, and writes a table, a chart and a zip; the notebook's
+**A/B test** section runs it on a Colab GPU, and `import_run.py` brings the zip home into the model library. On
+an L4, each variant took about 2½ minutes. The Colab baseline reproduced the Mac's A4 result (2.369 vs 2.365),
+and the Mac's QK-norm run matched Colab's (2.337 vs 2.336), so numbers from the two machines line up.
+
+| On an L4 (RoPE + SwiGLU, no biases) | Baseline, 6e-4 | QK-norm, 6e-4 | Baseline, 1.8e-3 | QK-norm, 1.8e-3 |
+|---|---|---|---|---|
+| Best validation loss | 2.369 | 2.336 | 2.266 | **2.251** |
+| Held-out: TinyStories | 2.329 | 2.300 | 2.230 | **2.219** |
+| Held-out: WikiText-2 | **9.456** | 9.461 | 9.900 | 9.938 |
+| Held-out: Tiny Shakespeare | 8.216 | **8.016** | 8.365 | 8.360 |
+| Greedy / Balanced repetition | 36.7% / 0.2% | 21.3% / 0.2% | 21.0% / 0.0% | **6.6%** / 0.2% |
+| Loss spikes | 0 | 0 | 0 | 0 |
+
+![Validation and training loss for the four variants](screenshots/ab-a5-qk-norm.png)
+
+**QK-norm: a small, consistent win.** It was 0.033 lower at the usual learning rate and 0.015 lower at the
+higher one, with less greedy repetition in both. But its headline benefit, stability, never got a chance to
+show: no variant had a single loss spike, because 1.8e-3 isn't high enough to make this small model unstable.
+
+**The bigger finding was the learning rate.** Tripling it improved the loss by 0.10, three times what QK-norm
+did, with no instability at all. Every A/B test so far ran at 6e-4, which is too cautious for a 30M model trained
+for only 1,000 updates. (The faster learner also specialized more: its losses on the two unseen datasets got
+worse.) The next step is a learning-rate sweep, which will also show where training breaks with and without
+QK-norm.
+
+**Lesson.** Check your hyperparameters before your architecture. A setting carried over from another context
+(6e-4 is nanoGPT's choice for much bigger models and longer runs) can hide gains larger than the change you
+are testing.
+
+---
+
+## 16. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -450,11 +498,15 @@ not to read too much into one small metric.
     keep the count the same.
 11. **Small metrics are noisy.** A number measured on a handful of samples (greedy repetition over 6 prompts)
     can swing from 9% to 28% and back; trust the loss over thousands of tokens.
+12. **Re-check the hyperparameters as the model changes.** The learning rate mattered more than QK-norm.
+13. **Move experiments to where they're cheap.** The same A/B took 25 minutes per variant on the Mac and 2½ on
+    a cloud GPU, with the same results, so more ideas get tested and with longer runs.
 
-## 16. What's next
+## 17. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** QK-norm, grouped-query attention, depth vs width, layer
+- **A learning-rate sweep**, with and without QK-norm, to find the best rate and where training breaks.
+- **Architecture:** grouped-query attention, depth vs width, layer
   sharing, multi-token prediction, mixture of experts.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.
