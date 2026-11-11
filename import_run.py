@@ -8,6 +8,9 @@
 #   3. saves a copy in the model library (models/, see registry.py), and
 #   4. keeps the run's extras (loss chart, metrics, sample story) in data/<dataset>/imported/<zip name>/.
 # Then `python3 app/server.py` uses the imported model for Generate and Inside the transformer.
+#
+# It also takes the zip from an A/B test (ab_test.py, or the A/B section of the notebook): every variant goes
+# into the model library with its evaluation, and the comparison into outputs/ab/<stamp>/.
 
 import argparse
 import json
@@ -24,9 +27,45 @@ DATA_ROOT = os.path.join(PROJECT_DIR, "data")
 REQUIRED = ("run.json", "best_model_params.pt", "model_config.json")
 
 
+def import_ab(zip_path, z):
+    """An A/B test zip: one folder per variant (weights, config, eval.json) plus ab.json, results.md, losses.png."""
+    summary = json.loads(z.read("ab.json"))
+    stamp = os.path.basename(summary["stamp"])
+    out_dir = os.path.join(PROJECT_DIR, "outputs", "ab", stamp)
+    os.makedirs(out_dir, exist_ok=True)
+    for name in z.namelist():
+        dest = os.path.realpath(os.path.join(out_dir, name))
+        if not dest.startswith(os.path.realpath(out_dir) + os.sep) or name.endswith("/"):
+            continue  # never write outside the folder
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with z.open(name) as src, open(dest, "wb") as out:
+            shutil.copyfileobj(src, out)
+    title = summary.get("title") or "A/B"
+    print(f"A/B test \"{title}\" from {summary.get('chip')} ({summary.get('steps', 0):,} updates per variant):")
+    for v in summary["variants"]:
+        folder = os.path.join(out_dir, os.path.basename(v["name"]))
+        weights, cfg = os.path.join(folder, "best_model_params.pt"), os.path.join(folder, "model_config.json")
+        if not (os.path.exists(weights) and os.path.exists(cfg)):
+            print(f"  {v['name']}: no weights (diverged?), skipped")
+            continue
+        meta, added = registry.add_model(weights, cfg, source="imported", origin=os.path.basename(zip_path),
+                                         name=f"{title} · {v['name']} · {v['description']} · {v['steps']:,} updates · {summary.get('chip')}")
+        ev_path = os.path.join(folder, "eval.json")
+        if os.path.exists(ev_path):
+            with open(ev_path) as f:
+                registry.save_eval(meta["id"], json.load(f))
+        print(f"  {v['name']}: best validation loss {v['best_val']}  ->  {'saved' if added else 'already'} in the "
+              f"library as \"{meta['name']}\"")
+    print(f"\nThe comparison is in {os.path.relpath(out_dir, PROJECT_DIR)}/results.md (chart: losses.png);"
+          f" the Models step of the web app compares the variants.")
+    return out_dir
+
+
 def import_run(zip_path, data_root=DATA_ROOT):
     with zipfile.ZipFile(zip_path) as z:
         names = set(z.namelist())
+        if "ab.json" in names:
+            return import_ab(zip_path, z)
         missing = [n for n in REQUIRED if n not in names]
         if missing:
             raise SystemExit(f"{zip_path} isn't a results zip from the notebook (missing {', '.join(missing)}).")
@@ -92,8 +131,8 @@ def import_run(zip_path, data_root=DATA_ROOT):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Import a model trained on Colab or Kaggle (the zip from Step 10).")
-    ap.add_argument("zip", help="path to tinystories-run-*.zip")
+    ap = argparse.ArgumentParser(description="Import a model trained on Colab or Kaggle (the zip from Step 10), or an A/B test zip.")
+    ap.add_argument("zip", help="path to tinystories-run-*.zip or ab-*.zip")
     args = ap.parse_args()
     if not os.path.exists(args.zip):
         sys.exit(f"Not found: {args.zip}")

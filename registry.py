@@ -65,7 +65,8 @@ def default_name(info):
     parts = [f"{size} {params / 1e6:.0f}M" + (" RoPE" if m.get("pos_encoding") == "rope" else "")
                                        + (" RMSNorm" if m.get("norm") == "rmsnorm" else "")
                                        + (" SwiGLU" if m.get("mlp") == "swiglu" else "")
-                                       + (" no-bias" if m.get("bias") is False else "") if params else size, data, steps]
+                                       + (" no-bias" if m.get("bias") is False else "")
+                                       + (" QK-norm" if m.get("qk_norm") else "") if params else size, data, steps]
     return " · ".join(p for p in parts if p)
 
 

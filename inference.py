@@ -276,6 +276,8 @@ def attention_maps(model, prompt_ids, device, layer=0):
             hs = a.n_embd // a.n_head
             q = q.view(1, T, a.n_head, hs).transpose(1, 2)
             k = k.view(1, T, a.n_head, hs).transpose(1, 2)
+            if getattr(a, "qk_norm", False):
+                q, k = a.q_norm(q), a.k_norm(k)
             if rope is not None:
                 q, k = apply_rope(q, *rope), apply_rope(k, *rope)
             att = (q @ k.transpose(-2, -1)) / math.sqrt(hs)

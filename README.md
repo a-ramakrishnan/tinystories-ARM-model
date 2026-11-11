@@ -478,6 +478,14 @@ The focus now is the model itself rather than the training data: each idea is ad
 for a short run on the Mac (the Small model, 1,000 steps on TinyStories, the same data and seed) and kept only if the
 evaluation suite says it helps.
 
+`ab_test.py` runs these comparisons: name the variants, and it trains each the same way, evaluates it and writes a
+comparison table and loss chart. The notebook's **A/B test** section does the same on a cloud GPU, and
+`import_run.py` brings its zip home into the model library:
+
+```bash
+python3 ab_test.py --title "A5 QK-norm" --variant "baseline: rope swiglu no-bias" --variant "qk: rope swiglu no-bias qk-norm"
+```
+
 | # | Idea | What it is | Why it should help | How it's measured |
 |---|---|---|---|---|
 | ~~A1~~ | ~~**RoPE**~~ | Done: step 7 above | | |

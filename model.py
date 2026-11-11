@@ -62,6 +62,12 @@ class CausalSelfAttention(nn.Module):
         self.resid_dropout = nn.Dropout(config.dropout)
         self.n_head = config.n_head
         self.n_embd = config.n_embd
+        # QK-norm (OLMo 2, Gemma 3, Qwen3): RMS-normalize each head's query and key before attention, so their
+        # dot products can't grow without bound; the learned scales set how sharp attention can get
+        self.qk_norm = config.qk_norm
+        if self.qk_norm:
+            self.q_norm = RMSNorm(config.n_embd // config.n_head)
+            self.k_norm = RMSNorm(config.n_embd // config.n_head)
         self.flash = hasattr(F, 'scaled_dot_product_attention')
         if not self.flash:
             self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
@@ -80,6 +86,8 @@ class CausalSelfAttention(nn.Module):
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        if self.qk_norm:
+            q, k = self.q_norm(q), self.k_norm(k)
         if rope is not None:
             q, k = apply_rope(q, *rope), apply_rope(k, *rope)
 
@@ -179,6 +187,7 @@ class GPTConfig:
     rope_theta: float = 10000.0     # RoPE base: sets the slowest rotation frequency
     norm: str = "layernorm"         # "layernorm" (GPT-2) or "rmsnorm" (Llama): scale only, no mean or bias
     mlp: str = "gelu"               # "gelu" (GPT-2: 4x wide) or "swiglu" (Llama: gated, 8/3x wide)
+    qk_norm: bool = False           # RMS-normalize queries and keys per head before attention (OLMo 2, Qwen3)
 
 
 class GPT(nn.Module):
@@ -276,10 +285,14 @@ def param_breakdown(config):
     hs = f"{h}" if sw else "4·n_embd"
     mlp_in = d * (2 if sw else 1) * h + b * (2 if sw else 1) * h   # c_fc (SwiGLU: gate and up together)
     mlp_out = h * d + b * d                  # MLP c_proj
-    block = 2 * ln + qkv + attn_out + mlp_in + mlp_out
+    hd = d // config.n_head
+    qkn = 2 * hd if config.qk_norm else 0     # QK-norm: a scale per head dimension, for queries and for keys
+    block = 2 * ln + qkv + attn_out + mlp_in + mlp_out + qkn
     # biases (attention 4·n_embd, feed-forward 4·n_embd + n_embd, or 2·h + n_embd with SwiGLU) and norm weights
     linear_terms = f"{(5 if sw else 9) * b + (2 if rms else 2 + 2 * b)}·n_embd" + (" + 2·h" if sw and b else "")
-    block_formula = f"4·n_embd² + 3·n_embd·h + {linear_terms}, h = {h}" if sw else f"12·n_embd² + {linear_terms}"
+    block_formula = f"4·n_embd² + 3·n_embd·h + {linear_terms}" if sw else f"12·n_embd² + {linear_terms}"
+    block_formula += " + 2·head_dim" if config.qk_norm else ""
+    block_formula += f", h = {h}" if sw else ""
 
     def row(name, formula, expr, count, note=""):
         return {"name": name, "formula": formula, "expr": expr, "count": count, "note": note}
@@ -303,6 +316,7 @@ def param_breakdown(config):
         row("SwiGLU: down" if sw else "MLP: project back", f"{hs} × n_embd" + (" + n_embd" if b else ""),
             f"{h} × {d}" + (f" + {d}" if b else ""), mlp_out),
         row(f"Two {norm_name}s", f"2 × {ln_formula.replace(' × ', '·')}", f"2 × {ln}", 2 * ln),
+        *([row("QK-norm", "2 × head_dim", f"2 × {hd}", qkn, "Scales for the normalized queries and keys")] if config.qk_norm else []),
     ]
     return {"total": sum(p["count"] for p in parts), "parts": parts, "per_block": per_block, "block": block}
 
