@@ -10,6 +10,7 @@
 #   gelu | swiglu           feed-forward layer          bias | no-bias          bias terms
 #   qk-norm                 normalize queries and keys  lr=1.8e-3               peak learning rate (default 6e-4)
 #   kv=2                    grouped-query attention with 2 key/value heads
+#   repeat=2                layer sharing: each block applied twice in a row (same weights)
 #   size=tiny|small|medium|large (default small), or a custom shape: layers=12 embd=256 heads=4
 # Anything not given is the GPT-2 default (learned, layernorm, gelu, bias, no QK-norm).
 #
@@ -78,6 +79,8 @@ def parse_variant(spec):
             cfg["qk_norm"] = True
         elif t.startswith("kv=") and t[3:].isdigit():
             cfg["n_kv_head"] = int(t[3:])
+        elif t.startswith("repeat=") and t[7:].isdigit():
+            cfg["block_repeat"] = int(t[7:])
         elif t.startswith("lr="):
             lr = float(t[3:])
         elif t.startswith("size=") and t[5:] in SIZES:
@@ -103,6 +106,7 @@ def describe(cfg, lr, size):
     parts += [] if cfg.get("bias", True) else ["no-bias"]
     parts += ["qk-norm"] if cfg.get("qk_norm") else []
     parts += [f"kv={cfg['n_kv_head']}"] if cfg.get("n_kv_head") else []
+    parts += [f"repeat={cfg['block_repeat']}"] if cfg.get("block_repeat", 1) > 1 else []
     return " ".join(parts) + f" lr={lr:g}"
 
 

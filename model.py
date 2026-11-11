@@ -203,6 +203,13 @@ class GPTConfig:
     mlp: str = "gelu"               # "gelu" (GPT-2: 4x wide) or "swiglu" (Llama: gated, 8/3x wide)
     qk_norm: bool = False           # RMS-normalize queries and keys per head before attention (OLMo 2, Qwen3)
     n_kv_head: int = 0              # key/value heads for grouped-query attention; 0 = n_head (ordinary attention)
+    block_repeat: int = 1           # layer sharing (MobileLLM): apply each block this many times in a row, with the
+                                    # same weights; more depth and compute, no more parameters
+
+
+def effective_layers(config):
+    """Layers the input actually passes through: n_layer blocks, each applied block_repeat times."""
+    return config.n_layer * max(1, getattr(config, "block_repeat", 1))
 
 
 class GPT(nn.Module):
@@ -250,8 +257,11 @@ class GPT(nn.Module):
             assert start_pos + t <= self.config.block_size, "learned positions stop at block_size"
             x = x + self.transformer.wpe(pos)
         x = self.transformer.drop(x)
-        for i, block in enumerate(self.transformer.h):
-            x = block(x, kv_caches[i] if kv_caches is not None else None, rope)
+        i = 0
+        for block in self.transformer.h:
+            for _ in range(max(1, self.config.block_repeat)):  # layer sharing: the same block again, same weights
+                x = block(x, kv_caches[i] if kv_caches is not None else None, rope)  # each pass has its own cache
+                i += 1
         x = self.transformer.ln_f(x)
 
         if targets is not None:
@@ -324,7 +334,9 @@ def param_breakdown(config):
             "Also used as the output layer (weight tying)"),
         row("Position embeddings", "block_size × n_embd", f"{T} × {d}", T * d) if config.pos_encoding == "learned" else
         row("Positions (RoPE)", "rotations of queries and keys", "0", 0, "No parameters: computed from each position"),
-        row("Transformer blocks", f"n_layer × ({block_formula})", f"{L} × {block:,}", L * block),
+        row("Transformer blocks", f"n_layer × ({block_formula})", f"{L} × {block:,}", L * block,
+            f"Each block is applied {config.block_repeat}× in a row: {L * config.block_repeat} layers deep, no extra parameters"
+            if getattr(config, "block_repeat", 1) > 1 else ""),
         row(f"Final {norm_name}", ln_formula, f"{ln // d} × {d}", ln),
         row("Output layer", "shares the token embeddings", "0", 0),
     ]

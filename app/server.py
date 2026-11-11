@@ -307,6 +307,7 @@ class ModelReq(BaseModel):
     bias: bool = True               # bias terms in linear layers and LayerNorms
     qk_norm: bool = False           # normalize queries and keys per head before attention
     n_kv_head: int = 0              # key/value heads (grouped-query attention); 0 = one per query head
+    block_repeat: int = 1           # layer sharing: apply each block this many times
 
 
 class TrainReq(BaseModel):
@@ -553,12 +554,15 @@ def model_endpoint(req: ModelReq):
     if req.n_kv_head and (req.n_kv_head < 1 or req.n_head % req.n_kv_head):
         raise HTTPException(400, f"Key/value heads must divide the number of heads ({req.n_head}): "
                                  + ", ".join(str(k) for k in range(1, req.n_head + 1) if req.n_head % k == 0) + ".")
+    if not 1 <= req.block_repeat <= 4:
+        raise HTTPException(400, "Repeat each block 1 to 4 times.")
     if req.mlp not in ("gelu", "swiglu"):
         raise HTTPException(400, "Feed-forward must be 'gelu' or 'swiglu'.")
     config = GPTConfig(vocab_size=S.enc.n_vocab, block_size=S.batch["block_size"], n_layer=req.n_layer,
                        n_head=req.n_head, n_embd=req.n_embd, dropout=req.dropout, bias=req.bias, pos_encoding=req.pos_encoding,
                        norm=req.norm, mlp=req.mlp, qk_norm=req.qk_norm,
-                       n_kv_head=0 if req.n_kv_head in (0, req.n_head) else req.n_kv_head)
+                       n_kv_head=0 if req.n_kv_head in (0, req.n_head) else req.n_kv_head,
+                       block_repeat=req.block_repeat)
     breakdown = param_breakdown(config)
     need = breakdown["total"] * BYTES_PER_PARAM_TRAINING
     if S.memory and need > 0.6 * S.memory:

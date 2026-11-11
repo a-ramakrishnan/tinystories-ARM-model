@@ -67,7 +67,8 @@ def default_name(info):
                                        + (" SwiGLU" if m.get("mlp") == "swiglu" else "")
                                        + (" no-bias" if m.get("bias") is False else "")
                                        + (" QK-norm" if m.get("qk_norm") else "")
-                                       + (f" GQA-{m['n_kv_head']}" if m.get("n_kv_head") and m["n_kv_head"] != m.get("n_head") else "") if params else size, data, steps]
+                                       + (f" GQA-{m['n_kv_head']}" if m.get("n_kv_head") and m["n_kv_head"] != m.get("n_head") else "")
+                                       + (f" shared ×{m['block_repeat']}" if (m.get("block_repeat") or 1) > 1 else "") if params else size, data, steps]
     return " · ".join(p for p in parts if p)
 
 

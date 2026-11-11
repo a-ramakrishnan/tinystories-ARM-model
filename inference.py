@@ -8,7 +8,7 @@ from dataclasses import asdict
 import torch
 import torch.nn.functional as F
 
-from model import GPT, GPTConfig, apply_rope, rope_cos_sin
+from model import GPT, GPTConfig, apply_rope, rope_cos_sin, effective_layers
 
 
 def save_model_config(path, config, extra=None):
@@ -119,7 +119,7 @@ def kv_bytes_per_token(config, dtype_bytes=4):
     """Each token stores a key and a value vector in every layer: n_embd numbers each, or n_kv_head · head_dim
     with grouped-query attention."""
     kv_heads = getattr(config, "n_kv_head", 0) or config.n_head
-    return 2 * config.n_layer * kv_heads * (config.n_embd // config.n_head) * dtype_bytes
+    return 2 * effective_layers(config) * kv_heads * (config.n_embd // config.n_head) * dtype_bytes
 
 
 def device_memory(device):
@@ -171,7 +171,7 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
             if caches is None or (not sliding and cache_len + 1 > block):
                 if caches is not None:
                     recomputes += 1
-                caches = [{"max_len": block} for _ in range(model.config.n_layer)]
+                caches = [{"max_len": block} for _ in range(effective_layers(model.config))]
                 ctx = idx[:, -block:]
                 logits, _ = model(ctx, kv_caches=caches, start_pos=0)
                 cache_len = pos = ctx.size(1)
@@ -288,5 +288,6 @@ def attention_maps(model, prompt_ids, device, layer=0):
             att = (q @ k.transpose(-2, -1)) / math.sqrt(hs)
             att = att.masked_fill(torch.ones(T, T, device=device).tril() == 0, float("-inf"))
             return F.softmax(att, dim=-1)[0]
-        x = block(x, None, rope)
+        for _ in range(max(1, getattr(model.config, "block_repeat", 1))):
+            x = block(x, None, rope)
     raise ValueError(f"layer {layer} out of range (model has {len(model.transformer.h)})")

@@ -219,6 +219,10 @@
             <label>Key/value heads <span class="opt">n_kv_head</span> <select id="m-kv" class="select"></select></label>
             <p class="hint span3" id="m-kv-hint"></p>
           </div>
+          <div class="fields four">
+            <label>Repeat each block <select id="m-rep" class="select"><option value="1">Once (no sharing)</option><option value="2">2× (layer sharing)</option><option value="3">3×</option><option value="4">4×</option></select></label>
+            <p class="hint span3" id="m-rep-hint"></p>
+          </div>
           <div id="m-estimate" class="estimate"></div>
           <p class="hint" id="m-hint"></p>
           <div class="actions"><button id="m-run" class="btn primary">Build model</button></div>
