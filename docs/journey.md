@@ -28,8 +28,9 @@ that are easy to get wrong and rarely explained.
 17. [Architecture, step six: grouped-query attention](#17-architecture-step-six-grouped-query-attention)
 18. [Architecture, step seven: deep and thin, or wide and shallow?](#18-architecture-step-seven-deep-and-thin-or-wide-and-shallow)
 19. [Architecture, step eight: layer sharing](#19-architecture-step-eight-layer-sharing)
-20. [Lessons](#20-lessons)
-21. [What's next](#21-whats-next)
+20. [Architecture, step nine: predicting several tokens at once](#20-architecture-step-nine-predicting-several-tokens-at-once)
+21. [Lessons](#21-lessons)
+22. [What's next](#22-whats-next)
 
 ---
 
@@ -637,7 +638,49 @@ again blindly and so it can be revisited with a longer run.
 
 ---
 
-## 20. Lessons
+## 20. Architecture, step nine: predicting several tokens at once
+
+A language model is trained to predict one token: the next. **Multi-token prediction** (Meta, 2024; used in
+DeepSeek-V3) adds extra heads that, from the same internal state, also predict the token 2, 3 or 4 positions
+ahead. The idea is a richer training signal: to guess two tokens ahead, the model has to plan a little. Here each
+extra head is one transformer block on top of the model, sharing the output layer; the training loss is the
+average over all heads. The heads are used only in training: generating, and the validation loss, use the normal
+next-token head, so the model you generate with is the same size as before.
+
+It's a switch: **Tokens predicted (training)** in the Model step, `--mtp N`, `mtp_heads` in the notebook,
+`mtp=N` in `ab_test.py`. The A/B also measured, for each head, how often its top guess is right on held-out text,
+and how often the extra heads agree with the main head: roughly the fraction of drafts a speculative decoder would
+accept (roadmap item I5).
+
+| L4, 1,000 updates | Next token only (baseline) | + 1 head (2 tokens) | + 2 heads (3) | + 3 heads (4) |
+|---|---|---|---|---|
+| Best validation loss (next-token head) | **2.251** | 2.336 | 2.490 | 2.536 |
+| Held-out: TinyStories | **2.219** | 2.302 | 2.454 | 2.494 |
+| Top-1 accuracy: next token | **50.1%** | 49.1% | 47.6% | 47.0% |
+| Top-1 accuracy: 2 / 3 / 4 tokens ahead | – | 34.3% | 33.8% / 24.3% | 33.7% / 24.9% / 19.6% |
+| Extra heads agree with the main head | – | 50.9% | 51.3% / 34.6% | 51.7% / 35.6% / 27.2% |
+| Training speed (updates/s) | **6.64** | 4.33 | 3.22 | 2.55 |
+
+![Validation and training loss with 1, 2, 3 and 4 predicted tokens](screenshots/ab-a9-mtp.png)
+
+**Worse for the model itself, at this size.** Every extra head made the next-token loss worse, and training
+slower (each head adds a block and another pass through the 50,257-word output layer). That matches Meta's
+paper, which found the gains appear only in models with billions of parameters; small models lose. There's also
+a dilution effect: with the loss averaged over heads, the next-token objective gets half (or a quarter) of the
+weight, which behaves like a lower learning rate for it.
+
+**But the extra heads are usable drafters.** The second head agrees with the main head about half the time.
+In speculative decoding (I5), the head would guess the token after next, and one forward pass of the main model
+would check it: accepted half the time, that's up to about 1.5 tokens per pass instead of 1, with exactly the
+same output as before. Whether that's faster in practice depends on how cheap the draft is; that's the
+experiment for I5.
+
+**Lesson.** Some techniques are scale-dependent. Testing them small isn't wasted, though: it shows the costs
+clearly, and here it produced a by-product (a cheap drafter) worth testing on its own.
+
+---
+
+## 21. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -667,8 +710,10 @@ again blindly and so it can be revisited with a longer run.
     22-layer one, for 0.13 better loss than the deep one and 0.02 worse than the best.
 17. **Interactions matter.** Layer sharing behaves like a higher learning rate for the shared weights; a change
     that's tested at someone else's settings can fail at yours for reasons that have nothing to do with the idea.
+18. **Some ideas only pay at scale.** Multi-token prediction hurt a 30M model, as its authors found for small
+    models, but left behind heads that could speed up generation.
 
-## 21. What's next
+## 22. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
 - **Architecture:** multi-token prediction, mixture of experts.
