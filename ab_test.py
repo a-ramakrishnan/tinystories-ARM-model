@@ -10,7 +10,7 @@
 #   gelu | swiglu           feed-forward layer          bias | no-bias          bias terms
 #   qk-norm                 normalize queries and keys  lr=1.8e-3               peak learning rate (default 6e-4)
 #   kv=2                    grouped-query attention with 2 key/value heads
-#   size=tiny|small|medium|large (default small)
+#   size=tiny|small|medium|large (default small), or a custom shape: layers=12 embd=256 heads=4
 # Anything not given is the GPT-2 default (learned, layernorm, gelu, bias, no QK-norm).
 #
 # Each update uses 32 sequences of 256 tokens. On a Mac they're split into micro-batches of 8 (gradient
@@ -82,13 +82,24 @@ def parse_variant(spec):
             lr = float(t[3:])
         elif t.startswith("size=") and t[5:] in SIZES:
             size = t[5:]
+        elif re.fullmatch(r"(layers|embd|heads)=\d+", t):
+            key, val = t.split("=")
+            cfg[{"layers": "n_layer", "embd": "n_embd", "heads": "n_head"}[key]] = int(val)
         else:
             raise SystemExit(f"Variant '{name}': unknown option '{tok}' (see the top of ab_test.py)")
     return name, cfg, lr, size
 
 
+def shape(cfg, size):
+    """(n_layer, n_head, n_embd): the size preset, with any custom layers/heads/embd on top."""
+    L, H, D = SIZES[size]
+    return cfg.get("n_layer", L), cfg.get("n_head", H), cfg.get("n_embd", D)
+
+
 def describe(cfg, lr, size):
-    parts = [size, cfg.get("pos_encoding", "learned"), cfg.get("norm", "layernorm"), cfg.get("mlp", "gelu")]
+    custom = any(k in cfg for k in ("n_layer", "n_head", "n_embd"))
+    L, H, D = shape(cfg, size)
+    parts = [f"{L}×{D} ({H} heads)" if custom else size, cfg.get("pos_encoding", "learned"), cfg.get("norm", "layernorm"), cfg.get("mlp", "gelu")]
     parts += [] if cfg.get("bias", True) else ["no-bias"]
     parts += ["qk-norm"] if cfg.get("qk_norm") else []
     parts += [f"kv={cfg['n_kv_head']}"] if cfg.get("n_kv_head") else []
@@ -114,9 +125,10 @@ def chip_name(dev):
 def train_variant(name, cfg, lr, size, steps, data_root, dataset_name, out_dir, dev, say=print):
     folder = os.path.join(out_dir, name)
     os.makedirs(folder, exist_ok=True)
-    n_layer, n_head, n_embd = SIZES[size]
+    n_layer, n_head, n_embd = shape(cfg, size)
+    model_opts = {k: v for k, v in cfg.items() if k not in ("n_layer", "n_head", "n_embd")}
     config = GPTConfig(vocab_size=50257, block_size=BLOCK, n_layer=n_layer, n_head=n_head, n_embd=n_embd,
-                       dropout=0.0, **{"bias": True, **cfg})
+                       dropout=0.0, **{"bias": True, **model_opts})
     torch.manual_seed(SEED)
     model = GPT(config).to(dev.device)
     micro = 8 if dev.device != "cuda" else BATCH       # the Mac's 16 GB can't hold a batch of 32 at once
