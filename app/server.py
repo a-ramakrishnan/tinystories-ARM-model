@@ -304,6 +304,7 @@ class ModelReq(BaseModel):
     pos_encoding: str = "learned"   # "learned" or "rope"
     norm: str = "layernorm"         # "layernorm" or "rmsnorm"
     mlp: str = "gelu"               # "gelu" or "swiglu"
+    bias: bool = True               # bias terms in linear layers and LayerNorms
 
 
 class TrainReq(BaseModel):
@@ -550,7 +551,7 @@ def model_endpoint(req: ModelReq):
     if req.mlp not in ("gelu", "swiglu"):
         raise HTTPException(400, "Feed-forward must be 'gelu' or 'swiglu'.")
     config = GPTConfig(vocab_size=S.enc.n_vocab, block_size=S.batch["block_size"], n_layer=req.n_layer,
-                       n_head=req.n_head, n_embd=req.n_embd, dropout=req.dropout, bias=True, pos_encoding=req.pos_encoding,
+                       n_head=req.n_head, n_embd=req.n_embd, dropout=req.dropout, bias=req.bias, pos_encoding=req.pos_encoding,
                        norm=req.norm, mlp=req.mlp)
     breakdown = param_breakdown(config)
     need = breakdown["total"] * BYTES_PER_PARAM_TRAINING

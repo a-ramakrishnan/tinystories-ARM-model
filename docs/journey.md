@@ -22,8 +22,9 @@ that are easy to get wrong and rarely explained.
 11. [Architecture, step one: rotary positions (RoPE)](#11-architecture-step-one-rotary-positions-rope)
 12. [Architecture, step two: RMSNorm](#12-architecture-step-two-rmsnorm)
 13. [Architecture, step three: a gated feed-forward layer (SwiGLU)](#13-architecture-step-three-a-gated-feed-forward-layer-swiglu)
-14. [Lessons](#14-lessons)
-15. [What's next](#15-whats-next)
+14. [Architecture, step four: no biases](#14-architecture-step-four-no-biases)
+15. [Lessons](#15-lessons)
+16. [What's next](#16-whats-next)
 
 ---
 
@@ -397,7 +398,39 @@ positions, multiplicative gating. The one that didn't (RMSNorm) only changes how
 
 ---
 
-## 14. Lessons
+## 14. Architecture, step four: no biases
+
+Every linear layer in GPT-2 computes `xW + b`, and every LayerNorm learns a shift. Llama, Mistral and Qwen drop
+all of them: with normalization before every layer, a bias adds little that the weights can't do, and it's one
+more thing that can drift during long training runs.
+
+It's a switch: **Biases: Yes / No** in the Model step, `--no-bias` on the command line, or `bias = False` in
+the notebook.
+
+**The A/B test.** RoPE + SwiGLU without biases against the RoPE + SwiGLU run from step 13.
+
+| | RoPE + SwiGLU | RoPE + SwiGLU, no biases |
+|---|---|---|
+| Parameters | 29,949,312 | 29,920,512 (29k fewer) |
+| Validation loss at updates 250 / 500 / 750 / 1,000 | 3.035 / 2.642 / 2.431 / 2.366 | 3.044 / 2.645 / 2.430 / 2.365 |
+| Held-out loss: TinyStories | 2.338 | **2.324** |
+| Held-out loss: WikiText-2 | 9.501 | **9.483** |
+| Held-out loss: Tiny Shakespeare | **8.019** | 8.093 |
+| Greedy / Balanced repetition | 28.0% / 0.0% | **7.5%** / 0.0% |
+
+**Another tie.** The validation curves are indistinguishable (0.0005 apart at the end), so the biases weren't
+doing anything this model needed. Dropping them is free: fewer parameters, simpler layers, and one less
+difference from the models people actually use.
+
+The greedy repetition that jumped to 28% with SwiGLU is back to 7.5% here, with an almost identical loss. That
+says the jump was noise from greedy decoding on 6 prompts, not something SwiGLU did, which is a useful reminder
+not to read too much into one small metric.
+
+**Lesson.** Simplifications that cost nothing are worth taking; they make later changes easier to reason about.
+
+---
+
+## 15. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -415,11 +448,13 @@ positions, multiplicative gating. The one that didn't (RMSNorm) only changes how
    for a lot of memory, without changing the maths.
 10. **Compare at equal parameters.** SwiGLU's win only means something because its hidden layer was narrowed to
     keep the count the same.
+11. **Small metrics are noisy.** A number measured on a handful of samples (greedy repetition over 6 prompts)
+    can swing from 9% to 28% and back; trust the loss over thousands of tokens.
 
-## 15. What's next
+## 16. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** no biases, QK-norm, grouped-query attention, depth vs width, layer
+- **Architecture:** QK-norm, grouped-query attention, depth vs width, layer
   sharing, multi-token prediction, mixture of experts.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.

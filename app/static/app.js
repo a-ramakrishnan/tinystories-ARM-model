@@ -378,10 +378,12 @@ const swigluHidden = (d) => 32 * Math.round((8 * d) / 3 / 32);
 function estimateParams(L, d, T) {
   const rms = $("#m-norm")?.value === "rmsnorm";  // RMSNorm: a scale per feature, no shift
   const sw = $("#m-mlp")?.value === "swiglu", h = sw ? swigluHidden(d) : 4 * d;  // SwiGLU: three matrices, 8/3 wide
-  const ffn = sw ? 3 * d * h + 2 * h + d : 8 * d * d + 5 * d;
-  return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + L * (4 * d * d + 4 * d + ffn + (rms ? 2 : 4) * d) + (rms ? 1 : 2) * d;
+  const b = $("#m-bias")?.value === "0" ? 0 : 1;   // bias terms in linear layers and LayerNorms
+  const ffn = sw ? 3 * d * h + b * (2 * h + d) : 8 * d * d + b * 5 * d;
+  const norm = rms ? d : (1 + b) * d;
+  return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + L * (4 * d * d + b * 4 * d + ffn + 2 * norm) + norm;
 }
-const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value, norm: $("#m-norm").value, mlp: $("#m-mlp").value });
+const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value, norm: $("#m-norm").value, mlp: $("#m-mlp").value, bias: $("#m-bias").value !== "0" });
 const POS_HINTS = {
   learned: "Each of the context window's positions has its own trained vector, added to the token embedding (block_size × n_embd parameters). The model only knows positions it was trained on, so a full KV cache has to be rebuilt when the window slides.",
   rope: "Rotary position embeddings: no position vectors. Each query and key is rotated by an angle that grows with its position, so attention scores depend on how far apart two tokens are. No parameters, used by Llama, Mistral and Qwen, and the KV cache can slide past the window without being rebuilt (a close approximation of recomputing the window).",
@@ -393,6 +395,10 @@ const NORM_HINTS = {
 const MLP_HINTS = {
   gelu: "Each token's vector is widened to 4 × n_embd, passed through GELU, and narrowed back (GPT-2).",
   swiglu: "Two projections to about 8/3 × n_embd: one goes through SiLU and acts as a gate that scales the other, feature by feature, then one projection back. Three matrices instead of two, narrower, so about the same parameters. Used by Llama, Mistral and Qwen.",
+};
+const BIAS_HINTS = {
+  1: "Every linear layer adds a learned bias vector to its output, and each LayerNorm learns a shift (GPT-2).",
+  0: "No bias vectors anywhere: linear layers are pure matrix multiplications and LayerNorms only scale. A few thousand fewer parameters, and often slightly more stable training. Used by Llama, Mistral and Qwen.",
 };
 const normName = (c) => c.norm === "rmsnorm" ? "RMSNorm" : "LayerNorm";
 
@@ -406,6 +412,8 @@ function setModelFields(c) {
   $("#m-norm-hint").textContent = NORM_HINTS[$("#m-norm").value];
   if (c.mlp) $("#m-mlp").value = c.mlp;
   $("#m-mlp-hint").textContent = MLP_HINTS[$("#m-mlp").value];
+  if (c.bias != null) $("#m-bias").value = c.bias ? "1" : "0";
+  $("#m-bias-hint").textContent = BIAS_HINTS[$("#m-bias").value];
   renderEstimate();
 }
 
@@ -1319,7 +1327,7 @@ function renderLibrary() {
     <tbody>${models.map((m) => `<tr class="${m.active ? "in-use" : ""}">
       <td><input type="checkbox" data-pick="${esc(m.id)}" ${lib.picked.has(m.id) ? "checked" : ""}></td>
       <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}</div>
-        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}${m.model.mlp === "swiglu" ? " · SwiGLU" : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
+        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}${m.model.mlp === "swiglu" ? " · SwiGLU" : ""}${m.model.bias === false ? " · no biases" : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
         <div class="lib-actions">${m.active ? "" : `<button class="btn small" data-use="${esc(m.id)}">Use for generation</button>`}<button class="btn small ghost" data-rename="${esc(m.id)}">Rename</button><button class="btn small ghost danger" data-delete="${esc(m.id)}">Delete</button></div></td>
       <td>${esc(shortData(m.datasets))}<div class="muted small">${m.steps ? `${fmt(m.steps)} steps` : ""}${m.chip ? ` · ${esc(m.chip)}` : ""}${m.platform ? ` (${esc(m.platform)})` : ""}</div><div class="muted small">${when(m.trained_at)}</div></td>
       <td class="num">${fmtLoss(m.best_val)}<div class="muted small">on its own data</div></td>
@@ -1419,6 +1427,7 @@ $("#b-run").addEventListener("click", (e) => action(e.target, async () => {
 }));
 
 $$("#m-layer, #m-head, #m-embd").forEach((i) => i.addEventListener("input", renderEstimate));
+$("#m-bias").addEventListener("change", () => { $("#m-bias-hint").textContent = BIAS_HINTS[$("#m-bias").value]; renderEstimate(); renderModelPresets(); });
 $("#m-mlp").addEventListener("change", () => { $("#m-mlp-hint").textContent = MLP_HINTS[$("#m-mlp").value]; renderEstimate(); renderModelPresets(); });
 $("#m-norm").addEventListener("change", () => { $("#m-norm-hint").textContent = NORM_HINTS[$("#m-norm").value]; renderEstimate(); renderModelPresets(); });
 $("#m-pos").addEventListener("change", () => { $("#m-pos-hint").textContent = POS_HINTS[$("#m-pos").value]; renderEstimate(); renderModelPresets(); });

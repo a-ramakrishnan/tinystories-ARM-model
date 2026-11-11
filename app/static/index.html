@@ -207,6 +207,10 @@
             <label>Feed-forward <select id="m-mlp" class="select"><option value="gelu">GELU, 4× wide (GPT-2)</option><option value="swiglu">SwiGLU, gated (Llama)</option></select></label>
             <p class="hint span3" id="m-mlp-hint"></p>
           </div>
+          <div class="fields four">
+            <label>Biases <select id="m-bias" class="select"><option value="1">Yes (GPT-2)</option><option value="0">No (Llama)</option></select></label>
+            <p class="hint span3" id="m-bias-hint"></p>
+          </div>
           <div id="m-estimate" class="estimate"></div>
           <p class="hint" id="m-hint"></p>
           <div class="actions"><button id="m-run" class="btn primary">Build model</button></div>

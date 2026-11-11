@@ -470,6 +470,7 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 7 | **RoPE + a sliding KV cache** (A1, I1) | Rotary position embeddings instead of a learned position table (**Positions** in the Model step, `--rope`); with RoPE the KV cache is a ring buffer that slides past the window instead of being rebuilt ([the A/B](docs/journey.md#11-architecture-step-one-rotary-positions-rope)) | Small model, 1,000 steps on TinyStories: validation loss 2.631 → **2.475**, lower on WikiText-2 and Shakespeare too, with 98k fewer parameters; past the window the cache is never rebuilt (1.14× → **1.47×** faster than no cache); past the window it approximates a full recompute rather than matching it exactly ([why](docs/journey.md#11-architecture-step-one-rotary-positions-rope)) |
 | 8 | **RMSNorm** (A2) | Scale-only normalization instead of LayerNorm (**Normalization** in the Model step, `--rmsnorm`) ([the A/B](docs/journey.md#12-architecture-step-two-rmsnorm)) | **A tie**, on top of RoPE: validation loss 2.475 → 2.483, held-out WikiText-2 9.461 → 9.454; 5k fewer parameters and a ~17% faster training step on the Mac. Kept as an option |
 | 9 | **SwiGLU feed-forward** (A3) | A gated feed-forward layer, `silu(xW) · xV`, 8/3 × wide instead of 4 × so the parameter count stays the same (**Feed-forward** in the Model step, `--swiglu`) ([the A/B](docs/journey.md#13-architecture-step-three-a-gated-feed-forward-layer-swiglu)) | **A win**, on top of RoPE: validation loss 2.475 → **2.366**, held-out TinyStories 2.440 → **2.338**, the baseline's loss reached ~30% sooner; unseen datasets about the same; greedy repetition up (9% → 28%), Balanced 0% |
+| 10 | **No biases** (A4) | No bias terms in linear layers or LayerNorms (**Biases** in the Model step, `--no-bias`) ([the A/B](docs/journey.md#14-architecture-step-four-no-biases)) | **A tie**, on top of RoPE + SwiGLU: validation loss 2.366 → 2.365 with 29k fewer parameters; greedy repetition back to 7.5%, so the jump in step 9 was noise. Kept as an option |
 
 ### Next: the architecture
 
@@ -482,7 +483,7 @@ evaluation suite says it helps.
 | ~~A1~~ | ~~**RoPE**~~ | Done: step 7 above | | |
 | ~~A2~~ | ~~**RMSNorm**~~ | Done: step 8 above | | |
 | ~~A3~~ | ~~**SwiGLU feed-forward**~~ | Done: step 9 above | | |
-| A4 | **No biases** | Drop the bias terms in linear layers | Fewer parameters, same quality, slightly more stable | Loss, parameters |
+| ~~A4~~ | ~~**No biases**~~ | Done: step 10 above | | |
 | A5 | **QK-norm** | Normalize queries and keys before attention | Steadier training; tolerates a higher learning rate | Loss curve smoothness, best learning rate |
 | A6 | **Grouped-query attention (GQA)** | Several query heads share one key/value head | KV cache 2–8× smaller and faster generation, with almost the same quality | Loss, KV cache size, tokens/s |
 | A7 | **Deep and thin vs wide and shallow** | Same parameters, different shapes (e.g. 12 layers × 512 vs 6 × 768) | For small models, depth tends to beat width (MobileLLM) | Loss at equal parameters |
