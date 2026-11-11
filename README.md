@@ -475,6 +475,7 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 12 | **A learning-rate sweep** | 5 learning rates × QK-norm off/on, on a Colab L4 ([details](docs/journey.md#16-a-learning-rate-sweep-and-what-qk-norm-is-really-for)) | **Best at 1.8e-3** (2.251 with QK-norm). Without QK-norm, loss rises to 3.33 at 1.2e-2; with it, only 2.55. The new baseline for A/B tests: RoPE + SwiGLU, no biases, QK-norm, lr 1.8e-3 |
 | 13 | **Grouped-query attention** (A6) | Query heads share key/value heads (**Key/value heads** in the Model step, `--kv-heads N`); the KV cache stores only the shared heads ([the A/B](docs/journey.md#17-architecture-step-six-grouped-query-attention)) | 3 KV heads: **cache 2× smaller for free** (2.251 → 2.252); 2: 3× smaller, +0.013; 1 (multi-query): 6× smaller, +0.033. No generation speedup at this size: the cache is tiny and the shared heads are copied out |
 | 14 | **Depth vs width** (A7) | Four shapes at ~29.9M parameters: 3×448, 6×384, 11×320, 22×256 (`ab_test.py` `layers=`/`embd=`/`heads=`) ([the A/B](docs/journey.md#18-architecture-step-seven-deep-and-thin-or-wide-and-shallow)) | **6×384 is best** at 1,000 updates (2.251); 3 and 11 layers 2.27; 22 layers 2.40 (slow start, still closing). The 3-layer model generates **5× faster** than the 22-layer one, with a 4× smaller KV cache |
+| 15 | **Layer sharing** (A8) | Each block applied 2–3× in a row with the same weights (**Repeat each block** in the Model step, `--block-repeat N`) ([the A/B](docs/journey.md#19-architecture-step-eight-layer-sharing)) | **Worse at this budget**: 2× sharing 2.251 → 2.346, 3× → 2.518; the wide model 2.271 → 2.345; and slower. Likely because shared weights get 2–3× the gradient (an effectively higher learning rate) and depth needs longer runs. Kept as an option |
 
 ### Next: the architecture
 
@@ -499,7 +500,7 @@ python3 ab_test.py --title "A5 QK-norm" --variant "baseline: rope swiglu no-bias
 | ~~A5~~ | ~~**QK-norm**~~ | Done: step 11 above | | |
 | ~~A6~~ | ~~**Grouped-query attention**~~ | Done: step 13 above | | |
 | ~~A7~~ | ~~**Deep and thin vs wide and shallow**~~ | Done: step 14 above | | |
-| A8 | **Layer sharing** | Reuse each block's weights twice in a row | More depth for the same parameters and memory | Loss, parameters, speed |
+| ~~A8~~ | ~~**Layer sharing**~~ | Done: step 15 above | | |
 | A9 | **Multi-token prediction** | Extra heads that also predict the 2nd, 3rd… next token during training | Richer training signal; the extra heads can draft tokens for speculative decoding (I5) | Loss, and draft acceptance rate |
 | A10 | **Mixture of experts** | Several feed-forward "experts", each token routed to one or two | More parameters for the same compute per token | Loss at equal compute, memory |
 

@@ -27,8 +27,9 @@ that are easy to get wrong and rarely explained.
 16. [A learning-rate sweep, and what QK-norm is really for](#16-a-learning-rate-sweep-and-what-qk-norm-is-really-for)
 17. [Architecture, step six: grouped-query attention](#17-architecture-step-six-grouped-query-attention)
 18. [Architecture, step seven: deep and thin, or wide and shallow?](#18-architecture-step-seven-deep-and-thin-or-wide-and-shallow)
-19. [Lessons](#19-lessons)
-20. [What's next](#20-whats-next)
+19. [Architecture, step eight: layer sharing](#19-architecture-step-eight-layer-sharing)
+20. [Lessons](#20-lessons)
+21. [What's next](#21-whats-next)
 
 ---
 
@@ -601,7 +602,42 @@ long training); under yours (a short run, fast generation), the answer can flip.
 
 ---
 
-## 19. Lessons
+## 19. Architecture, step eight: layer sharing
+
+If depth helps but parameters are scarce, why not reuse them? **Layer sharing** (MobileLLM's block-wise
+sharing) applies each block twice or more in a row with the same weights: 6 blocks become 12 layers deep with the
+parameters of 6. Memory for weights stays the same; compute per token, and the KV cache, grow with the depth
+(each pass sees different inputs, so it keeps its own keys and values).
+
+It's a switch: **Repeat each block** in the Model step, `--block-repeat N`, `block_repeat` in the notebook,
+`repeat=N` in `ab_test.py`.
+
+| Same parameters, L4, 1,000 updates | 6 × 384 (baseline) | each block 2× (12 deep) | each block 3× (18 deep) | 3 × 448, 2× (6 deep) |
+|---|---|---|---|---|
+| Best validation loss | **2.251** | 2.346 | 2.518 | 2.345 (unshared 3 × 448: 2.271) |
+| Held-out: TinyStories | **2.219** | 2.311 | 2.481 | 2.311 |
+| Training speed (updates/s) | **6.64** | 4.99 | 3.98 | 5.89 |
+| Generation, tokens/s | 134 | 75 | 51 | **135** |
+| KV cache per token | 18,432 bytes | 36,864 | 55,296 | 21,504 |
+
+![Validation and training loss with and without layer sharing](screenshots/ab-a8-layer-sharing.png)
+
+**A clear loss, every time.** Sharing made every model worse (by 0.07 to 0.27) and slower, on the same number of
+updates, even though each update did 2–3× the compute. The more passes, the worse.
+
+Why, when MobileLLM found it helps? Two likely reasons, both from the earlier steps. A shared block receives
+gradients from every pass, so its weights move 2–3× as much per update: in effect, a higher learning rate, and
+the sweep (step 16) showed that above 1.8e-3 this model gets worse. And, as step 18 showed, deeper models start
+slower and 1,000 updates isn't long enough for depth to pay off. MobileLLM trained for far longer, with the
+learning rate tuned for the shared model. A fair verdict would need a lower learning rate for the shared
+variants and a longer run; at this budget, sharing doesn't pay.
+
+**Lesson.** A negative result is still a result. It's recorded here, with the conditions, so it isn't tried
+again blindly and so it can be revisited with a longer run.
+
+---
+
+## 20. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -629,12 +665,13 @@ long training); under yours (a short run, fast generation), the answer can flip.
 15. **Measure what a change is for.** GQA didn't change loss or speed here; its win is a smaller KV cache.
 16. **Shape matters for speed, not just quality.** At equal size, a 3-layer model generated 5× faster than a
     22-layer one, for 0.13 better loss than the deep one and 0.02 worse than the best.
+17. **Interactions matter.** Layer sharing behaves like a higher learning rate for the shared weights; a change
+    that's tested at someone else's settings can fail at yours for reasons that have nothing to do with the idea.
 
-## 20. What's next
+## 21. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** layer
-  sharing, multi-token prediction, mixture of experts.
+- **Architecture:** multi-token prediction, mixture of experts.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.
