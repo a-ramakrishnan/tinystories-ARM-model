@@ -29,8 +29,9 @@ that are easy to get wrong and rarely explained.
 18. [Architecture, step seven: deep and thin, or wide and shallow?](#18-architecture-step-seven-deep-and-thin-or-wide-and-shallow)
 19. [Architecture, step eight: layer sharing](#19-architecture-step-eight-layer-sharing)
 20. [Architecture, step nine: predicting several tokens at once](#20-architecture-step-nine-predicting-several-tokens-at-once)
-21. [Lessons](#21-lessons)
-22. [What's next](#22-whats-next)
+21. [Architecture, step ten: a mixture of experts](#21-architecture-step-ten-a-mixture-of-experts)
+22. [Lessons](#22-lessons)
+23. [What's next](#23-whats-next)
 
 ---
 
@@ -680,7 +681,48 @@ clearly, and here it produced a by-product (a cheap drafter) worth testing on it
 
 ---
 
-## 21. Lessons
+## 21. Architecture, step ten: a mixture of experts
+
+In a dense model every token goes through the same feed-forward layer. A **mixture of experts** (Switch
+Transformer, Mixtral, DeepSeek) gives each block several feed-forward "experts" and a small router that sends
+each token to its top 1 or 2. The model has many more parameters, but each token only uses a few experts' worth
+of them, so compute per token barely grows. A load-balancing loss (Switch Transformer's) nudges the router to
+spread tokens evenly, so no expert sits idle.
+
+It's a switch: **Experts** and **Experts per token** in the Model step, `--experts N --experts-per-token K`,
+`n_experts` / `moe_top_k` in the notebook, `experts=N topk=K` in `ab_test.py`. The parameter table shows both the
+total and the parameters active per token.
+
+| L4, 1,000 updates | Dense (baseline) | 4 experts, 1 per token | 8 experts, 1 per token | 4 experts, 2 per token |
+|---|---|---|---|---|
+| Parameters: total / active per token | 29.9M / 29.9M | 51.2M / 29.9M | 79.5M / 29.9M | 51.2M / 37.0M |
+| Best validation loss | 2.251 | 2.391 | 2.464 | **2.200** |
+| Held-out: TinyStories | 2.219 | 2.361 | 2.435 | **2.171** |
+| Top-1 accuracy: next token | 50.1% | 47.6% | 47.0% | **51.1%** |
+| Busiest expert's share of tokens (even = 25% / 12.5%) | – | 26.9% | 14.8% | 33.3% |
+| Training speed (updates/s) | **6.65** | 5.62 | 4.78 | 5.12 |
+| Generation, tokens/s | **132** | 76 | 67 | 66 |
+
+![Validation and training loss for the dense model and three mixtures of experts](screenshots/ab-a10-moe.png)
+
+**Two experts per token: the best model so far** (2.200, 0.05 better than the dense baseline, and better on
+TinyStories held-out text and next-token accuracy). **One expert per token: worse**, and worse with more
+experts. The likely reason is data per expert: with one expert per token, each of 4 experts sees only about a
+quarter of the tokens, so in 1,000 updates each is trained on a quarter of the data. More experts, less each.
+With two per token, each expert sees twice as much, and every token gets a blend of two specialists.
+
+Two caveats. The 2-per-token model also uses 24% more parameters per token than the baseline, so part of its
+gain may simply be more compute; a dense model of 37M would be the fairer comparison. And it was slower: this
+implementation loops over the experts in Python, which on a small model costs more than it saves (generation
+halved, 132 → 66 tokens/s). Production MoE models use fused kernels that run all experts at once. The router
+kept the load reasonably even (no expert above a third of the tokens).
+
+**Lesson.** Mixture of experts trades memory for quality: more parameters, the same compute. Whether it pays
+depends on the routing (here, top-2 beat top-1 decisively) and on training long enough for every expert to learn.
+
+---
+
+## 22. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -712,11 +754,14 @@ clearly, and here it produced a by-product (a cheap drafter) worth testing on it
     that's tested at someone else's settings can fail at yours for reasons that have nothing to do with the idea.
 18. **Some ideas only pay at scale.** Multi-token prediction hurt a 30M model, as its authors found for small
     models, but left behind heads that could speed up generation.
+19. **Count compute, not just parameters.** A mixture of experts can have 2.6× the parameters for the same
+    compute per token; compare models on both, and on speed in your own implementation.
 
-## 22. What's next
+## 23. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** mixture of experts.
+- **Architecture:** combine the wins (RoPE, SwiGLU, QK-norm, the 1.8e-3 learning rate, and a 4-expert top-2 mixture)
+  in one longer run, and re-test depth and layer sharing with more training.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.

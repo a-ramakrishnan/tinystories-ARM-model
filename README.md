@@ -477,6 +477,7 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 14 | **Depth vs width** (A7) | Four shapes at ~29.9M parameters: 3×448, 6×384, 11×320, 22×256 (`ab_test.py` `layers=`/`embd=`/`heads=`) ([the A/B](docs/journey.md#18-architecture-step-seven-deep-and-thin-or-wide-and-shallow)) | **6×384 is best** at 1,000 updates (2.251); 3 and 11 layers 2.27; 22 layers 2.40 (slow start, still closing). The 3-layer model generates **5× faster** than the 22-layer one, with a 4× smaller KV cache |
 | 15 | **Layer sharing** (A8) | Each block applied 2–3× in a row with the same weights (**Repeat each block** in the Model step, `--block-repeat N`) ([the A/B](docs/journey.md#19-architecture-step-eight-layer-sharing)) | **Worse at this budget**: 2× sharing 2.251 → 2.346, 3× → 2.518; the wide model 2.271 → 2.345; and slower. Likely because shared weights get 2–3× the gradient (an effectively higher learning rate) and depth needs longer runs. Kept as an option |
 | 16 | **Multi-token prediction** (A9) | Extra heads also predict 2–4 tokens ahead during training (**Tokens predicted** in the Model step, `--mtp N`) ([the A/B](docs/journey.md#20-architecture-step-nine-predicting-several-tokens-at-once)) | **Worse at this size**: 2.251 → 2.336 (2 tokens), 2.490 (3), 2.536 (4), and slower to train, as Meta found for small models. The 2-ahead head agrees with the main head **51%** of the time: a candidate drafter for speculative decoding (I5) |
+| 17 | **Mixture of experts** (A10) | Several feed-forward experts per block and a router that picks 1 or 2 per token (**Experts** / **Experts per token** in the Model step, `--experts N --experts-per-token K`) ([the A/B](docs/journey.md#21-architecture-step-ten-a-mixture-of-experts)) | **4 experts, 2 per token: best so far, 2.251 → 2.200** (51M parameters, 37M active per token). 1 per token was worse (2.391 with 4 experts, 2.464 with 8): each expert sees too little data in 1,000 updates. Slower in this simple implementation (generation 132 → 66 tokens/s) |
 
 ### Next: the architecture
 
@@ -503,7 +504,7 @@ python3 ab_test.py --title "A5 QK-norm" --variant "baseline: rope swiglu no-bias
 | ~~A7~~ | ~~**Deep and thin vs wide and shallow**~~ | Done: step 14 above | | |
 | ~~A8~~ | ~~**Layer sharing**~~ | Done: step 15 above | | |
 | ~~A9~~ | ~~**Multi-token prediction**~~ | Done: step 16 above | | |
-| A10 | **Mixture of experts** | Several feed-forward "experts", each token routed to one or two | More parameters for the same compute per token | Loss at equal compute, memory |
+| ~~A10~~ | ~~**Mixture of experts**~~ | Done: step 17 above | | |
 
 ### Next: inference
 
