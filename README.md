@@ -474,6 +474,7 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 11 | **QK-norm** (A5), and A/B tests on a cloud GPU | RMS-normalize each head's queries and keys before attention (**QK-norm** in the Model step, `--qk-norm`); `ab_test.py` and the notebook's A/B section run comparisons on Colab ([the A/B](docs/journey.md#15-architecture-step-five-qk-norm-and-moving-the-ab-tests-to-a-gpu)) | **A small win**: 2.369 → 2.336 at 6e-4, 2.266 → 2.251 at 1.8e-3, less greedy repetition; no loss spikes at either rate. **Tripling the learning rate helped more** (2.369 → 2.266): 6e-4 is too low for these short runs. Each variant took 2½ min on an L4 vs ~25 on the Mac |
 | 12 | **A learning-rate sweep** | 5 learning rates × QK-norm off/on, on a Colab L4 ([details](docs/journey.md#16-a-learning-rate-sweep-and-what-qk-norm-is-really-for)) | **Best at 1.8e-3** (2.251 with QK-norm). Without QK-norm, loss rises to 3.33 at 1.2e-2; with it, only 2.55. The new baseline for A/B tests: RoPE + SwiGLU, no biases, QK-norm, lr 1.8e-3 |
 | 13 | **Grouped-query attention** (A6) | Query heads share key/value heads (**Key/value heads** in the Model step, `--kv-heads N`); the KV cache stores only the shared heads ([the A/B](docs/journey.md#17-architecture-step-six-grouped-query-attention)) | 3 KV heads: **cache 2× smaller for free** (2.251 → 2.252); 2: 3× smaller, +0.013; 1 (multi-query): 6× smaller, +0.033. No generation speedup at this size: the cache is tiny and the shared heads are copied out |
+| 14 | **Depth vs width** (A7) | Four shapes at ~29.9M parameters: 3×448, 6×384, 11×320, 22×256 (`ab_test.py` `layers=`/`embd=`/`heads=`) ([the A/B](docs/journey.md#18-architecture-step-seven-deep-and-thin-or-wide-and-shallow)) | **6×384 is best** at 1,000 updates (2.251); 3 and 11 layers 2.27; 22 layers 2.40 (slow start, still closing). The 3-layer model generates **5× faster** than the 22-layer one, with a 4× smaller KV cache |
 
 ### Next: the architecture
 
@@ -497,7 +498,7 @@ python3 ab_test.py --title "A5 QK-norm" --variant "baseline: rope swiglu no-bias
 | ~~A4~~ | ~~**No biases**~~ | Done: step 10 above | | |
 | ~~A5~~ | ~~**QK-norm**~~ | Done: step 11 above | | |
 | ~~A6~~ | ~~**Grouped-query attention**~~ | Done: step 13 above | | |
-| A7 | **Deep and thin vs wide and shallow** | Same parameters, different shapes (e.g. 12 layers × 512 vs 6 × 768) | For small models, depth tends to beat width (MobileLLM) | Loss at equal parameters |
+| ~~A7~~ | ~~**Deep and thin vs wide and shallow**~~ | Done: step 14 above | | |
 | A8 | **Layer sharing** | Reuse each block's weights twice in a row | More depth for the same parameters and memory | Loss, parameters, speed |
 | A9 | **Multi-token prediction** | Extra heads that also predict the 2nd, 3rd… next token during training | Richer training signal; the extra heads can draft tokens for speculative decoding (I5) | Loss, and draft acceptance rate |
 | A10 | **Mixture of experts** | Several feed-forward "experts", each token routed to one or two | More parameters for the same compute per token | Loss at equal compute, memory |

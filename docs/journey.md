@@ -26,8 +26,9 @@ that are easy to get wrong and rarely explained.
 15. [Architecture, step five: QK-norm, and moving the A/B tests to a GPU](#15-architecture-step-five-qk-norm-and-moving-the-ab-tests-to-a-gpu)
 16. [A learning-rate sweep, and what QK-norm is really for](#16-a-learning-rate-sweep-and-what-qk-norm-is-really-for)
 17. [Architecture, step six: grouped-query attention](#17-architecture-step-six-grouped-query-attention)
-18. [Lessons](#18-lessons)
-19. [What's next](#19-whats-next)
+18. [Architecture, step seven: deep and thin, or wide and shallow?](#18-architecture-step-seven-deep-and-thin-or-wide-and-shallow)
+19. [Lessons](#19-lessons)
+20. [What's next](#20-whats-next)
 
 ---
 
@@ -563,7 +564,44 @@ memory win is invisible unless you measure it directly.
 
 ---
 
-## 18. Lessons
+## 18. Architecture, step seven: deep and thin, or wide and shallow?
+
+With a fixed number of parameters, you can stack many narrow layers or a few wide ones. Studies of small models
+(MobileLLM, 2024) found that **depth wins**: more layers, each thinner, gave better models at the same size.
+
+At this size, a twist: most of the parameters are in the vocabulary embedding (50,257 × width), so a narrower
+model frees up a lot of parameters for extra layers. Four shapes, all within 0.7% of 29.9M parameters, all with
+64-dimensional heads and the step 16 baseline's settings (`ab_test.py` gained `layers=`, `embd=` and `heads=`
+options for this):
+
+| | 3 × 448 (wide) | 6 × 384 (baseline) | 11 × 320 | 22 × 256 (deep) |
+|---|---|---|---|---|
+| Parameters in the blocks / in the embedding | 7.2M / 22.5M | 10.6M / 19.3M | 13.6M / 16.1M | 17.1M / 12.9M |
+| Validation loss at updates 250 / 500 / 750 / 1,000 | 2.955 / 2.568 / 2.345 / 2.271 | 2.979 / 2.567 / 2.330 / **2.251** | 3.028 / 2.595 / 2.349 / 2.270 | 3.280 / 2.762 / 2.491 / 2.401 |
+| Held-out: TinyStories | 2.235 | **2.219** | 2.233 | 2.360 |
+| Training speed (updates/s) | **7.17** | 6.56 | 5.85 | 5.00 |
+| Generation, tokens/s (with cache) | **215** | 132 | 79 | 42 |
+| KV cache per token | **10,752 bytes** | 18,432 | 28,160 | 45,056 |
+
+![Validation and training loss for the four shapes](screenshots/ab-a7-depth-width.png)
+
+**At this budget, the middle wins.** 6 × 384 is best; 3 and 11 layers tie 0.02 behind; 22 layers is 0.15
+behind. That doesn't contradict MobileLLM so much as show its conditions: deep, thin models start slower (the
+22-layer model was 0.30 behind after 250 updates, 0.15 at the end, still closing) and need more training to pay
+off, and the learning rate was tuned for 6 layers. 1,000 updates isn't enough for depth to win.
+
+**Depth also has an inference cost** that loss tables hide. Each layer runs one after another, so generating a
+token takes time proportional to the number of layers: the 3-layer model generates 5× faster than the 22-layer
+one. And every layer keeps its own keys and values, so the KV cache per token grows with depth (4× from 3 to 22
+layers). The wide model gives up 0.02 in loss for 1.6× faster generation and a cache 40% smaller than the
+baseline's. For a model that has to answer quickly, that might be the better deal.
+
+**Lesson.** "Better" depends on the budget and the goal. A result from a paper holds under its conditions (here,
+long training); under yours (a short run, fast generation), the answer can flip.
+
+---
+
+## 19. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -589,11 +627,13 @@ memory win is invisible unless you measure it directly.
 14. **Some changes don't move the best score but widen the safe range.** QK-norm hardly changed the best loss,
     but made a 7× higher learning rate cost 0.3 instead of 1.06.
 15. **Measure what a change is for.** GQA didn't change loss or speed here; its win is a smaller KV cache.
+16. **Shape matters for speed, not just quality.** At equal size, a 3-layer model generated 5× faster than a
+    22-layer one, for 0.13 better loss than the deep one and 0.02 worse than the best.
 
-## 19. What's next
+## 20. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** depth vs width, layer
+- **Architecture:** layer
   sharing, multi-token prediction, mixture of experts.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.
