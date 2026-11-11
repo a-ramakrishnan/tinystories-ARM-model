@@ -750,7 +750,7 @@ same data, seed and batches:
 **The wins held, and added up.** Over a run five times longer, the gaps from the short A/B tests stayed: the
 learning rate alone is worth 0.05, the architecture changes another 0.07, and the experts another 0.05, for
 **1.903 → 1.732** in all. Put differently, the best dense model passed the GPT-2-style model's final loss before
-update 3,750, and the model with experts around update 3,100: the same quality with roughly a quarter to a third
+update 3,750, and the model with experts around update 3,100: the same quality with roughly 25% to 38%
 fewer updates. The best model also repeats itself far less when decoding greedily, and is better on Tiny
 Shakespeare, which neither model trained on.
 
