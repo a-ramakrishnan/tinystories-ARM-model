@@ -888,7 +888,7 @@ Wikipedia-style text, needs billions of tokens: FineWeb-Edu *full* plus Cosmoped
 
 ## 26. What's next
 
-The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
+The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
 - **Inference, first:** win back the generation speed the new architecture lost (cached RoPE tables, compiled
   generation, half precision), then speculative decoding with the multi-token head.
 - **Architecture:** re-test depth and layer sharing with longer runs and tuned learning rates.
