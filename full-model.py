@@ -21,7 +21,7 @@ import json
 import math
 import os
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import torch
 
@@ -55,7 +55,7 @@ PROMPTS = [
 
 
 def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG, text_column="text", datasets=None, mix="size",
-         resume=False, max_iters=None):
+         resume=False, max_iters=None, pos_encoding=None):
     """Run the pipeline. `datasets` is an optional list of (name, subset, text_column) to train on a mix;
     otherwise the single `dataset` is used. `mix` is "size" (in proportion to tokens) or "equal".
     resume: continue the saved training state for these datasets (see pretrain.py); max_iters: total steps
@@ -73,7 +73,7 @@ def main(train_cfg=None, dataset=DEFAULT_DATASET, dataset_config=DEFAULT_CONFIG,
         roots.append(dpaths.root)
     paths = mix_paths(roots, DATA_ROOT)  # one dataset: its own folder; several: data/mix-.../
     os.makedirs(paths.root, exist_ok=True)
-    model_cfg = config
+    model_cfg = replace(config, pos_encoding=pos_encoding) if pos_encoding else config
     if resume:
         state = read_state_meta(paths.root)
         if state is None:
@@ -135,6 +135,8 @@ def parse_args():
                    help="Column that holds the text (default: text)")
     p.add_argument("--mix", choices=["size", "equal"], default="size",
                    help="With several datasets: draw batches in proportion to their size (default) or equally")
+    p.add_argument("--rope", action="store_true",
+                   help="Use rotary position embeddings (RoPE, as in Llama) instead of learned positions")
     p.add_argument("--resume", action="store_true",
                    help="Continue the saved training run for these datasets (after an interruption, or to train longer)")
     p.add_argument("--max-iters", type=int, default=None,
@@ -160,8 +162,10 @@ if __name__ == "__main__":
     if args.list_datasets:
         list_datasets()
     elif args.dataset and len(args.dataset) > 1:
-        main(datasets=[parse_dataset_spec(s) for s in args.dataset], mix=args.mix, resume=args.resume, max_iters=args.max_iters)
+        main(datasets=[parse_dataset_spec(s) for s in args.dataset], mix=args.mix, resume=args.resume, max_iters=args.max_iters,
+             pos_encoding="rope" if args.rope else None)
     else:
         name, subset, column = parse_dataset_spec(args.dataset[0] if args.dataset else f"{DEFAULT_DATASET}@{DEFAULT_CONFIG}")
         main(dataset=name, dataset_config=args.dataset_config or subset,
-             text_column=args.text_column if args.text_column != "text" else column, resume=args.resume, max_iters=args.max_iters)
+             text_column=args.text_column if args.text_column != "text" else column, resume=args.resume, max_iters=args.max_iters,
+             pos_encoding="rope" if args.rope else None)

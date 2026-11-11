@@ -627,3 +627,5 @@ label.inline.grow input[type="range"] { flex: 1; }
 .ev-group .kvm-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ev-samples { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .num-input { width: 110px; }
+.fields .span3 { grid-column: 2 / -1; margin: 0; align-self: center; }
+@media (max-width: 760px) { .fields .span3 { grid-column: 1 / -1; } }

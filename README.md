@@ -11,6 +11,10 @@ weights, context vectors and next-token probabilities. No cloud, no Nvidia card.
 
 ![Training a language model on an Apple M5 in the TinyStories LM Studio web app](docs/screenshots/train.png)
 
+> **New here?** [From a training script to a working language model](docs/journey.md) tells the story of this
+> project: where it started, every change made to the model and the inference, why each one worked, and what
+> it measured. It's the best place to learn from.
+
 ## About
 
 **TinyStories ARM** is an open-source, beginner-friendly project for **training a small language model (SLM)
@@ -446,6 +450,9 @@ cache grows to 18.9 MB (73.7 KB per token in float32) when the 256-token window 
 
 ## Improving the model, step by step
 
+The full story, with the reasoning and lessons behind each step, is in
+[docs/journey.md](docs/journey.md).
+
 The steps taken so far to improve the model, and the ones planned next, in order. The rule from step 6 on:
 **change one thing at a time**, train it the same way as the baseline, and compare with the
 [evaluation suite](#the-evaluation-suite) before keeping it.
@@ -460,16 +467,17 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 4 | **Better decoding** | Top-p, min-p, repetition / frequency / presence penalties, greedy; **Balanced** (temperature 0.8, top-p 0.9, repetition penalty 1.15) as the default ([sampling](#sampling-how-the-next-token-is-picked)) | The FineWeb model's repetition: **73% → 0%** of 4-token runs |
 | 5 | **Keep every model, measure every model the same way** | A model library and a fixed evaluation suite ([saved models](#saved-models-and-evaluation)) | A baseline to beat: **3.603** on FineWeb, 5.257 on WikiText-2, 73% greedy repetition |
 | 6 | **Resume training** | The full training state is saved at every evaluation; runs can be finished after an interruption or extended, in the app, on the command line and on Colab (with Google Drive) ([details](#resuming-and-extending-a-run)) | Tested on the Mac: a run stopped at step 25 resumed there and finished; a 60-step run extended to 90 kept its loss history and best checkpoint |
+| 7 | **RoPE + a sliding KV cache** (A1, I1) | Rotary position embeddings instead of a learned position table (**Positions** in the Model step, `--rope`); with RoPE the KV cache is a ring buffer that slides past the window instead of being rebuilt ([the A/B](docs/journey.md#11-architecture-step-one-rotary-positions-rope)) | Small model, 1,000 steps on TinyStories: validation loss 2.631 → **2.475**, lower on WikiText-2 and Shakespeare too, with 98k fewer parameters; past the window the cache is never rebuilt (1.14× → **1.47×** faster than no cache), same output |
 
 ### Next: the architecture
 
 The focus now is the model itself rather than the training data: each idea is added as a switch, trained
-for a short run on the Mac (the Small model, 2,000 steps, the same data and seed) and kept only if the
+for a short run on the Mac (the Small model, 1,000 steps on TinyStories, the same data and seed) and kept only if the
 evaluation suite says it helps.
 
 | # | Idea | What it is | Why it should help | How it's measured |
 |---|---|---|---|---|
-| A1 | **RoPE** (rotary position embeddings) | Encode positions by rotating queries and keys instead of adding a learned position vector | Usually lower loss; generalizes past the training length; the KV cache never needs rebuilding. Used by Llama, Mistral, Qwen and LLaDA | Held-out loss; the KV cache timing chart past the window |
+| ~~A1~~ | ~~**RoPE**~~ | Done: step 7 above | | |
 | A2 | **RMSNorm** | A simpler LayerNorm: scale only, no mean subtraction or bias | Same quality, a little faster | Loss and speed |
 | A3 | **SwiGLU feed-forward** | A gated feed-forward layer (`silu(xW) · xV`), sized to keep the parameter count | A few percent lower loss at the same size in most studies | Loss at equal parameters |
 | A4 | **No biases** | Drop the bias terms in linear layers | Fewer parameters, same quality, slightly more stable | Loss, parameters |
@@ -484,7 +492,7 @@ evaluation suite says it helps.
 
 | # | Idea | What it is | Why it should help | How it's measured |
 |---|---|---|---|---|
-| I1 | **Sliding KV cache** (needs A1) | With RoPE, drop the oldest token's keys and values instead of rebuilding the cache when the window is full | Generation stays fast past the context window (today the cache is rebuilt every token there) | Timing chart past the window |
+| ~~I1~~ | ~~**Sliding KV cache**~~ | Done: step 7 above | | |
 | I2 | **Half-precision inference** | Run the model in float16 / bfloat16 on the Mac's GPU | About half the memory, often faster | tokens/s, memory, same outputs within tolerance |
 | I3 | **Quantized weights and KV cache** | 8-bit weights and/or 8-bit keys and values | 2–4× less memory | Loss increase, memory, speed |
 | I4 | **Better decoding algorithms** | Beam search, contrastive search, typical sampling, DRY (a smarter repetition penalty) | Fewer loops and better coherence without retraining | Repetition, distinct pairs, samples in the comparison card |

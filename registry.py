@@ -62,7 +62,7 @@ def default_name(info):
     data = " + ".join(_short_dataset(d) for d in (info.get("datasets") or [])) or "unknown data"
     steps = info.get("steps")
     steps = f"{steps / 1000:g}k steps" if steps and steps >= 1000 else f"{steps} steps" if steps else ""
-    parts = [f"{size} {params / 1e6:.0f}M" if params else size, data, steps]
+    parts = [f"{size} {params / 1e6:.0f}M" + (" RoPE" if m.get("pos_encoding") == "rope" else "") if params else size, data, steps]
     return " · ".join(p for p in parts if p)
 
 

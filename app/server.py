@@ -301,6 +301,7 @@ class ModelReq(BaseModel):
     n_head: int = 6
     n_embd: int = 384
     dropout: float = 0.0
+    pos_encoding: str = "learned"   # "learned" or "rope"
 
 
 class TrainReq(BaseModel):
@@ -538,8 +539,12 @@ def model_endpoint(req: ModelReq):
         raise HTTPException(400, f"Embedding size ({req.n_embd}) must be divisible by the number of heads ({req.n_head}).")
     if not (1 <= req.n_layer <= 48 and 1 <= req.n_head <= 32 and 16 <= req.n_embd <= 2048 and 0 <= req.dropout < 1):
         raise HTTPException(400, "Model settings are out of range (layers 1–48, heads 1–32, embedding 16–2048).")
+    if req.pos_encoding not in ("learned", "rope"):
+        raise HTTPException(400, "Positions must be 'learned' or 'rope'.")
+    if req.pos_encoding == "rope" and (req.n_embd // req.n_head) % 2:
+        raise HTTPException(400, "RoPE needs an even head size (n_embd / n_head).")
     config = GPTConfig(vocab_size=S.enc.n_vocab, block_size=S.batch["block_size"], n_layer=req.n_layer,
-                       n_head=req.n_head, n_embd=req.n_embd, dropout=req.dropout, bias=True)
+                       n_head=req.n_head, n_embd=req.n_embd, dropout=req.dropout, bias=True, pos_encoding=req.pos_encoding)
     breakdown = param_breakdown(config)
     need = breakdown["total"] * BYTES_PER_PARAM_TRAINING
     if S.memory and need > 0.6 * S.memory:

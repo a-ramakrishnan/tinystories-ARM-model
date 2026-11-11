@@ -374,13 +374,19 @@ function renderBatch(r) {
 }
 
 // ---------- 4. model ----------
-function estimateParams(L, d, T) { return VOCAB * d + T * d + L * (12 * d * d + 13 * d) + 2 * d; }
-const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value });
+function estimateParams(L, d, T) { return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + L * (12 * d * d + 13 * d) + 2 * d; }
+const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value });
+const POS_HINTS = {
+  learned: "Each of the context window's positions has its own trained vector, added to the token embedding (block_size × n_embd parameters). The model only knows positions it was trained on, so a full KV cache has to be rebuilt when the window slides.",
+  rope: "Rotary position embeddings: no position vectors. Each query and key is rotated by an angle that grows with its position, so attention scores depend on how far apart two tokens are. No parameters, used by Llama, Mistral and Qwen, and the KV cache can slide past the window without being rebuilt.",
+};
 
 function setModelFields(c) {
   $("#m-layer").value = c.n_layer; $("#m-head").value = c.n_head; $("#m-embd").value = c.n_embd;
   if (c.dropout != null) $("#m-drop").value = c.dropout;
   else if (!$("#m-drop").value) $("#m-drop").value = 0;
+  if (c.pos_encoding) $("#m-pos").value = c.pos_encoding;
+  $("#m-pos-hint").textContent = POS_HINTS[$("#m-pos").value];
   renderEstimate();
 }
 
@@ -430,7 +436,9 @@ function renderArchitecture(c, b) {
   const box = (cls, title, sub, params, badge = "") => `<div class="abox ${cls}"><div><div class="at">${title} ${badge}</div>${sub ? `<div class="as">${sub}</div>` : ""}</div>${params != null ? `<span class="ap">${short(params)}</span>` : ""}</div>`;
   $("#m-arch").innerHTML = `<div class="arch2">
     ${box("io", "Input: token IDs", `up to <b>${c.block_size}</b> tokens · shape (batch, ${c.block_size})`, null)}${arrow}
-    <div class="sub-flow">${box("emb", "Token embedding + position embedding", `each token becomes a vector of ${c.n_embd} numbers · ${fmt(c.vocab_size)} × ${c.n_embd} and ${c.block_size} × ${c.n_embd} tables`, part("Token embeddings") + part("Position embeddings"))}<div class="arr r">→</div>${drop}</div>${arrow}
+    <div class="sub-flow">${c.pos_encoding === "rope"
+      ? box("emb", "Token embedding (positions: RoPE)", `each token becomes a vector of ${c.n_embd} numbers · a ${fmt(c.vocab_size)} × ${c.n_embd} table; positions are added later, by rotating queries and keys inside attention`, part("Token embeddings"))
+      : box("emb", "Token embedding + position embedding", `each token becomes a vector of ${c.n_embd} numbers · ${fmt(c.vocab_size)} × ${c.n_embd} and ${c.block_size} × ${c.n_embd} tables`, part("Token embeddings") + part("Position embeddings"))}<div class="arr r">→</div>${drop}</div>${arrow}
     <div class="stackbox"><div class="stack-badge">× ${c.n_layer} layer${c.n_layer > 1 ? "s" : ""}</div>
       <div class="stack-title">Transformer block <span class="ap">${short(b.block)} each</span></div>
       <div class="sub-flow">
@@ -545,7 +553,8 @@ const STAGES = [
     body: (w, c) => `<p>Each ID picks a row from the <b>token embedding table</b>, and each position adds a row from the <b>position embedding table</b>. The sum <code>x = e + p</code> says both <i>what</i> the token is and <i>where</i> it is.</p>
       <div class="mats">${matrix(w.E, { rows: w.tokens.map(tokLabel), title: "token embedding e", digits: 1 })}<div class="op">+</div>${matrix(w.P, { rows: w.tokens.map((_, i) => `pos ${i}`), title: "position p", digits: 1 })}<div class="op">=</div>${matrix(w.X, { rows: w.tokens.map(tokLabel), title: "x", digits: 1, heat: true })}</div>
       ${dropNote(`is applied to <code>x</code> here: while training, ${Math.round((c.dropout ?? 0.1) * 100)}% of the numbers are zeroed at random so the model can't rely on any single one.`)}
-      <p class="muted small">Toy numbers with 4 dimensions. Your model uses ${c.n_embd} dimensions from a ${fmt(c.vocab_size)} × ${c.n_embd} table that it learns during training.</p>`,
+      <p class="muted small">Toy numbers with 4 dimensions. Your model uses ${c.n_embd} dimensions from a ${fmt(c.vocab_size)} × ${c.n_embd} table that it learns during training.</p>
+      ${c.pos_encoding === "rope" ? `<p class="note">This model uses <b>RoPE</b> instead: there is no position table and nothing is added here. Position enters inside attention, where each query and key is <b>rotated</b> by an angle proportional to its position (a different speed for each pair of dimensions). The dot product of a rotated query and key then depends only on how far apart the two tokens are.</p>` : ""}`,
   },
   {
     title: "LayerNorm before attention", kind: "both",
@@ -1285,7 +1294,7 @@ function renderLibrary() {
     <tbody>${models.map((m) => `<tr class="${m.active ? "in-use" : ""}">
       <td><input type="checkbox" data-pick="${esc(m.id)}" ${lib.picked.has(m.id) ? "checked" : ""}></td>
       <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}</div>
-        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
+        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
         <div class="lib-actions">${m.active ? "" : `<button class="btn small" data-use="${esc(m.id)}">Use for generation</button>`}<button class="btn small ghost" data-rename="${esc(m.id)}">Rename</button><button class="btn small ghost danger" data-delete="${esc(m.id)}">Delete</button></div></td>
       <td>${esc(shortData(m.datasets))}<div class="muted small">${m.steps ? `${fmt(m.steps)} steps` : ""}${m.chip ? ` · ${esc(m.chip)}` : ""}${m.platform ? ` (${esc(m.platform)})` : ""}</div><div class="muted small">${when(m.trained_at)}</div></td>
       <td class="num">${fmtLoss(m.best_val)}<div class="muted small">on its own data</div></td>
@@ -1385,6 +1394,7 @@ $("#b-run").addEventListener("click", (e) => action(e.target, async () => {
 }));
 
 $$("#m-layer, #m-head, #m-embd").forEach((i) => i.addEventListener("input", renderEstimate));
+$("#m-pos").addEventListener("change", () => { $("#m-pos-hint").textContent = POS_HINTS[$("#m-pos").value]; renderEstimate(); renderModelPresets(); });
 $("#m-run").addEventListener("click", (e) => action(e.target, async () => {
   const r = await api("/api/model", modelFields());
   renderModel(r);

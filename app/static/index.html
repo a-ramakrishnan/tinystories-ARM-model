@@ -195,6 +195,10 @@
             <label>Embedding size <span class="opt">n_embd</span> <input id="m-embd" type="number" min="16" max="2048" step="16"></label>
             <label>Dropout <input id="m-drop" type="number" min="0" max="0.9" step="0.05"></label>
           </div>
+          <div class="fields four">
+            <label>Positions <select id="m-pos" class="select"><option value="learned">Learned (GPT-2)</option><option value="rope">RoPE, rotary (Llama)</option></select></label>
+            <p class="hint span3" id="m-pos-hint"></p>
+          </div>
           <div id="m-estimate" class="estimate"></div>
           <p class="hint" id="m-hint"></p>
           <div class="actions"><button id="m-run" class="btn primary">Build model</button></div>

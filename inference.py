@@ -8,7 +8,7 @@ from dataclasses import asdict
 import torch
 import torch.nn.functional as F
 
-from model import GPT, GPTConfig
+from model import GPT, GPTConfig, apply_rope, rope_cos_sin
 
 
 def save_model_config(path, config, extra=None):
@@ -159,20 +159,24 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
     """
     block = model.config.block_size
     idx = torch.tensor(prompt_ids, dtype=torch.long, device=device).unsqueeze(0)
-    caches, cache_len, recomputes = None, 0, 0
+    sliding = getattr(model.config, "pos_encoding", "learned") == "rope"
+    caches, cache_len, pos, recomputes = None, 0, 0, 0
     t0 = time.perf_counter()
     for _ in range(max_new_tokens):
         if use_kv_cache:
-            if caches is None or cache_len + 1 > block:
+            # Learned positions are tied to slots 0..block_size-1, so a full window means rebuilding the cache
+            # with every position shifted. RoPE models just slide: the oldest key/value is overwritten.
+            if caches is None or (not sliding and cache_len + 1 > block):
                 if caches is not None:
                     recomputes += 1
                 caches = [{"max_len": block} for _ in range(model.config.n_layer)]
                 ctx = idx[:, -block:]
                 logits, _ = model(ctx, kv_caches=caches, start_pos=0)
-                cache_len = ctx.size(1)
+                cache_len = pos = ctx.size(1)
             else:
-                logits, _ = model(idx[:, -1:], kv_caches=caches, start_pos=cache_len)
-                cache_len += 1
+                logits, _ = model(idx[:, -1:], kv_caches=caches, start_pos=pos)
+                pos += 1
+                cache_len = min(cache_len + 1, block)
         else:
             idx_cond = idx if idx.size(1) <= block else idx[:, -block:]
             logits, _ = model(idx_cond)
@@ -188,7 +192,7 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
             return
         if stats is not None:
             stats.update(kv_cache_bytes=kv_cache_bytes(caches) if caches else 0, cache_tokens=cache_len if caches else 0,
-                         recomputes=recomputes)
+                         recomputes=recomputes, sliding=sliding)
         yield {"id": token, "prob": float(raw[0, token]), "kept": n_kept,
                "alternatives": list(zip(alt_i.tolist(), [round(p, 4) for p in alt_p.tolist()])),
                "ms": (time.perf_counter() - t0) * 1000}
@@ -259,7 +263,12 @@ def attention_maps(model, prompt_ids, device, layer=0):
     idx = torch.tensor(prompt_ids[-model.config.block_size:], dtype=torch.long, device=device).unsqueeze(0)
     T = idx.size(1)
     pos = torch.arange(0, T, dtype=torch.long, device=device)
-    x = model.transformer.drop(model.transformer.wte(idx) + model.transformer.wpe(pos))
+    rope = None
+    if getattr(model.config, "pos_encoding", "learned") == "rope":
+        rope = rope_cos_sin(pos, model.config.n_embd // model.config.n_head, model.config.rope_theta)
+        x = model.transformer.drop(model.transformer.wte(idx))
+    else:
+        x = model.transformer.drop(model.transformer.wte(idx) + model.transformer.wpe(pos))
     for i, block in enumerate(model.transformer.h):
         if i == layer:
             a = block.attn
@@ -267,8 +276,10 @@ def attention_maps(model, prompt_ids, device, layer=0):
             hs = a.n_embd // a.n_head
             q = q.view(1, T, a.n_head, hs).transpose(1, 2)
             k = k.view(1, T, a.n_head, hs).transpose(1, 2)
+            if rope is not None:
+                q, k = apply_rope(q, *rope), apply_rope(k, *rope)
             att = (q @ k.transpose(-2, -1)) / math.sqrt(hs)
             att = att.masked_fill(torch.ones(T, T, device=device).tril() == 0, float("-inf"))
             return F.softmax(att, dim=-1)[0]
-        x = block(x)
+        x = block(x, None, rope)
     raise ValueError(f"layer {layer} out of range (model has {len(model.transformer.h)})")
