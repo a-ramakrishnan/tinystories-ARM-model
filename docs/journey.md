@@ -25,8 +25,9 @@ that are easy to get wrong and rarely explained.
 14. [Architecture, step four: no biases](#14-architecture-step-four-no-biases)
 15. [Architecture, step five: QK-norm, and moving the A/B tests to a GPU](#15-architecture-step-five-qk-norm-and-moving-the-ab-tests-to-a-gpu)
 16. [A learning-rate sweep, and what QK-norm is really for](#16-a-learning-rate-sweep-and-what-qk-norm-is-really-for)
-17. [Lessons](#17-lessons)
-18. [What's next](#18-whats-next)
+17. [Architecture, step six: grouped-query attention](#17-architecture-step-six-grouped-query-attention)
+18. [Lessons](#18-lessons)
+19. [What's next](#19-whats-next)
 
 ---
 
@@ -515,7 +516,54 @@ at a third of the best learning rate, and gave QK-norm the test it needed.
 
 ---
 
-## 17. Lessons
+## 17. Architecture, step six: grouped-query attention
+
+The first change aimed at **inference** rather than quality. While generating, the KV cache keeps a key and a
+value vector for every past token in every layer and every head (section 7). For big models with long contexts,
+that cache, not the weights, is what fills GPU memory, and reading it is what limits generation speed.
+
+**Grouped-query attention** (Llama 2 70B, Llama 3, Mistral, Qwen) lets several query heads share one key/value
+head. The queries stay as rich as before; only the keys and values are pooled. With 6 query heads and 2 key/value
+heads, each token stores 128 numbers per layer instead of 384, and the cache is 3× smaller. With one shared head,
+it's called multi-query attention.
+
+It's a switch: **Key/value heads** in the Model step (it offers only numbers that divide the head count),
+`--kv-heads N` on the command line, `n_kv_head` in the notebook, `kv=N` in `ab_test.py`. The KV cache views and
+memory calculator in the app account for it.
+
+**The A/B test**, on the new baseline from step 16, on the L4. Fewer key/value heads also means slightly fewer
+parameters, so this isn't an equal-size comparison; the question is how much quality each cut costs.
+
+| | 6 KV heads (baseline) | 3 | 2 | 1 (multi-query) |
+|---|---|---|---|---|
+| KV cache per token | 18,432 bytes | 9,216 (2× smaller) | 6,144 (3×) | 3,072 (6×) |
+| Parameters | 29.92M | 29.04M | 28.74M | 28.45M |
+| Best validation loss | 2.251 | 2.252 | 2.264 | 2.284 |
+| Held-out: TinyStories | 2.219 | **2.212** | 2.226 | 2.248 |
+| Held-out: WikiText-2 | 9.938 | **9.863** | 9.973 | 10.077 |
+| Greedy / Balanced repetition | **6.6%** / 0.2% | 19.4% / 0.7% | 13.0% / 0.0% | 37.6% / 0.2% |
+| Generation, tokens/s (with cache) | 134 | 124 | 126 | 126 |
+
+![Validation and training loss with 6, 3, 2 and 1 key/value heads](screenshots/ab-a6-gqa.png)
+
+**Halving the cache was free**: 3 key/value heads matched the baseline (2.252 vs 2.251, and slightly better on
+held-out data). Going to 2 cost 0.013 and to 1 cost 0.033. That's the pattern that made GQA standard: grouping
+costs almost nothing up to a point, and only full sharing really hurts.
+
+**But generation didn't get faster here.** At this size the whole cache is under 5 MB, the GPU isn't waiting on
+memory, and the shared heads are copied out for each query head before attention (`repeat_interleave`), which
+costs a little. The benefit is memory, and it scales: in the app's memory calculator, Llama 3.1 8B's cache for
+a 128k-token context in 16-bit precision is 16 GB with 8 key/value heads, against 64 GB if each of its 32 query heads had its own.
+
+The run also showed that training here is **exactly reproducible**: the baseline's weights came out bit-for-bit
+identical to step 16's run with the same settings.
+
+**Lesson.** Measure the thing a change is for. GQA's win is memory, not speed or loss, and at small scale the
+memory win is invisible unless you measure it directly.
+
+---
+
+## 18. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -540,11 +588,12 @@ at a third of the best learning rate, and gave QK-norm the test it needed.
     a cloud GPU, with the same results, so more ideas get tested and with longer runs.
 14. **Some changes don't move the best score but widen the safe range.** QK-norm hardly changed the best loss,
     but made a 7× higher learning rate cost 0.3 instead of 1.06.
+15. **Measure what a change is for.** GQA didn't change loss or speed here; its win is a smaller KV cache.
 
-## 18. What's next
+## 19. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** grouped-query attention, depth vs width, layer
+- **Architecture:** depth vs width, layer
   sharing, multi-token prediction, mixture of experts.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.
