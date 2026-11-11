@@ -482,6 +482,7 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 17 | **Mixture of experts** (A10) | Several feed-forward experts per block and a router that picks 1 or 2 per token (**Experts** / **Experts per token** in the Model step, `--experts N --experts-per-token K`) ([the A/B](docs/journey.md#21-architecture-step-ten-a-mixture-of-experts)) | **4 experts, 2 per token: best so far, 2.251 → 2.200** (51M parameters, 37M active per token). 1 per token was worse (2.391 with 4 experts, 2.464 with 8): each expert sees too little data in 1,000 updates. Slower in this simple implementation (generation 132 → 66 tokens/s) |
 | 18 | **All the wins together, over a longer run** | GPT-2 style vs the best dense and mixture-of-experts models, 5,000 updates each on a Colab L4 ([details](docs/journey.md#22-putting-it-together-the-original-model-vs-all-the-wins)) | **1.903 → 1.782 (dense) → 1.732 (experts)**: learning rate 0.05, architecture 0.07, experts 0.05; the same quality in roughly 25–38% fewer updates. The cost: generation 232 → 132 tokens/s in this unfused implementation, the next thing to fix |
 | 19 | **The same designs on Mini FineWeb-Edu** | GPT-2 style vs best dense vs best with experts, 5,000 updates on a Colab L4, launched from the Lab with `lab_run.ipynb` ([details](docs/journey.md#23-the-same-designs-on-harder-data-mini-fineweb-edu)) | **4.495 → 4.206 → 4.143**: the gains double on web text (0.35 vs 0.17 on TinyStories); the dense best matches GPT-2 style's final loss in about 40% fewer updates |
+| 20 | **OpenAI's GPT-2 as a yardstick** | `reference_gpt2.py` loads OpenAI's GPT-2 small (124M) weights into this project's GPT class and evaluates it on the same held-out windows; **Against GPT-2** in the Lab ([details](docs/journey.md#24-a-yardstick-openais-gpt-2)) | Held-out Mini FineWeb-Edu: **GPT-2 3.401** vs our 124M GPT-2-style model 3.735 (246M tokens of training) and our best Small model 4.245. The gap is data: GPT-2 read billions of tokens |
 
 ### Next: the architecture
 
@@ -769,6 +770,9 @@ Two pages under **Explore** in the app's sidebar:
   datasets not tokenized here (Mini FineWeb-Edu, for example) or for speed. A cloud run copies a *run spec*
   (every setting, plus optional comparison models) and opens `lab_run.ipynb`; paste it, run all, and import the
   zip under **Results from Colab or Kaggle**. The same spec runs anywhere with `python3 ab_test.py --spec <spec>`.
+  OpenAI's **GPT-2 small** is in the library as a reference (`python3 reference_gpt2.py --fineweb` downloads it,
+  prepares Mini FineWeb-Edu's held-out split and evaluates it); **Against GPT-2** in the comparison lines it up
+  with every model trained on FineWeb.
 - **Journey**: the best model at the top, the decisions that built it on one budget (2.631 → 2.200 after 1,000
   updates), the numbers behind the model, and a timeline of every decision (wins, ties, losses and fixes), each
   with its result, the arithmetic behind it and its cost. Filter by area, or show only what's in the best model.

@@ -32,8 +32,9 @@ that are easy to get wrong and rarely explained.
 21. [Architecture, step ten: a mixture of experts](#21-architecture-step-ten-a-mixture-of-experts)
 22. [Putting it together: the original model vs all the wins](#22-putting-it-together-the-original-model-vs-all-the-wins)
 23. [The same designs on harder data: Mini FineWeb-Edu](#23-the-same-designs-on-harder-data-mini-fineweb-edu)
-24. [Lessons](#24-lessons)
-25. [What's next](#25-whats-next)
+24. [A yardstick: OpenAI's GPT-2](#24-a-yardstick-openais-gpt-2)
+25. [Lessons](#25-lessons)
+26. [What's next](#26-whats-next)
 
 ---
 
@@ -819,7 +820,34 @@ six times the updates. These 30M models are 0.5 behind after 5,000 updates.
 **Lesson.** Check results on the data you care about. The choices made on TinyStories transferred to web text,
 and mattered more there: a short, cheap benchmark was a good guide, but the size of a gain depends on the task.
 
-## 24. Lessons
+## 24. A yardstick: OpenAI's GPT-2
+
+Our Large model has GPT-2 small's size (124M), but is it as good? Losses on different data can't be compared,
+so we measured GPT-2 itself. It uses the same tokenizer and the GPT-2-style architecture this code supports, so
+`reference_gpt2.py` loads **OpenAI's own weights** into our GPT class (124,439,808 parameters, exactly the
+official count; two details: OpenAI stored its linear layers transposed, and its GELU is the tanh approximation),
+saves it to the model library, and runs the evaluation suite on it. Mini FineWeb-Edu's held-out split was
+prepared on the Mac too; its numbers matched Colab's to the third decimal, so the windows are identical.
+
+| Held-out loss, same 256-token windows | Mini FineWeb-Edu | WikiText-2 | Tiny Shakespeare |
+|---|---|---|---|
+| **OpenAI GPT-2 small** (124M; WebText, ~40 GB of web pages) | **3.401** | **4.180** | **4.807** |
+| Our Large 124M, GPT-2 style, 30,000 steps on Mini FineWeb-Edu (246M tokens) | 3.735 | 5.582 | 5.823 |
+| Our Small, best + experts, 5,000 updates | 4.245 | 6.240 | 6.121 |
+| Our Small, GPT-2 style, 5,000 updates | 4.580 | 6.528 | 6.296 |
+
+GPT-2 is still clearly ahead, even on FineWeb-Edu, which it never saw: 0.33 better than our same-size model, and
+1.4 better on WikiText-2. The difference is data. OpenAI's GPT-2 read many billions of tokens; ours read a quarter
+of a billion. Open reproductions match GPT-2 with about 10 billion tokens of FineWeb.
+
+That sets the targets. A Large model with our best design should close part of the 0.33 gap at the same 30,000
+steps (on the Small model the design was worth 0.35 on FineWeb); closing all of it, and the much larger gap on
+Wikipedia-style text, needs billions of tokens: FineWeb-Edu *full* plus Cosmopedia, over several sessions.
+
+**Lesson.** Measure against a known model, not only against your own baseline. GPT-2 turned "our best" into
+"0.33 short of a 2019 model of the same size", which says exactly where the remaining gains are: in the data.
+
+## 25. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -856,8 +884,9 @@ and mattered more there: a short, cheap benchmark was a good guide, but the size
 20. **Check that short-run wins survive a long run.** Here they did, and added up: 1.903 → 1.732 at 5,000
     updates. That's what made the short A/B tests worth trusting.
 21. **Check on the data you care about.** The TinyStories choices held on web text, and gained twice as much.
+22. **Measure against a known model.** OpenAI's GPT-2 showed our 124M model is 0.33 short on web text, and why.
 
-## 25. What's next
+## 26. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
 - **Inference, first:** win back the generation speed the new architecture lost (cached RoPE tables, compiled

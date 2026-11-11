@@ -355,7 +355,8 @@ async function labLoadModels() {
 const tr = (m) => m.training || {};
 const groupOf = (m) => (m.training?.experiment && m.training?.experiment !== "Lab" ? m.training.experiment : m.training?.experiment === "Lab" || m.platform === "lab" ? "Lab runs" : "Earlier runs");
 // A/B variants go by their short variant name; Lab runs (here or in the cloud) by the name given in the Lab
-const labelOf = (m) => (tr(m).experiment?.startsWith("Lab") ? (tr(m).description || m.name) : tr(m).experiment && tr(m).variant ? tr(m).variant : m.name);
+const labelOf = (m) => (tr(m).experiment?.startsWith("Lab") ? (tr(m).description || m.name)
+  : tr(m).experiment === "Reference" ? m.name : tr(m).experiment && tr(m).variant ? tr(m).variant : m.name);
 
 function archTags(c) {
   if (!c) return [];
@@ -375,7 +376,7 @@ function labGroups() {
     groups.get(g).push(m);
   }
   // Lab runs, then the experiments newest first (A10 … A1; the sweep came between A5 and A6), then earlier runs
-  const num = (g) => (g === "Lab runs" ? 1000 : g.startsWith("Lab") ? 1000 : g.startsWith("Final") ? 999 : g === "Earlier runs" ? -1
+  const num = (g) => (g === "Reference" ? 1001 : g === "Lab runs" ? 1000 : g.startsWith("Lab") ? 1000 : g.startsWith("Final") ? 999 : g === "Earlier runs" ? -1
     : g.startsWith("LR sweep") ? 5.5 : +(g.match(/^A(\d+)/)?.[1] || 0) - (g.includes("(Mac)") ? 0.1 : 0));
   return [...groups.entries()].sort((a, b) => num(b[0]) - num(a[0]));
 }
@@ -394,6 +395,8 @@ function labPick(which) {
   const ms = labState.models || [];
   if (which === "none") labState.picked = new Set();
   if (which === "final") labState.picked = new Set(ms.filter((m) => tr(m).experiment?.startsWith("Final")).map((m) => m.id));
+  if (which === "gpt2") labState.picked = new Set(ms.filter((m) => tr(m).experiment === "Reference"
+    || (m.datasets || []).some((d) => /fineweb/i.test(d))).map((m) => m.id));
   if (which === "ladder") {
     const want = [["A1 RoPE (Mac)", "learned"], ["A1 RoPE (Mac)", "rope"], ["A3 SwiGLU (Mac)", "swiglu"], ["A4 no biases (Mac)", "nobias"],
       ["A5 QK-norm", "qk-norm"], ["A10 mixture of experts", "baseline"], ["A10 mixture of experts", "moe4-top2"]];
@@ -540,7 +543,7 @@ document.addEventListener("click", (e) => {
   const imp = e.target.closest("[data-lab-import]");
   if (imp) action(imp, async () => { await api("/api/lab/import", { path: imp.dataset.labImport }); labState.importing = true; toast("Importing…"); });
   if (e.target.closest("#lab-stop")) action(e.target.closest("#lab-stop"), () => api("/api/train/stop", {}));
-  const pk = e.target.closest("#lab-pick-final, #lab-pick-ladder, #lab-pick-none");
+  const pk = e.target.closest("#lab-pick-final, #lab-pick-ladder, #lab-pick-gpt2, #lab-pick-none");
   if (pk) { labPick(pk.id.replace("lab-pick-", "")); renderLabModels(); renderLabCompare(); }
 });
 document.addEventListener("change", (e) => {

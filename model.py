@@ -145,7 +145,7 @@ class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
-        self.gelu = nn.GELU()
+        self.gelu = nn.GELU(approximate=getattr(config, "gelu_approx", "none"))
         self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
 
@@ -246,6 +246,7 @@ class GPTConfig:
     n_experts: int = 1              # mixture of experts: feed-forward layers per block (1 = an ordinary dense layer)
     moe_top_k: int = 1              # experts each token is sent to
     moe_aux_weight: float = 0.01    # weight of the load-balancing loss (Switch Transformer)
+    gelu_approx: str = "none"       # "tanh": GPT-2's own approximation of GELU (to load OpenAI's weights exactly)
     mtp_heads: int = 1              # multi-token prediction (Gloeckle et al. 2024, DeepSeek-V3): 1 = next token only;
                                     # n = n - 1 extra heads, one transformer block each, also predict tokens 2…n ahead
                                     # during training. Generation and validation loss use the next-token head only.

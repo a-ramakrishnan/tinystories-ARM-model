@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-11 22:30", kind: "tool", area: "Tooling", title: "A yardstick: OpenAI's GPT-2",
+    decision: "Load OpenAI's GPT-2 small (124M) weights into our GPT class and run it through the same evaluation suite.",
+    why: "Our losses only compared our own models. How far is our 124M model from the real GPT-2 of the same size?",
+    result: { label: "Held-out Mini FineWeb-Edu, same windows", steps: [["OpenAI GPT-2 small", 3.401], ["our Large, GPT-2 style, 30k steps", 3.735], ["our Small, best + experts", 4.245]],
+      extra: "GPT-2 never saw FineWeb-Edu and is still 0.33 ahead: it read billions of tokens, ours 0.25 billion" },
+    calc: ["124,439,808 parameters: the official count (1,024 positions × 768 included)",
+      "OpenAI's Conv1D weights are (in, out): transposed for nn.Linear; GELU is the tanh approximation"],
+    cost: "no training: a 550 MB download and about a minute of evaluation per model on the Mac", anchor: "24-a-yardstick-openais-gpt-2" },
   { when: "2026-11-11 21:40", kind: "win", area: "Data", best: true, title: "The same designs on harder data",
     decision: "Train GPT-2 style, our best dense and our best with experts on Mini FineWeb-Edu (web pages), 5,000 updates each, from the Lab via a Colab run spec.",
     why: "Everything had been measured on children's stories. Would the same choices hold on harder text?",
