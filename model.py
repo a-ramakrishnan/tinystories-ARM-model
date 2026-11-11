@@ -18,6 +18,23 @@ class LayerNorm(nn.Module):
         return F.layer_norm(x, self.weight.shape, self.weight, self.bias, 1e-5)
 
 
+class RMSNorm(nn.Module):
+    """LayerNorm without the mean subtraction and the bias (Llama, Mistral, Qwen): each vector is divided by
+    its root mean square, then scaled per feature. Fewer operations and parameters, the same job."""
+    def __init__(self, ndim, eps=1e-6):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(ndim))
+        self.eps = eps
+
+    def forward(self, x):
+        xf = x.float()  # the mean of squares in float32, so half precision doesn't overflow
+        return (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + self.eps)).to(x.dtype) * self.weight
+
+
+def make_norm(config):
+    return RMSNorm(config.n_embd) if config.norm == "rmsnorm" else LayerNorm(config.n_embd, config.bias)
+
+
 def rope_cos_sin(positions, head_dim, theta=10000.0):
     """RoPE angles for these token positions: each pair of dimensions in a query or key is rotated by
     position × frequency, with frequencies from 1 down to 1/theta. Returns (cos, sin), each (T, head_dim/2)."""
@@ -117,9 +134,9 @@ class MLP(nn.Module):
 class Block(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.ln1 = LayerNorm(config.n_embd, config.bias)
+        self.ln1 = make_norm(config)
         self.attn = CausalSelfAttention(config)
-        self.ln2 = LayerNorm(config.n_embd, config.bias)
+        self.ln2 = make_norm(config)
         self.mlp = MLP(config)
 
     def forward(self, x, kv_cache=None, rope=None):
@@ -139,6 +156,7 @@ class GPTConfig:
     bias: bool = True
     pos_encoding: str = "learned"   # "learned": a trained vector per position (GPT-2); "rope": rotary (Llama)
     rope_theta: float = 10000.0     # RoPE base: sets the slowest rotation frequency
+    norm: str = "layernorm"         # "layernorm" (GPT-2) or "rmsnorm" (Llama): scale only, no mean or bias
 
 
 class GPT(nn.Module):
@@ -150,7 +168,7 @@ class GPT(nn.Module):
             **({"wpe": nn.Embedding(config.block_size, config.n_embd)} if config.pos_encoding == "learned" else {}),
             drop=nn.Dropout(config.dropout),
             h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-            ln_f=LayerNorm(config.n_embd, config.bias),
+            ln_f=make_norm(config),
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight  # weight tying
@@ -225,13 +243,16 @@ def param_breakdown(config):
     """
     V, T, d, L = config.vocab_size, config.block_size, config.n_embd, config.n_layer
     b = 1 if config.bias else 0
-    ln = (1 + b) * d                         # LayerNorm: weight (+ bias)
+    rms = config.norm == "rmsnorm"
+    ln = d if rms else (1 + b) * d           # LayerNorm: weight (+ bias); RMSNorm: weight only
+    norm_name = "RMSNorm" if rms else "LayerNorm"
+    ln_formula = "n_embd" if rms or not b else "2 × n_embd"
     qkv = d * 3 * d + b * 3 * d              # c_attn
     attn_out = d * d + b * d                 # attention c_proj
     mlp_in = d * 4 * d + b * 4 * d           # c_fc
     mlp_out = 4 * d * d + b * d              # MLP c_proj
     block = 2 * ln + qkv + attn_out + mlp_in + mlp_out
-    linear_terms = "13·n_embd" if config.bias else "2·n_embd"
+    linear_terms = f"{(9 if b else 0) + (2 if rms else 4 if b else 2)}·n_embd"
 
     def row(name, formula, expr, count, note=""):
         return {"name": name, "formula": formula, "expr": expr, "count": count, "note": note}
@@ -242,7 +263,7 @@ def param_breakdown(config):
         row("Position embeddings", "block_size × n_embd", f"{T} × {d}", T * d) if config.pos_encoding == "learned" else
         row("Positions (RoPE)", "rotations of queries and keys", "0", 0, "No parameters: computed from each position"),
         row("Transformer blocks", f"n_layer × (12·n_embd² + {linear_terms})", f"{L} × {block:,}", L * block),
-        row("Final LayerNorm", "2 × n_embd" if config.bias else "n_embd", f"{1 + b} × {d}", ln),
+        row(f"Final {norm_name}", ln_formula, f"{ln // d} × {d}", ln),
         row("Output layer", "shares the token embeddings", "0", 0),
     ]
     per_block = [
@@ -254,7 +275,7 @@ def param_breakdown(config):
             f"{d} × {4 * d}" + (f" + {4 * d}" if b else ""), mlp_in),
         row("MLP: project back", "4·n_embd × n_embd" + (" + n_embd" if b else ""),
             f"{4 * d} × {d}" + (f" + {d}" if b else ""), mlp_out),
-        row("Two LayerNorms", "2 × 2·n_embd" if b else "2 × n_embd", f"2 × {ln}", 2 * ln),
+        row(f"Two {norm_name}s", f"2 × {ln_formula.replace(' × ', '·')}", f"2 × {ln}", 2 * ln),
     ]
     return {"total": sum(p["count"] for p in parts), "parts": parts, "per_block": per_block, "block": block}
 

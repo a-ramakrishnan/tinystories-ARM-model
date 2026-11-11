@@ -374,12 +374,20 @@ function renderBatch(r) {
 }
 
 // ---------- 4. model ----------
-function estimateParams(L, d, T) { return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + L * (12 * d * d + 13 * d) + 2 * d; }
-const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value });
+function estimateParams(L, d, T) {
+  const rms = $("#m-norm")?.value === "rmsnorm";  // RMSNorm: a scale per feature, no shift
+  return VOCAB * d + ($("#m-pos")?.value === "rope" ? 0 : T * d) + L * (12 * d * d + (rms ? 11 : 13) * d) + (rms ? 1 : 2) * d;
+}
+const modelFields = () => ({ n_layer: +$("#m-layer").value, n_head: +$("#m-head").value, n_embd: +$("#m-embd").value, dropout: +$("#m-drop").value, pos_encoding: $("#m-pos").value, norm: $("#m-norm").value });
 const POS_HINTS = {
   learned: "Each of the context window's positions has its own trained vector, added to the token embedding (block_size × n_embd parameters). The model only knows positions it was trained on, so a full KV cache has to be rebuilt when the window slides.",
-  rope: "Rotary position embeddings: no position vectors. Each query and key is rotated by an angle that grows with its position, so attention scores depend on how far apart two tokens are. No parameters, used by Llama, Mistral and Qwen, and the KV cache can slide past the window without being rebuilt.",
+  rope: "Rotary position embeddings: no position vectors. Each query and key is rotated by an angle that grows with its position, so attention scores depend on how far apart two tokens are. No parameters, used by Llama, Mistral and Qwen, and the KV cache can slide past the window without being rebuilt (a close approximation of recomputing the window).",
 };
+const NORM_HINTS = {
+  layernorm: "Before attention and the feed-forward layer, each vector is normalized: subtract its mean, divide by its standard deviation, then a learned scale and shift (GPT-2).",
+  rmsnorm: "Divide each vector by its root mean square, then a learned scale: no mean subtraction and no shift. Fewer operations and parameters; used by Llama, Mistral and Qwen.",
+};
+const normName = (c) => c.norm === "rmsnorm" ? "RMSNorm" : "LayerNorm";
 
 function setModelFields(c) {
   $("#m-layer").value = c.n_layer; $("#m-head").value = c.n_head; $("#m-embd").value = c.n_embd;
@@ -387,6 +395,8 @@ function setModelFields(c) {
   else if (!$("#m-drop").value) $("#m-drop").value = 0;
   if (c.pos_encoding) $("#m-pos").value = c.pos_encoding;
   $("#m-pos-hint").textContent = POS_HINTS[$("#m-pos").value];
+  if (c.norm) $("#m-norm").value = c.norm;
+  $("#m-norm-hint").textContent = NORM_HINTS[$("#m-norm").value];
   renderEstimate();
 }
 
@@ -442,21 +452,21 @@ function renderArchitecture(c, b) {
     <div class="stackbox"><div class="stack-badge">× ${c.n_layer} layer${c.n_layer > 1 ? "s" : ""}</div>
       <div class="stack-title">Transformer block <span class="ap">${short(b.block)} each</span></div>
       <div class="sub-flow">
-        <div class="mini ln">LayerNorm</div><div class="arr r">→</div>
+        <div class="mini ln">${normName(c)}</div><div class="arr r">→</div>
         <div class="abox attn"><div><div class="at">Masked multi-head self-attention ${dec}</div><div class="as">${c.n_head} heads × ${hs} dims · causal mask: each token sees only earlier tokens · attention dropout</div><div class="heads">${heads}</div></div></div>
         <div class="arr r">→</div>${drop}<div class="arr r">→</div><div class="resid">+ residual</div>
       </div>
       <div class="sub-flow">
-        <div class="mini ln">LayerNorm</div><div class="arr r">→</div>
+        <div class="mini ln">${normName(c)}</div><div class="arr r">→</div>
         <div class="abox ffn"><div><div class="at">Feed-forward network (MLP)</div><div class="as">Linear ${c.n_embd} → ${4 * c.n_embd} · GELU · Linear ${4 * c.n_embd} → ${c.n_embd}</div></div></div>
         <div class="arr r">→</div>${drop}<div class="arr r">→</div><div class="resid">+ residual</div>
       </div>
     </div>${arrow}
-    ${box("", "Final LayerNorm", "", part("Final LayerNorm"))}${arrow}
+    ${box("", `Final ${normName(c)}`, "", part(`Final ${normName(c)}`))}${arrow}
     ${box("emb", "Output layer (shares the token embeddings)", `a score (logit) for each of the ${fmt(c.vocab_size)} tokens at every position · shape (batch, ${c.block_size}, ${fmt(c.vocab_size)})`, 0, dec)}${arrow}
     ${box("io", "Softmax → next-token probabilities", "sample one token, append it, repeat (autoregressive decoding)", null, dec)}
   </div>
-  <div class="arch-legend"><span><span class="mini ln">LayerNorm</span> normalizes each vector</span><span><span class="mini drop">Dropout</span> training only (p = ${c.dropout})</span><span>${dec} parts an encoder doesn't have</span><span class="muted">Not in this model: an encoder stack and cross-attention (encoder–decoder models)</span></div>`;
+  <div class="arch-legend"><span><span class="mini ln">${normName(c)}</span> normalizes each vector</span><span><span class="mini drop">Dropout</span> training only (p = ${c.dropout})</span><span>${dec} parts an encoder doesn't have</span><span class="muted">Not in this model: an encoder stack and cross-attention (encoder–decoder models)</span></div>`;
 }
 
 function renderModel(r) {
@@ -558,11 +568,12 @@ const STAGES = [
   },
   {
     title: "LayerNorm before attention", kind: "both",
-    body: (w) => {
+    body: (w, c) => {
       const i = w.focus, ln = layerNorm(w.X[i]);
       return `<p>Before attention, each token's vector is <b>normalized</b>: subtract its mean, divide by its standard deviation. This keeps the numbers in a steady range however deep the network gets. (The real LayerNorm then multiplies by a learned scale and adds a learned shift; here those are 1 and 0.)</p>
         <div class="calc">“${tokLabel(w.tokens[i])}”: x = ${vec(w.X[i], 1)} · mean = ${ln.mu} · std = ${ln.sd}<br>(x − mean) ÷ std = <b>${vec(ln.out)}</b></div>
         <div class="mats">${matrix(w.XN, { rows: w.tokens.map(tokLabel), title: "LayerNorm(x)", heat: true, focus: i, clickable: true })}</div>
+        ${c.norm === "rmsnorm" ? `<p class="note">This model uses <b>RMSNorm</b> instead: it skips the mean and divides by the root mean square, √(mean of x²), then multiplies by a learned scale. No shift. It's cheaper and works as well, which is why Llama, Mistral and Qwen use it.</p>` : ""}
         <p class="muted small">This model uses <i>pre-norm</i>: LayerNorm comes before attention and before the feed-forward network (as in GPT-2), rather than after them as in the original Transformer.</p>`;
     },
   },
@@ -977,7 +988,9 @@ async function runBenchmark() {
       </tbody></table></div>
       <p class="hint">${r.same_output ? "✓ Both runs produced exactly the same tokens: the cache changes speed, not results." : "The runs differ slightly: tiny floating-point differences changed a sampled token."}
       The cache stores 2 (key and value) × ${r.kv_bytes_per_token / (2 * 4) / (ui.status?.active?.model?.n_layer || 6)} numbers × ${ui.status?.active?.model?.n_layer || 6} layers × 4 bytes = ${bytes(r.kv_bytes_per_token)} per token, up to ${bytes(r.kv_bytes_per_token * r.context_window)} for a full ${r.context_window}-token window.
-      ${r.prompt_tokens + r.n_tokens > r.context_window ? `Past ${r.context_window} tokens the window slides, so this model rebuilds its cache every step and the advantage shrinks.` : ""}</p>
+      ${r.prompt_tokens + r.n_tokens > r.context_window ? (ui.status?.active?.model?.pos_encoding === "rope"
+        ? `Past ${r.context_window} tokens the window slides. This RoPE model's cache slides with it (the oldest token is overwritten, nothing is rebuilt), so the advantage stays. Past the window the cached run is a close approximation of a full recompute, not an exact copy: deeper layers' cached keys still remember tokens that have left the window.`
+        : `Past ${r.context_window} tokens the window slides, so this model rebuilds its cache every step and the advantage shrinks.`) : ""}</p>
       <p class="hint"><b>Why the gain is modest here:</b> with a small model and at most ${r.context_window} tokens, each step is dominated by the fixed cost of launching work on the GPU, not by the arithmetic the cache saves. On an M5 the cache measured about 1.1× faster for the Small model and 1.3× for Large (run it a few times: GPU timings vary). The benefit grows with model size and context length: for large language models reading thousands of tokens, the KV cache is what makes generation practical.</p>`;
     drawBenchCharts(r);
   } finally { $("#g-bench-busy").classList.add("hidden"); }
@@ -1294,7 +1307,7 @@ function renderLibrary() {
     <tbody>${models.map((m) => `<tr class="${m.active ? "in-use" : ""}">
       <td><input type="checkbox" data-pick="${esc(m.id)}" ${lib.picked.has(m.id) ? "checked" : ""}></td>
       <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}</div>
-        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
+        <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
         <div class="lib-actions">${m.active ? "" : `<button class="btn small" data-use="${esc(m.id)}">Use for generation</button>`}<button class="btn small ghost" data-rename="${esc(m.id)}">Rename</button><button class="btn small ghost danger" data-delete="${esc(m.id)}">Delete</button></div></td>
       <td>${esc(shortData(m.datasets))}<div class="muted small">${m.steps ? `${fmt(m.steps)} steps` : ""}${m.chip ? ` · ${esc(m.chip)}` : ""}${m.platform ? ` (${esc(m.platform)})` : ""}</div><div class="muted small">${when(m.trained_at)}</div></td>
       <td class="num">${fmtLoss(m.best_val)}<div class="muted small">on its own data</div></td>
@@ -1394,6 +1407,7 @@ $("#b-run").addEventListener("click", (e) => action(e.target, async () => {
 }));
 
 $$("#m-layer, #m-head, #m-embd").forEach((i) => i.addEventListener("input", renderEstimate));
+$("#m-norm").addEventListener("change", () => { $("#m-norm-hint").textContent = NORM_HINTS[$("#m-norm").value]; renderEstimate(); renderModelPresets(); });
 $("#m-pos").addEventListener("change", () => { $("#m-pos-hint").textContent = POS_HINTS[$("#m-pos").value]; renderEstimate(); renderModelPresets(); });
 $("#m-run").addEventListener("click", (e) => action(e.target, async () => {
   const r = await api("/api/model", modelFields());

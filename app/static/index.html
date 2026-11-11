@@ -199,6 +199,10 @@
             <label>Positions <select id="m-pos" class="select"><option value="learned">Learned (GPT-2)</option><option value="rope">RoPE, rotary (Llama)</option></select></label>
             <p class="hint span3" id="m-pos-hint"></p>
           </div>
+          <div class="fields four">
+            <label>Normalization <select id="m-norm" class="select"><option value="layernorm">LayerNorm (GPT-2)</option><option value="rmsnorm">RMSNorm (Llama)</option></select></label>
+            <p class="hint span3" id="m-norm-hint"></p>
+          </div>
           <div id="m-estimate" class="estimate"></div>
           <p class="hint" id="m-hint"></p>
           <div class="actions"><button id="m-run" class="btn primary">Build model</button></div>

@@ -20,8 +20,9 @@ that are easy to get wrong and rarely explained.
 9. [Measuring progress: a model library and an evaluation suite](#9-measuring-progress-a-model-library-and-an-evaluation-suite)
 10. [Never losing a run: resume training](#10-never-losing-a-run-resume-training)
 11. [Architecture, step one: rotary positions (RoPE)](#11-architecture-step-one-rotary-positions-rope)
-12. [Lessons](#12-lessons)
-13. [What's next](#13-whats-next)
+12. [Architecture, step two: RMSNorm](#12-architecture-step-two-rmsnorm)
+13. [Lessons](#13-lessons)
+14. [What's next](#14-whats-next)
 
 ---
 
@@ -276,8 +277,14 @@ Two consequences:
 
 1. No position parameters, and attention that is naturally relative.
 2. **The KV cache can slide.** Each cached key carries its position in its rotation, so when the window is
-   full, the newest token simply overwrites the oldest slot (a ring buffer). Nothing is rebuilt, and the
-   cached and uncached outputs stay identical past the window.
+   full, the newest token simply overwrites the oldest slot (a ring buffer). Nothing is rebuilt.
+
+   One subtlety: past the window, a sliding cache is *not* exactly the same as recomputing the last 256 tokens
+   from scratch. In layer 2 and above, a cached key was computed when the tokens before it were still in
+   view, so it still carries a trace of tokens that have since left the window. With one layer the two agree
+   to 1e-6. With two layers and random weights, the logits differed by up to 0.37. It's an approximation, and
+   in practice a mild one; Mistral's sliding-window cache works the same way. (Before the window fills, the
+   cache is exact.)
 
 In this project it's a switch: **Positions: Learned / RoPE** in the Model step, `--rope` on the command line,
 or `pos_encoding = "rope"` in the notebook.
@@ -295,7 +302,7 @@ same batches. The only difference is the position encoding.
 | Greedy repetition (4-token runs) | 14.1% | **8.9%** |
 | Balanced repetition | 0.3% | 0.7% |
 | KV cache past the 256-token window | rebuilt 79 times, 1.14× faster than no cache | **never rebuilt, 1.47× faster** |
-| Cached output identical to uncached | yes | yes |
+| Greedy text with the cache = without it (benchmark prompt) | yes | yes (not guaranteed past the window, see above) |
 
 RoPE was ahead at every evaluation, and by about the same margin (0.16 nats at the end). It reached the
 learned model's final loss (2.63) somewhere between steps 500 and 750, which is roughly **30% fewer steps**
@@ -313,7 +320,45 @@ decides what's possible at inference (a sliding cache).
 
 ---
 
-## 12. Lessons
+## 12. Architecture, step two: RMSNorm
+
+Every block normalizes its input twice (before attention and before the feed-forward layer), and once more at
+the end. GPT-2's **LayerNorm** subtracts each vector's mean, divides by its standard deviation, then applies a
+learned scale and shift. **RMSNorm** (Llama, Mistral, Qwen) skips the mean and the shift: divide by the root mean
+square, √(mean of x²), then scale. The claim is that re-centering doesn't matter, only re-scaling does.
+
+It's a switch: **Normalization: LayerNorm / RMSNorm** in the Model step, `--rmsnorm` on the command line, or
+`norm = "rmsnorm"` in the notebook.
+
+**The A/B test.** RoPE + RMSNorm against the RoPE + LayerNorm run from step 11: the same data, seed, learning
+rate and 1,000 updates of 32 sequences.
+
+| | RoPE + LayerNorm | RoPE + RMSNorm |
+|---|---|---|
+| Parameters | 29,946,240 | 29,941,248 (no shifts) |
+| Validation loss at updates 250 / 500 / 750 / 1,000 | 3.164 / 2.753 / 2.536 / 2.475 | 3.165 / 2.755 / 2.545 / 2.483 |
+| Held-out loss: TinyStories | 2.440 | 2.451 |
+| Held-out loss: WikiText-2 | 9.461 | 9.454 |
+| Held-out loss: Tiny Shakespeare | 8.040 | 8.037 |
+| Greedy / Balanced repetition | 8.9% / 0.7% | 9.7% / 0.3% |
+| A training step (batch 4, Mac GPU, timed alone) | 190 ms | 157 ms |
+
+**A tie.** The curves sit on top of each other: 0.008 apart at the end on TinyStories, slightly ahead on the two
+unseen datasets. One run per arm can't separate differences that small. RMSNorm gives the same quality with
+fewer operations, so it stays as an option, and it's the norm the later steps (SwiGLU, no biases) are usually
+paired with.
+
+**A memory lesson along the way.** The first attempt crawled at 17 s per step: at batch 32, the training
+process grew to 15 GB on this 16 GB Mac and paged 5 GB to disk every 20 seconds. The fix was **gradient
+accumulation**: 4 micro-batches of 8, gradients summed, then one update. That gives the same gradient as a batch
+of 32 in a quarter of the activation memory, and the run went from 17 s to 1.5 s per update. (The largest
+activation here is the output layer's 32 × 256 × 50,257 logits: 1.6 GB in float32, before its gradient.)
+
+**Lesson.** Not every famous change is a win at every scale. Measure it, and keep it when it's free.
+
+---
+
+## 13. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -325,11 +370,15 @@ decides what's possible at inference (a sliding cache).
 5. **Decoding matters as much as weights** for how good a small model seems.
 6. **Fix your evaluation before you optimize**, and change one thing at a time.
 7. **Small models learn style before facts.** Fluent and confidently wrong is a stage, not a bug.
+8. **Architecture choices with a clear reason (RoPE) can pay off immediately; others (RMSNorm) are about
+   efficiency, not quality.** Know which kind you're testing.
+9. **When training suddenly slows, check memory before code.** Gradient accumulation trades a little speed
+   for a lot of memory, without changing the maths.
 
-## 13. What's next
+## 14. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** RMSNorm, SwiGLU, no biases, QK-norm, grouped-query attention, depth vs width, layer
+- **Architecture:** SwiGLU, no biases, QK-norm, grouped-query attention, depth vs width, layer
   sharing, multi-token prediction, mixture of experts.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.

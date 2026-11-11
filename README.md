@@ -467,7 +467,8 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 4 | **Better decoding** | Top-p, min-p, repetition / frequency / presence penalties, greedy; **Balanced** (temperature 0.8, top-p 0.9, repetition penalty 1.15) as the default ([sampling](#sampling-how-the-next-token-is-picked)) | The FineWeb model's repetition: **73% → 0%** of 4-token runs |
 | 5 | **Keep every model, measure every model the same way** | A model library and a fixed evaluation suite ([saved models](#saved-models-and-evaluation)) | A baseline to beat: **3.603** on FineWeb, 5.257 on WikiText-2, 73% greedy repetition |
 | 6 | **Resume training** | The full training state is saved at every evaluation; runs can be finished after an interruption or extended, in the app, on the command line and on Colab (with Google Drive) ([details](#resuming-and-extending-a-run)) | Tested on the Mac: a run stopped at step 25 resumed there and finished; a 60-step run extended to 90 kept its loss history and best checkpoint |
-| 7 | **RoPE + a sliding KV cache** (A1, I1) | Rotary position embeddings instead of a learned position table (**Positions** in the Model step, `--rope`); with RoPE the KV cache is a ring buffer that slides past the window instead of being rebuilt ([the A/B](docs/journey.md#11-architecture-step-one-rotary-positions-rope)) | Small model, 1,000 steps on TinyStories: validation loss 2.631 → **2.475**, lower on WikiText-2 and Shakespeare too, with 98k fewer parameters; past the window the cache is never rebuilt (1.14× → **1.47×** faster than no cache), same output |
+| 7 | **RoPE + a sliding KV cache** (A1, I1) | Rotary position embeddings instead of a learned position table (**Positions** in the Model step, `--rope`); with RoPE the KV cache is a ring buffer that slides past the window instead of being rebuilt ([the A/B](docs/journey.md#11-architecture-step-one-rotary-positions-rope)) | Small model, 1,000 steps on TinyStories: validation loss 2.631 → **2.475**, lower on WikiText-2 and Shakespeare too, with 98k fewer parameters; past the window the cache is never rebuilt (1.14× → **1.47×** faster than no cache); past the window it approximates a full recompute rather than matching it exactly ([why](docs/journey.md#11-architecture-step-one-rotary-positions-rope)) |
+| 8 | **RMSNorm** (A2) | Scale-only normalization instead of LayerNorm (**Normalization** in the Model step, `--rmsnorm`) ([the A/B](docs/journey.md#12-architecture-step-two-rmsnorm)) | **A tie**, on top of RoPE: validation loss 2.475 → 2.483, held-out WikiText-2 9.461 → 9.454; 5k fewer parameters and a ~17% faster training step on the Mac. Kept as an option |
 
 ### Next: the architecture
 
@@ -478,7 +479,7 @@ evaluation suite says it helps.
 | # | Idea | What it is | Why it should help | How it's measured |
 |---|---|---|---|---|
 | ~~A1~~ | ~~**RoPE**~~ | Done: step 7 above | | |
-| A2 | **RMSNorm** | A simpler LayerNorm: scale only, no mean subtraction or bias | Same quality, a little faster | Loss and speed |
+| ~~A2~~ | ~~**RMSNorm**~~ | Done: step 8 above | | |
 | A3 | **SwiGLU feed-forward** | A gated feed-forward layer (`silu(xW) · xV`), sized to keep the parameter count | A few percent lower loss at the same size in most studies | Loss at equal parameters |
 | A4 | **No biases** | Drop the bias terms in linear layers | Fewer parameters, same quality, slightly more stable | Loss, parameters |
 | A5 | **QK-norm** | Normalize queries and keys before attention | Steadier training; tolerates a higher learning rate | Loss curve smoothness, best learning rate |
