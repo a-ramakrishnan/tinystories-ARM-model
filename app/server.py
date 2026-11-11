@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 from catalog import DATASET_CATALOG  # noqa: E402
-from data import (DEFAULT_CONFIG, DEFAULT_DATASET, BatchLoader, SubsetNeeded, dataset_paths, get_dataset,  # noqa: E402
+from data import (DEFAULT_CONFIG, DEFAULT_DATASET, BatchLoader, SubsetNeeded, dataset_paths, dataset_slug, get_dataset,  # noqa: E402
                   inspect_source, mix_paths, resolve_source, token_count)
 from inference import (attention_maps, benchmark_generation, device_memory, generate_stream,  # noqa: E402
                        kv_bytes_per_token, load_model, load_model_config, next_token_probs, sampling_distribution,
@@ -312,6 +312,8 @@ class ModelReq(BaseModel):
     mtp_heads: int = 1              # multi-token prediction: heads predicting 1…n tokens ahead (training only)
     n_experts: int = 1              # mixture of experts: feed-forward experts per block (1 = dense)
     moe_top_k: int = 1              # experts per token
+    rope_theta: float = 10000.0     # RoPE: base of the rotation frequencies
+    moe_aux_weight: float = 0.01    # mixture of experts: weight of the load-balancing loss
 
 
 class TrainReq(BaseModel):
@@ -566,12 +568,17 @@ def config_from(req, block_size=None):
         raise HTTPException(400, "Repeat each block 1 to 4 times.")
     if req.mlp not in ("gelu", "swiglu"):
         raise HTTPException(400, "Feed-forward must be 'gelu' or 'swiglu'.")
+    if not 100 <= req.rope_theta <= 1e7:
+        raise HTTPException(400, "RoPE's base θ should be between 100 and 10,000,000.")
+    if not 0 <= req.moe_aux_weight <= 1:
+        raise HTTPException(400, "The balancing loss weight should be between 0 and 1.")
     return GPTConfig(vocab_size=S.enc.n_vocab, block_size=block_size or S.batch["block_size"], n_layer=req.n_layer,
                        n_head=req.n_head, n_embd=req.n_embd, dropout=req.dropout, bias=req.bias, pos_encoding=req.pos_encoding,
                        norm=req.norm, mlp=req.mlp, qk_norm=req.qk_norm,
                        n_kv_head=0 if req.n_kv_head in (0, req.n_head) else req.n_kv_head,
                        block_repeat=req.block_repeat, mtp_heads=req.mtp_heads,
-                       n_experts=req.n_experts, moe_top_k=min(req.moe_top_k, req.n_experts))
+                       n_experts=req.n_experts, moe_top_k=min(req.moe_top_k, req.n_experts),
+                       rope_theta=req.rope_theta, moe_aux_weight=req.moe_aux_weight)
 
 
 @app.post("/api/model")
@@ -1054,17 +1061,33 @@ class LabTrainReq(BaseModel):
     mix: str = "size"              # several datasets: draw batches by size, or equally
     updates: int = 1000
     learning_rate: float = 1.8e-3
+    warmup_frac: float = 0.1       # warmup, as a share of the updates
+    min_lr_frac: float = 0.1       # the cosine schedule ends at this share of the peak learning rate
+    weight_decay: float = 0.1
+    grad_clip: float = 1.0
 
 
 def lab_datasets():
-    """Tokenized datasets on this Mac that the Lab can train on."""
-    out = []
-    for d in evaluate.eval_datasets():
+    """Datasets the Lab can train on: the ones tokenized on this Mac (local) and the catalog's (any of which can be
+    trained on Colab or Kaggle, which download and tokenize them there)."""
+    out, seen = [], set()
+    for c in DATASET_CATALOG:
+        key = dataset_slug(c["dataset"], c["config"])
+        root = os.path.join(DATA_ROOT, key)
+        local = bin_files_exist(root)
+        out.append({"key": key, "title": c["title"], "name": c["dataset"], "config": c["config"], "text_column": c["text_column"],
+                    "local": local, "rows": c.get("rows"), "size": c.get("size"),
+                    "train_tokens": token_count(os.path.join(root, "train.bin")) if local else None,
+                    "val_tokens": token_count(os.path.join(root, "validation.bin")) if local else None})
+        seen.add(key)
+    for d in evaluate.eval_datasets():  # tokenized here but not in the catalog (e.g. WikiText-2)
         root = os.path.join(DATA_ROOT, d["key"])
-        if bin_files_exist(root):
-            out.append({"key": d["key"], "title": d["title"], "val_tokens": d["tokens"],
-                        "train_tokens": token_count(os.path.join(root, "train.bin")),
-                        "name": registry.FOLDER_DATASETS.get(d["key"], d["title"])})
+        if d["key"] in seen or not bin_files_exist(root):
+            continue
+        name = registry.FOLDER_DATASETS.get(d["key"], d["title"])
+        cfg = "wikitext-2-raw-v1" if d["key"] == "salesforce__wikitext-wikitext-2-raw-v1" else None
+        out.append({"key": d["key"], "title": d["title"], "name": name, "config": cfg, "text_column": "text", "local": True,
+                    "val_tokens": d["tokens"], "train_tokens": token_count(os.path.join(root, "train.bin"))})
     return out
 
 
@@ -1093,13 +1116,19 @@ def lab_train(req: LabTrainReq):
     available = {d["key"]: d for d in lab_datasets()}
     chosen = [available[k] for k in req.datasets if k in available]
     if not chosen:
-        raise HTTPException(400, "Pick at least one tokenized dataset.")
+        raise HTTPException(400, "Pick at least one dataset.")
+    missing = [d["title"] for d in chosen if not d["local"]]
+    if missing:
+        raise HTTPException(400, f"{', '.join(missing)} isn't tokenized on this Mac. Add and tokenize it in steps 1–2, "
+                                 "or train on Colab or Kaggle.")
     if not (50 <= req.updates <= 50_000):
         raise HTTPException(400, "Train for 50 to 50,000 updates.")
     if not (1e-5 <= req.learning_rate <= 0.05):
         raise HTTPException(400, "The learning rate should be between 1e-5 and 0.05.")
     if req.mix not in ("size", "equal"):
         raise HTTPException(400, "Mix must be 'size' or 'equal'.")
+    if not (0 <= req.warmup_frac < 0.9 and 0 < req.min_lr_frac <= 1 and 0 <= req.weight_decay <= 1 and 0 < req.grad_clip <= 100):
+        raise HTTPException(400, "Warmup 0–90% of updates, final learning rate 1–100% of the peak, weight decay 0–1, clipping above 0.")
     need = param_breakdown(config)["total"] * BYTES_PER_PARAM_TRAINING
     if S.memory and need > 0.6 * S.memory:
         raise HTTPException(400, f"Too big for this Mac: about {need / 1e9:.1f} GB to train, with {S.memory / 1e9:.0f} GB of memory.")
@@ -1130,7 +1159,8 @@ def lab_train(req: LabTrainReq):
         S.inference_cache = None  # make room
         r = ab_test.train_model("model", config, req.learning_rate, req.updates, roots if len(roots) > 1 else roots[0],
                                 names, out_dir, S.dev, say=print, progress=progress, mix=req.mix,
-                                description=name, platform="lab")
+                                description=name, platform="lab", warmup_frac=req.warmup_frac,
+                                min_lr_frac=req.min_lr_frac, weight_decay=req.weight_decay, grad_clip=req.grad_clip)
         if r["stopped"]:
             lab["phase"] = "stopped"
             S.job.update(status="stopped", message=f"Stopped at update {r['updates_done']:,}. Nothing was saved.")
@@ -1143,6 +1173,53 @@ def lab_train(req: LabTrainReq):
         S.job["message"] = f"{name}: trained, evaluated and saved to the library."
 
     return start_job("lab", job)
+
+
+IMPORT_DIRS = [PROJECT_DIR, os.path.expanduser("~/Downloads")]
+
+
+@app.get("/api/lab/zips")
+def lab_zips():
+    """Results zips (from Colab, Kaggle or ab_test.py) in the project folder or Downloads, newest first."""
+    out = []
+    for d in IMPORT_DIRS:
+        try:
+            files = os.listdir(d)
+        except OSError:  # missing, or macOS hasn't given this app access (e.g. Downloads)
+            continue
+        for f in files:
+            if not (f.endswith(".zip") and (f.startswith("ab-") or f.startswith("tinystories-run-"))):
+                continue
+            path = os.path.join(d, f)
+            stamp = f[3:-4] if f.startswith("ab-") else None
+            out.append({"file": f, "folder": "project folder" if d == PROJECT_DIR else "Downloads", "path": path,
+                        "bytes": os.path.getsize(path), "modified": os.path.getmtime(path),
+                        "imported": bool(stamp) and os.path.isdir(os.path.join(PROJECT_DIR, "outputs", "ab", stamp))})
+    return {"zips": sorted(out, key=lambda z: z["modified"], reverse=True)[:30]}
+
+
+class ImportReq(BaseModel):
+    path: str
+
+
+@app.post("/api/lab/import")
+def lab_import(req: ImportReq):
+    """Import a results zip into the model library (what `python3 import_run.py <zip>` does)."""
+    require_idle("import results")
+    path = os.path.realpath(req.path)
+    ok_dir = any(os.path.dirname(path) == os.path.realpath(d) for d in IMPORT_DIRS)
+    name = os.path.basename(path)
+    if not (ok_dir and name.endswith(".zip") and (name.startswith("ab-") or name.startswith("tinystories-run-")) and os.path.exists(path)):
+        raise HTTPException(400, "Pick a results zip from the list.")
+    import import_run
+
+    def job():
+        S.job["message"] = f"Importing {name}…"
+        import_run.import_run(path)
+        S.inference_cache = None
+        S.job["message"] = f"Imported {name} into the model library."
+
+    return start_job("import", job)
 
 
 # ---------- static front end ----------

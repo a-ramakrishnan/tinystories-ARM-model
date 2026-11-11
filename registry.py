@@ -208,7 +208,7 @@ def training_record(r, title=None, batch=32, block=256, seed=42):
     """What the library keeps about how a model was trained (training.json), from an ab_test.py / Lab result."""
     sl = r.get("step_losses") or []
     stride = max(1, len(sl) // 400)
-    keys = ("description", "lr", "steps", "updates_done", "datasets", "mix", "chip", "params", "active_params",
+    keys = ("description", "lr", "warmup_frac", "min_lr_frac", "weight_decay", "grad_clip", "dropout", "steps", "updates_done", "datasets", "mix", "chip", "params", "active_params",
             "val_curve", "val_steps", "eval_every", "best_val", "seconds", "updates_per_sec", "loss_spikes", "heldout",
             "heldout_titles", "head_accuracy", "draft_agreement", "expert_busiest_share", "kv_speedup",
             "kv_bytes_per_token", "tokens_per_sec")

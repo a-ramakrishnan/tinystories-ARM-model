@@ -761,6 +761,13 @@ Two pages under **Explore** in the app's sidebar:
   **Compare models** lists every model trained so far, grouped by the experiment that made it, and lines up any
   of them in one table: architecture, size and cost, quality and speed, with differences highlighted, the best
   value in each row in bold, and the validation and training curves overlaid.
+  **Recommend settings for me** fills in the measured best choices for a goal (best quality, quality per compute,
+  fastest generation, smallest KV cache), each marked with its reason; every decision and training setting
+  (RoPE's base θ, the experts' balancing weight, warmup, final learning rate, weight decay, clipping, dropout)
+  stays editable. **Train this model** asks where to train: on this Mac, or on **Google Colab** or **Kaggle**, for
+  datasets not tokenized here (Mini FineWeb-Edu, for example) or for speed. A cloud run copies a *run spec*
+  (every setting, plus optional comparison models) and opens `lab_run.ipynb`; paste it, run all, and import the
+  zip under **Results from Colab or Kaggle**. The same spec runs anywhere with `python3 ab_test.py --spec <spec>`.
 - **Journey**: the best model at the top, the decisions that built it on one budget (2.631 → 2.200 after 1,000
   updates), the numbers behind the model, and a timeline of every decision (wins, ties, losses and fixes), each
   with its result, the arithmetic behind it and its cost. Filter by area, or show only what's in the best model.

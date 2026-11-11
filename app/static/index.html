@@ -605,8 +605,22 @@
           <p>Every architecture decision from the journey in one place. Start from a known design or set each switch yourself, pick one or more datasets, and train. Each model is evaluated and saved with everything about it, so it lines up against every model trained so far.</p>
         </header>
 
+        <div class="card lab-reco-card">
+          <div class="card-head"><h3>✦ Recommend settings for me</h3><span class="muted small">from every run measured in this project</span></div>
+          <div class="actions tight">
+            <label class="inline">My goal <select id="lab-goal" class="select">
+              <option value="quality">Best quality</option>
+              <option value="balanced">Quality per compute (half the KV cache, dense speed)</option>
+              <option value="speed">Fastest generation</option>
+              <option value="memory">Smallest KV cache (long contexts, many users)</option></select></label>
+            <button id="lab-recommend" class="btn primary">Recommend</button>
+          </div>
+          <div id="lab-reco"></div>
+          <p class="hint">It fills in every decision below (marked ✓ with the reason) and the training settings. Change any of them afterwards: the fields show what each choice measured.</p>
+        </div>
+
         <div class="card">
-          <div class="card-head"><h3><span class="lab-n">1</span> Start from a design</h3><span class="muted small">numbers measured in this project</span></div>
+          <div class="card-head"><h3><span class="lab-n">1</span> Or start from a design</h3><span class="muted small">numbers measured in this project</span></div>
           <div id="lab-presets" class="lab-presets"></div>
         </div>
 
@@ -630,9 +644,22 @@
           <div class="card-head"><h3><span class="lab-n">4</span> Train</h3><span id="lab-cost" class="muted small"></span></div>
           <div class="fields four">
             <label class="span2l">Name <input id="lab-name" type="text" placeholder="e.g. My Llama-style model"></label>
-            <label>Weight updates <select id="lab-updates" class="select"><option value="300">300 (a quick look)</option><option value="1000" selected>1,000 (like the A/B tests)</option><option value="2000">2,000</option><option value="5000">5,000 (like the final run)</option></select></label>
-            <label>Peak learning rate <select id="lab-lr" class="select"><option value="0.0006">6e-4 (GPT-2 / nanoGPT)</option><option value="0.0018" selected>1.8e-3 (best in our sweep)</option><option value="0.003">3e-3</option><option value="0.006">6e-3</option></select></label>
+            <label>Weight updates <input id="lab-updates" type="number" min="50" max="50000" step="50" value="1000" list="lab-updates-list"></label>
+            <label>Peak learning rate <input id="lab-lr" type="number" min="0.00001" max="0.05" step="0.0001" value="0.0018" list="lab-lr-list"></label>
           </div>
+          <datalist id="lab-updates-list"><option value="300"><option value="1000"><option value="2000"><option value="5000"></datalist>
+          <datalist id="lab-lr-list"><option value="0.0006"><option value="0.0018"><option value="0.003"></datalist>
+          <details class="lab-adv">
+            <summary>Schedule and regularization <span class="muted small">defaults from the A/B tests and the sweep</span></summary>
+            <div class="fields four">
+              <label>Warmup, % of updates <input id="lab-warmup" type="number" min="0" max="50" step="1" value="10"><span class="li-measured">default 10</span></label>
+              <label>Final learning rate, % of peak <input id="lab-minlr" type="number" min="1" max="100" step="1" value="10"><span class="li-measured">default 10 (cosine decay)</span></label>
+              <label>Weight decay <input id="lab-wd" type="number" min="0" max="1" step="0.01" value="0.1"><span class="li-measured">default 0.1 (AdamW)</span></label>
+              <label>Gradient clipping <input id="lab-clip" type="number" min="0.1" max="10" step="0.1" value="1"><span class="li-measured">default 1.0; 0.5 clipped ordinary updates</span></label>
+              <label>Dropout <input id="lab-dropout" type="number" min="0" max="0.5" step="0.05" value="0"><span class="li-measured">default 0: these models underfit, not memorize</span></label>
+            </div>
+            <div class="actions tight"><button id="lab-train-reset" class="btn small ghost">Reset these to the recommendation</button></div>
+          </details>
           <div id="lab-calc" class="lab-calc"></div>
           <div class="actions tight">
             <button id="lab-train" class="btn primary">Train this model</button>
@@ -641,6 +668,17 @@
           </div>
           <div id="lab-live" class="lab-live hidden"></div>
         </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Results from Colab or Kaggle</h3><button id="lab-zips-refresh" class="btn small ghost">Look again</button></div>
+          <div id="lab-zips"></div>
+          <p class="hint">Results zips (<code>ab-….zip</code>, <code>tinystories-run-….zip</code>) found in the project folder and in Downloads. Importing adds each model to the library with its evaluation and training record.</p>
+        </div>
+
+        <dialog id="lab-where" class="lab-dialog">
+          <div class="card-head"><h3>Where should this model train?</h3><button id="lab-where-close" class="btn small ghost" aria-label="Close">✕</button></div>
+          <div id="lab-where-body"></div>
+        </dialog>
 
         <div class="card">
           <div class="card-head"><h3><span class="lab-n">5</span> Compare models</h3><span id="lab-cmp-count" class="muted small"></span></div>

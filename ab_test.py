@@ -152,7 +152,8 @@ def train_variant(name, cfg, lr, size, steps, data_root, dataset_name, out_dir, 
 
 
 def train_model(name, config, lr, steps, data_root, dataset_names, out_dir, dev, say=print, progress=None,
-                mix="size", description=None, platform="ab_test"):
+                mix="size", description=None, platform="ab_test", warmup_frac=0.1, min_lr_frac=0.1,
+                weight_decay=0.1, grad_clip=1.0):
     """Train one model the A/B way (seed 42, 32 × 256-token updates, warmup a tenth, 4 evaluations) and save it to
     out_dir/name/. data_root: one dataset folder or a list (mixed by `mix`, as in the web app). progress: optional
     function called with each pretrain event; returning False stops early."""
@@ -163,9 +164,11 @@ def train_model(name, config, lr, steps, data_root, dataset_names, out_dir, dev,
     micro = 8 if dev.device != "cuda" else BATCH       # the Mac's 16 GB can't hold a batch of 32 at once
     accum = BATCH // micro
     # pretrain counts micro-batches, so every step count is multiplied by accum
-    tcfg = TrainConfig(learning_rate=lr, min_lr=lr / 10, max_iters=steps * accum,
-                       warmup_steps=max(1, steps // 10) * accum, eval_interval=max(1, steps // 4) * accum,
+    warmup = max(1, round(steps * warmup_frac)) if warmup_frac > 0 else 0
+    tcfg = TrainConfig(learning_rate=lr, min_lr=lr * min_lr_frac, max_iters=steps * accum,
+                       warmup_steps=warmup * accum, eval_interval=max(1, steps // 4) * accum,
                        eval_iters=50 * accum, batch_size=micro, gradient_accumulation_steps=accum, seed=SEED,
+                       weight_decay=weight_decay, grad_clip=grad_clip,
                        best_model_path=os.path.join(folder, "best_model_params.pt"))
     loader = BatchLoader(data_root, BLOCK, micro, dev.device, mix=mix)
     step_losses, stopped = [], [False]
@@ -197,6 +200,8 @@ def train_model(name, config, lr, steps, data_root, dataset_names, out_dir, dev,
                        "platform": platform, "tokens": done * BATCH * BLOCK})
     del model
     return {"name": name, "steps": steps, "updates_done": done, "stopped": stopped[0], "lr": lr,
+            "warmup_frac": warmup_frac, "min_lr_frac": min_lr_frac, "weight_decay": weight_decay, "grad_clip": grad_clip,
+            "dropout": config.dropout,
             "description": description, "datasets": list(dataset_names), "mix": mix if not isinstance(data_root, str) else None,
             "chip": chip_name(dev), "params": n, "active_params": active, "val_curve": [round(v, 4) for v in val],
             "eval_every": max(1, steps // 4), "best_val": round(min(finite), 4) if finite else None,
@@ -406,9 +411,76 @@ def report(summary, out_dir, zip_dir=None, say=print):
     return z
 
 
+def config_from_arch(arch):
+    """A GPTConfig from the Lab's architecture dict (the web app's model fields)."""
+    from dataclasses import fields
+    known = {f.name for f in fields(GPTConfig)} - {"vocab_size", "block_size"}
+    a = {k: v for k, v in arch.items() if k in known}
+    if a.get("n_kv_head") == a.get("n_head"):
+        a["n_kv_head"] = 0
+    if "moe_top_k" in a:
+        a["moe_top_k"] = min(a["moe_top_k"], a.get("n_experts", 1))
+    return GPTConfig(vocab_size=50257, block_size=BLOCK, **a)
+
+
+def decode_spec(text):
+    """A spec as JSON, or as the base64 text the Lab copies (safe to paste into a notebook form field)."""
+    import base64
+    text = text.strip()
+    return json.loads(text) if text.startswith("{") else json.loads(base64.b64decode(text).decode())
+
+
+def run_spec(spec, zip_dir=None, out_root=os.path.join(PROJECT_DIR, "outputs", "ab"), say=print):
+    """Run a Lab spec, on this machine or a cloud GPU (lab_run.ipynb):
+    {"title", "updates", "mix", "datasets": [{"name", "config", "text_column"}],
+     "variants": [{"name", "display_name", "arch": {...}, "lr", "warmup_frac", "min_lr_frac", "weight_decay", "grad_clip"}]}
+    Trains every variant the A/B way, evaluates it, and writes results (and a zip to bring home)."""
+    dev = setup_device()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    out_dir = os.path.join(out_root, stamp)
+    os.makedirs(out_dir, exist_ok=True)
+    steps, title = int(spec["updates"]), spec.get("title") or "Lab"
+    ds = spec["datasets"]
+    say(f"Lab run '{title}' on {chip_name(dev)} ({dev.device}, {dev.dtype}): {len(spec['variants'])} model(s) × {steps:,} updates")
+    roots = [ensure_dataset(d["name"], d.get("config"), d.get("text_column", "text"), say=say) for d in ds]
+    names = [d["name"] for d in ds]
+    sets = []
+    for root, d in zip(roots, ds):
+        key = os.path.basename(root)
+        sets.append({"key": key, "title": evaluate.DATASET_TITLES.get(key, d.get("title") or d["name"]), "path": os.path.join(root, "validation.bin")})
+    for spec_ds in EVAL_SETS:
+        root = ensure_dataset(*spec_ds, say=say)
+        key = os.path.basename(root)
+        if key not in {s["key"] for s in sets}:
+            sets.append({"key": key, "title": evaluate.DATASET_TITLES.get(key, "Tiny Shakespeare" if "input.txt" in key else spec_ds[0]),
+                         "path": os.path.join(root, "validation.bin")})
+    results = []
+    summary = {"title": title, "lab": True, "stamp": stamp, "steps": steps, "dataset": " + ".join(names), "datasets": names,
+               "device": dev.device, "chip": chip_name(dev), "batch": BATCH, "block": BLOCK, "seed": SEED, "variants": results}
+    data_root = roots if len(roots) > 1 else roots[0]
+    for v in spec["variants"]:
+        config = config_from_arch(v["arch"])
+        name = re.sub(r"[^A-Za-z0-9._+-]+", "-", v.get("name") or "model")[:40] or "model"
+        r = train_model(name, config, float(v.get("lr", DEFAULT_LR)), steps, data_root, names, out_dir, dev, say,
+                        mix=spec.get("mix", "size"), description=v.get("display_name") or name, platform="lab",
+                        warmup_frac=float(v.get("warmup_frac", 0.1)), min_lr_frac=float(v.get("min_lr_frac", 0.1)),
+                        weight_decay=float(v.get("weight_decay", 0.1)), grad_clip=float(v.get("grad_clip", 1.0)))
+        r.update(options={"n_experts": config.n_experts}, display_name=v.get("display_name"))
+        results.append(r)
+        if r["best_val"] is not None:
+            evaluate_variant(r, out_dir, names[0], dev, sets, title, say,
+                             model_name=f"{v.get('display_name') or name} · {chip_name(dev)}")
+        with open(os.path.join(out_dir, "ab.json"), "w") as f:
+            json.dump(summary, f, indent=1)
+        say(f"{name}: best validation loss {r['best_val']}, {r['updates_per_sec']} updates/s")
+    z = report(summary, out_dir, zip_dir, say)
+    return summary, out_dir, z
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Train and compare model variants (see the top of this file).")
-    ap.add_argument("--variant", action="append", required=True, help='"name: options", e.g. "qk: rope swiglu qk-norm"')
+    ap.add_argument("--variant", action="append", help='"name: options", e.g. "qk: rope swiglu qk-norm"')
+    ap.add_argument("--spec", help="run a Lab spec instead: a .json file, or the encoded text the Lab copies")
     ap.add_argument("--steps", type=int, default=1000, help="weight updates per variant (default 1,000)")
     ap.add_argument("--dataset", default="roneneldan/TinyStories", help="Hugging Face dataset to train on")
     ap.add_argument("--dataset-config", default=None)
@@ -417,4 +489,9 @@ if __name__ == "__main__":
     ap.add_argument("--zip", metavar="DIR", help="also write ab-<stamp>.zip to this folder")
     ap.add_argument("--title", help="a name for this experiment, e.g. 'A5 QK-norm'")
     a = ap.parse_args()
-    run(a.variant, a.steps, (a.dataset, a.dataset_config, a.text_column), not a.no_eval_sets, a.zip, title=a.title)
+    if a.spec:
+        run_spec(decode_spec(open(a.spec).read() if os.path.exists(a.spec) else a.spec), zip_dir=a.zip)
+    elif a.variant:
+        run(a.variant, a.steps, (a.dataset, a.dataset_config, a.text_column), not a.no_eval_sets, a.zip, title=a.title)
+    else:
+        ap.error("give --variant (one or more) or --spec")

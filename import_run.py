@@ -48,14 +48,15 @@ def import_ab(zip_path, z):
         if not (os.path.exists(weights) and os.path.exists(cfg)):
             print(f"  {v['name']}: no weights (diverged?), skipped")
             continue
-        meta, added = registry.add_model(weights, cfg, source="imported", origin=os.path.basename(zip_path),
-                                         name=f"{title} · {v['name']} · {v['description']} · {v['steps']:,} updates · {summary.get('chip')}")
+        name = (f"{v.get('display_name') or v['name']} · {summary.get('chip')}" if summary.get("lab")
+                else f"{title} · {v['name']} · {v['description']} · {v['steps']:,} updates · {summary.get('chip')}")
+        meta, added = registry.add_model(weights, cfg, source="imported", origin=os.path.basename(zip_path), name=name)
         ev_path = os.path.join(folder, "eval.json")
         if os.path.exists(ev_path):
             with open(ev_path) as f:
                 registry.save_eval(meta["id"], json.load(f))
         v.setdefault("chip", summary.get("chip"))
-        v.setdefault("datasets", [summary.get("dataset")])
+        v.setdefault("datasets", summary.get("datasets") or [summary.get("dataset")])
         registry.save_training(meta["id"], registry.training_record(v, title, summary.get("batch", 32),
                                                                     summary.get("block", 256), summary.get("seed", 42)))
         print(f"  {v['name']}: best validation loss {v['best_val']}  ->  {'saved' if added else 'already'} in the "
