@@ -22,6 +22,8 @@ const STEPS = [
   { id: "train", title: "Train", sub: "Watch it learn" },
   { id: "generate", title: "Generate", sub: "Write text" },
   { id: "models", title: "Models", sub: "Save, switch, compare" },
+  { id: "lab", title: "Lab", sub: "Design, train, compare", explore: true, icon: "⚗" },
+  { id: "journey", title: "Journey", sub: "How we got here", explore: true, icon: "⏱" },
 ];
 
 const TRAIN_PRESETS = {
@@ -87,12 +89,13 @@ function stepDone(id) {
     case "train": return !!sel?.checkpoint;
     case "generate": return ui.generated;
     case "models": return (s?.library_count || 0) > 0;
+    default: return false;
   }
 }
 
 function stepBlocker(id) {
   const s = ui.status, sel = s?.selection;
-  if (id === "dataset" || id === "models") return null;
+  if (id === "dataset" || id === "models" || id === "lab" || id === "journey") return null;
   if (id === "generate" && s.active) return null;
   if (!sel) return ["Add a dataset first, or pick a saved model in the Models step.", "dataset"];
   if (id === "tokenize") return null;
@@ -111,6 +114,8 @@ function go(id) {
   $$(".panel").forEach((p) => p.classList.toggle("active", p.dataset.step === id));
   window.scrollTo({ top: 0, behavior: "smooth" });
   if (id === "models") loadModels().catch((e) => toast(e.message, true));
+  if (id === "lab" && typeof labOpen === "function") labOpen();
+  if (id === "journey" && typeof journeyOpen === "function") journeyOpen();
   render();
   if (id === "batches") renderBatchExample();
   if (id === "tokenize") renderTokenExamples();
@@ -134,6 +139,7 @@ function render() {
   renderTrain(s);
   renderGenerateCard(s);
   renderGallery();
+  if (typeof labRender === "function") labRender(s);
 }
 
 function renderTopbar(s) {
@@ -151,9 +157,10 @@ function renderTopbar(s) {
 function renderSidebar(s) {
   const busyStep = s.job.status === "running" ? s.job.kind : null;
   $("#steps").innerHTML = STEPS.map((st, i) => {
-    const busy = busyStep === st.id;
-    const cls = ["step", st.id === ui.step && "active", stepDone(st.id) && "done", busy && "busy"].filter(Boolean).join(" ");
-    return `<li><button class="${cls}" data-go="${st.id}"><span class="num">${stepDone(st.id) && !busy ? "✓" : i + 1}</span><span><div class="t">${st.title}</div><div class="s">${st.sub}</div></span></button></li>`;
+    const busy = busyStep === st.id || (st.id === "lab" && busyStep === "lab");
+    const cls = ["step", st.explore && "explore", st.id === ui.step && "active", stepDone(st.id) && "done", busy && "busy"].filter(Boolean).join(" ");
+    const head = st.explore && !STEPS[i - 1]?.explore ? '<li class="steps-group">Explore</li>' : "";
+    return `${head}<li><button class="${cls}" data-go="${st.id}"><span class="num">${st.icon || (stepDone(st.id) && !busy ? "✓" : i + 1)}</span><span><div class="t">${st.title}</div><div class="s">${st.sub}</div></span></button></li>`;
   }).join("");
 }
 

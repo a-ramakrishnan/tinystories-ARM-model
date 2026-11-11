@@ -78,6 +78,7 @@ class State:
         self.model = None
         self.job = {"kind": None, "status": "idle", "message": "", "progress": None, "error": None}
         self.train = None              # live training progress
+        self.lab = None                # live progress of a Lab training run
         self.stop_requested = False
         self.inference_cache = None    # (checkpoint path, mtime, model, config)
         self.active_model = registry.load_active()  # saved model (models/) to use instead of the datasets' model
@@ -387,6 +388,7 @@ def status():
                   "breakdown": param_breakdown(S.model_config)} if S.model is not None else None,
         "job": S.job,
         "train": S.train,
+        "lab": S.lab,
     }
 
 
@@ -541,9 +543,8 @@ def batch_endpoint(req: BatchReq):
 
 # ---------- model ----------
 
-@app.post("/api/model")
-def model_endpoint(req: ModelReq):
-    require_idle("build a model")
+def config_from(req, block_size=None):
+    """Check a model request and turn it into a GPTConfig (shared by the Model step and the Lab)."""
     if req.n_embd % req.n_head != 0:
         raise HTTPException(400, f"Embedding size ({req.n_embd}) must be divisible by the number of heads ({req.n_head}).")
     if not (1 <= req.n_layer <= 48 and 1 <= req.n_head <= 32 and 16 <= req.n_embd <= 2048 and 0 <= req.dropout < 1):
@@ -565,12 +566,18 @@ def model_endpoint(req: ModelReq):
         raise HTTPException(400, "Repeat each block 1 to 4 times.")
     if req.mlp not in ("gelu", "swiglu"):
         raise HTTPException(400, "Feed-forward must be 'gelu' or 'swiglu'.")
-    config = GPTConfig(vocab_size=S.enc.n_vocab, block_size=S.batch["block_size"], n_layer=req.n_layer,
+    return GPTConfig(vocab_size=S.enc.n_vocab, block_size=block_size or S.batch["block_size"], n_layer=req.n_layer,
                        n_head=req.n_head, n_embd=req.n_embd, dropout=req.dropout, bias=req.bias, pos_encoding=req.pos_encoding,
                        norm=req.norm, mlp=req.mlp, qk_norm=req.qk_norm,
                        n_kv_head=0 if req.n_kv_head in (0, req.n_head) else req.n_kv_head,
                        block_repeat=req.block_repeat, mtp_heads=req.mtp_heads,
                        n_experts=req.n_experts, moe_top_k=min(req.moe_top_k, req.n_experts))
+
+
+@app.post("/api/model")
+def model_endpoint(req: ModelReq):
+    require_idle("build a model")
+    config = config_from(req)
     breakdown = param_breakdown(config)
     need = breakdown["total"] * BYTES_PER_PARAM_TRAINING
     if S.memory and need > 0.6 * S.memory:
@@ -760,7 +767,7 @@ def train_resume(req: ResumeReq):
 
 @app.post("/api/train/stop")
 def train_stop():
-    if training_running():
+    if training_running() or (S.job["kind"] == "lab" and S.job["status"] == "running"):
         S.stop_requested = True
         S.job["message"] = "Stopping after this step…"
     return {"ok": True}
@@ -931,10 +938,32 @@ class EvalReq(BaseModel):
     datasets: Optional[List[str]] = None   # dataset keys (folder names); default: every one available
 
 
+def training_summary(m):
+    """How a model was trained: its training.json (A/B and Lab models), or what its saved config records."""
+    if m.get("training"):
+        return m["training"]
+    try:
+        with open(registry.paths_of(m["id"])[1]) as f:
+            info = json.load(f)
+    except (OSError, ValueError, KeyError):
+        return None
+    tc = info.get("train_config") or {}
+    updates = info.get("updates") or (info.get("steps") // max(1, tc.get("gradient_accumulation_steps", 1))
+                                      if info.get("steps") else None)
+    secs = info.get("seconds")
+    return {"experiment": None, "description": None, "lr": tc.get("learning_rate"), "steps": info.get("steps"),
+            "updates_done": updates, "datasets": info.get("datasets") or m.get("datasets"), "chip": info.get("chip"),
+            "params": m.get("params"), "active_params": m.get("params"), "best_val": info.get("best_val"),
+            "seconds": secs, "updates_per_sec": round(updates / secs, 2) if updates and secs else None,
+            "batch": tc.get("batch_size"), "block": (info.get("model") or {}).get("block_size"),
+            "accumulation": tc.get("gradient_accumulation_steps"), "partial": True}
+
+
 def _model_row(m):
     return {k: m.get(k) for k in ("id", "name", "source", "origin", "added_at", "model_type", "model", "params",
-                                  "datasets", "steps", "tokens", "best_val", "seconds", "trained_at", "chip",
-                                  "platform", "bytes")} | {"eval": m.get("eval"), "active": m["id"] == S.active_model}
+                                  "datasets", "steps", "updates", "tokens", "best_val", "seconds", "trained_at", "chip",
+                                  "platform", "bytes")} | {"eval": m.get("eval"), "training": training_summary(m),
+                                                           "active": m["id"] == S.active_model}
 
 
 @app.get("/api/models")
@@ -1014,6 +1043,106 @@ def eval_run(req: EvalReq):
         S.job["message"] = f"Evaluated {len(ids)} model{'s' if len(ids) > 1 else ''}."
 
     return start_job("evaluate", job)
+
+
+# ---------- lab: pick an architecture and datasets, train, compare ----------
+
+class LabTrainReq(BaseModel):
+    name: str = ""
+    arch: ModelReq
+    datasets: List[str]            # data/ folder names (tokenized)
+    mix: str = "size"              # several datasets: draw batches by size, or equally
+    updates: int = 1000
+    learning_rate: float = 1.8e-3
+
+
+def lab_datasets():
+    """Tokenized datasets on this Mac that the Lab can train on."""
+    out = []
+    for d in evaluate.eval_datasets():
+        root = os.path.join(DATA_ROOT, d["key"])
+        if bin_files_exist(root):
+            out.append({"key": d["key"], "title": d["title"], "val_tokens": d["tokens"],
+                        "train_tokens": token_count(os.path.join(root, "train.bin")),
+                        "name": registry.FOLDER_DATASETS.get(d["key"], d["title"])})
+    return out
+
+
+@app.get("/api/lab/datasets")
+def lab_datasets_endpoint():
+    return {"datasets": lab_datasets(), "device": S.dev.device, "chip": S.chip, "memory": S.memory}
+
+
+@app.post("/api/lab/estimate")
+def lab_estimate(req: ModelReq):
+    """Size and cost of an architecture, without building it."""
+    config = config_from(req, block_size=256)
+    b = param_breakdown(config)
+    return {"params": b["total"], "active": b.get("active", b["total"]), "breakdown": b,
+            "kv_bytes_per_token": kv_bytes_per_token(config), "train_memory": b["total"] * BYTES_PER_PARAM_TRAINING,
+            "config": asdict(config)}
+
+
+@app.post("/api/lab/train")
+def lab_train(req: LabTrainReq):
+    """Train a model with the chosen architecture on the chosen datasets, the same way as ab_test.py, then evaluate
+    it and save it to the model library with its training record."""
+    require_idle("start a Lab run")
+    import ab_test
+    config = config_from(req.arch, block_size=ab_test.BLOCK)
+    available = {d["key"]: d for d in lab_datasets()}
+    chosen = [available[k] for k in req.datasets if k in available]
+    if not chosen:
+        raise HTTPException(400, "Pick at least one tokenized dataset.")
+    if not (50 <= req.updates <= 50_000):
+        raise HTTPException(400, "Train for 50 to 50,000 updates.")
+    if not (1e-5 <= req.learning_rate <= 0.05):
+        raise HTTPException(400, "The learning rate should be between 1e-5 and 0.05.")
+    if req.mix not in ("size", "equal"):
+        raise HTTPException(400, "Mix must be 'size' or 'equal'.")
+    need = param_breakdown(config)["total"] * BYTES_PER_PARAM_TRAINING
+    if S.memory and need > 0.6 * S.memory:
+        raise HTTPException(400, f"Too big for this Mac: about {need / 1e9:.1f} GB to train, with {S.memory / 1e9:.0f} GB of memory.")
+    name = (req.name or "").strip()[:80] or f"Lab {time.strftime('%m-%d %H:%M')}"
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    out_dir = os.path.join(PROJECT_DIR, "outputs", "lab", stamp)
+    roots = [os.path.join(DATA_ROOT, d["key"]) for d in chosen]
+    names = [d["name"] for d in chosen]
+    eval_sets = [d for d in evaluate.eval_datasets() if d["key"] == chosen[0]["key"]] + \
+                [d for d in evaluate.eval_datasets() if d["key"] != chosen[0]["key"]]
+    lab = S.lab = {"name": name, "phase": "training", "update": 0, "updates": req.updates, "points": [], "evals": [],
+                   "started": time.time(), "datasets": [d["title"] for d in chosen], "model_id": None}
+
+    def progress(ev):
+        if ev["type"] == "step":
+            u = ev["update"]
+            if u != lab["update"]:
+                lab["update"] = u
+                if u % max(1, req.updates // 300) == 0:
+                    lab["points"].append([u, round(ev["loss"], 4)])
+                S.job.update(progress=u / req.updates, message=f"{name}: update {u:,} of {req.updates:,}")
+        else:
+            lab["evals"].append({"update": ev["step"] // ev["accum"], "val": round(ev["val"], 4)})
+        return not S.stop_requested
+
+    def job():
+        S.stop_requested = False
+        S.inference_cache = None  # make room
+        r = ab_test.train_model("model", config, req.learning_rate, req.updates, roots if len(roots) > 1 else roots[0],
+                                names, out_dir, S.dev, say=print, progress=progress, mix=req.mix,
+                                description=name, platform="lab")
+        if r["stopped"]:
+            lab["phase"] = "stopped"
+            S.job.update(status="stopped", message=f"Stopped at update {r['updates_done']:,}. Nothing was saved.")
+            return
+        lab["phase"] = "evaluating"
+        S.job.update(message=f"{name}: evaluating…", progress=1.0)
+        r["options"] = {"n_experts": config.n_experts}
+        ab_test.evaluate_variant(r, out_dir, names[0], S.dev, eval_sets, title="Lab", say=print, model_name=name)
+        lab.update(phase="done", model_id=r.get("model_id"), best_val=r.get("best_val"))
+        S.job["message"] = f"{name}: trained, evaluated and saved to the library."
+
+    return start_job("lab", job)
 
 
 # ---------- static front end ----------

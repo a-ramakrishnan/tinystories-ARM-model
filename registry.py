@@ -4,6 +4,7 @@
 #   models/<id>/model_config.json      model config + training summary (as written by save_model_config)
 #   models/<id>/meta.json              name, type, source, fingerprint, and a summary for listing
 #   models/<id>/eval.json              results of the evaluation suite (see evaluate.py), if run
+#   models/<id>/training.json          how it was trained, for A/B and Lab models: settings, loss curve, speed
 #
 # Command line:
 #   python3 registry.py list           show the library
@@ -24,6 +25,7 @@ WEIGHTS = "best_model_params.pt"
 CONFIG = "model_config.json"
 META = "meta.json"
 EVAL = "eval.json"
+TRAINING = "training.json"   # how it was trained: settings, loss curve, speed (ab_test.py and the Lab)
 ACTIVE = "active.json"   # the model the web app uses for generation
 
 SIZE_NAMES = {(4, 256): "Tiny", (6, 384): "Small", (8, 512): "Medium", (12, 768): "Large"}
@@ -132,10 +134,11 @@ def list_models(root=LIB_ROOT):
             continue
         with open(meta_path) as f:
             meta = json.load(f)
-        ev = os.path.join(root, d, EVAL)
-        if os.path.exists(ev):
-            with open(ev) as f:
-                meta["eval"] = json.load(f)
+        for key, name in (("eval", EVAL), ("training", TRAINING)):
+            path = os.path.join(root, d, name)
+            if os.path.exists(path):
+                with open(path) as f:
+                    meta[key] = json.load(f)
         out.append(meta)
     return sorted(out, key=lambda m: (m.get("trained_at") or "", m.get("added_at") or ""), reverse=True)
 
@@ -199,6 +202,23 @@ def delete_model(model_id, root=LIB_ROOT):
 def save_eval(model_id, results, root=LIB_ROOT):
     with open(os.path.join(model_dir(model_id, root), EVAL), "w") as f:
         json.dump(results, f, indent=2)
+
+
+def training_record(r, title=None, batch=32, block=256, seed=42):
+    """What the library keeps about how a model was trained (training.json), from an ab_test.py / Lab result."""
+    sl = r.get("step_losses") or []
+    stride = max(1, len(sl) // 400)
+    keys = ("description", "lr", "steps", "updates_done", "datasets", "mix", "chip", "params", "active_params",
+            "val_curve", "val_steps", "eval_every", "best_val", "seconds", "updates_per_sec", "loss_spikes", "heldout",
+            "heldout_titles", "head_accuracy", "draft_agreement", "expert_busiest_share", "kv_speedup",
+            "kv_bytes_per_token", "tokens_per_sec")
+    return {"experiment": title, "variant": r.get("name"), "batch": batch, "block": block, "seed": seed,
+            **{k: r.get(k) for k in keys}, "step_losses": sl[::stride], "step_loss_stride": stride}
+
+
+def save_training(model_id, record, root=LIB_ROOT):
+    with open(os.path.join(model_dir(model_id, root), TRAINING), "w") as f:
+        json.dump(record, f, indent=1)
 
 
 def load_eval(model_id, root=LIB_ROOT):

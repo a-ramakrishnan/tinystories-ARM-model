@@ -13,7 +13,9 @@ weights, context vectors and next-token probabilities. No cloud, no Nvidia card.
 
 > **New here?** [From a training script to a working language model](docs/journey.md) tells the story of this
 > project: where it started, every change made to the model and the inference, why each one worked, and what
-> it measured. It's the best place to learn from.
+> it measured. It's the best place to learn from. In the app, the **Journey** page shows the same story as a
+> timeline (best result first, every decision with its numbers, arithmetic and cost), and the **Lab** page lets
+> you design, train and compare models with every architecture switch.
 
 ## About
 
@@ -745,6 +747,23 @@ config = GPTConfig(
 The web app's *Quick* preset uses 2,000 steps, 200 warmup, and evaluation every 250 steps over 50 batches,
 with the same learning rate and no gradient accumulation. *Full* uses the defaults above. See
 [Getting better stories](#getting-better-stories) for why these settings replaced the original ones.
+
+## The Lab and the Journey
+
+Two pages under **Explore** in the app's sidebar:
+
+- **Lab**: start from a known design (GPT-2 style, Llama style, our best dense model, our best with experts,
+  or a fast and lean one) or set every switch yourself, each with what it measured in this project. A live
+  summary shows parameters (total and used per token), KV cache size and training memory. Pick one or more
+  tokenized datasets, the number of updates and the learning rate, and train: the run uses the same recipe as
+  `ab_test.py` (32 × 256-token updates, seed 42, four evaluations), then the model is evaluated and saved to the
+  library with its full training record (`models/<id>/training.json`: settings, loss curves, speed).
+  **Compare models** lists every model trained so far, grouped by the experiment that made it, and lines up any
+  of them in one table: architecture, size and cost, quality and speed, with differences highlighted, the best
+  value in each row in bold, and the validation and training curves overlaid.
+- **Journey**: the best model at the top, the decisions that built it on one budget (2.631 → 2.200 after 1,000
+  updates), the numbers behind the model, and a timeline of every decision (wins, ties, losses and fixes), each
+  with its result, the arithmetic behind it and its cost. Filter by area, or show only what's in the best model.
 
 ## Saved models and evaluation
 

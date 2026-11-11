@@ -596,10 +596,79 @@
           <div id="ev-samples" class="cmp-out"></div>
         </div>
       </section>
+
+      <!-- ============ Lab ============ -->
+      <section class="panel" data-step="lab">
+        <header class="panel-head">
+          <span class="eyebrow">Lab</span>
+          <h1>Design, train and compare models</h1>
+          <p>Every architecture decision from the journey in one place. Start from a known design or set each switch yourself, pick one or more datasets, and train. Each model is evaluated and saved with everything about it, so it lines up against every model trained so far.</p>
+        </header>
+
+        <div class="card">
+          <div class="card-head"><h3><span class="lab-n">1</span> Start from a design</h3><span class="muted small">numbers measured in this project</span></div>
+          <div id="lab-presets" class="lab-presets"></div>
+        </div>
+
+        <div class="lab-grid">
+          <div class="card">
+            <div class="card-head"><h3><span class="lab-n">2</span> Every decision</h3><button id="lab-reset" class="btn small ghost">Back to the preset</button></div>
+            <div id="lab-switches"></div>
+          </div>
+          <div class="card lab-summary-card">
+            <div class="card-head"><h3>This model</h3></div>
+            <div id="lab-summary"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3><span class="lab-n">3</span> Training data</h3><span id="lab-data-note" class="muted small"></span></div>
+          <div id="lab-datasets"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3><span class="lab-n">4</span> Train</h3><span id="lab-cost" class="muted small"></span></div>
+          <div class="fields four">
+            <label class="span2l">Name <input id="lab-name" type="text" placeholder="e.g. My Llama-style model"></label>
+            <label>Weight updates <select id="lab-updates" class="select"><option value="300">300 (a quick look)</option><option value="1000" selected>1,000 (like the A/B tests)</option><option value="2000">2,000</option><option value="5000">5,000 (like the final run)</option></select></label>
+            <label>Peak learning rate <select id="lab-lr" class="select"><option value="0.0006">6e-4 (GPT-2 / nanoGPT)</option><option value="0.0018" selected>1.8e-3 (best in our sweep)</option><option value="0.003">3e-3</option><option value="0.006">6e-3</option></select></label>
+          </div>
+          <div id="lab-calc" class="lab-calc"></div>
+          <div class="actions tight">
+            <button id="lab-train" class="btn primary">Train this model</button>
+            <button id="lab-stop" class="btn hidden">Stop</button>
+            <span id="lab-busy" class="muted small"></span>
+          </div>
+          <div id="lab-live" class="lab-live hidden"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3><span class="lab-n">5</span> Compare models</h3><span id="lab-cmp-count" class="muted small"></span></div>
+          <p class="hint">Every model trained so far, grouped by the experiment that made it. Tick the ones to compare: rows are grouped into architecture, size and cost, quality, and speed. Columns run from the highest validation loss to the lowest. <span class="diff-key">Highlighted</span> cells differ from the first column; the best value in a row is in bold.</p>
+          <div class="lab-picker">
+            <div class="actions tight"><input id="lab-search" type="search" placeholder="Filter models…"><button id="lab-pick-final" class="btn small">The final comparison</button><button id="lab-pick-ladder" class="btn small">The architecture ladder</button><button id="lab-pick-none" class="btn small ghost">Clear</button></div>
+            <div id="lab-models" class="lab-models"></div>
+          </div>
+          <div id="lab-compare"></div>
+          <div id="lab-curves" class="lab-curves"></div>
+        </div>
+      </section>
+
+      <!-- ============ Journey ============ -->
+      <section class="panel" data-step="journey">
+        <header class="panel-head">
+          <span class="eyebrow">Journey</span>
+          <h1>How the model got better</h1>
+          <p>Every decision from the first commit to today: what we changed, why, what it measured, the arithmetic behind it, and what it cost. The best result is at the top; scroll down to go back in time.</p>
+        </header>
+        <div id="journey"></div>
+      </section>
     </main>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
   <script src="/static/app.js"></script>
+  <script src="/static/lab.js"></script>
+  <script src="/static/journey.js"></script>
 </body>
 </html>

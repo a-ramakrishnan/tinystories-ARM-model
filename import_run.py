@@ -54,6 +54,10 @@ def import_ab(zip_path, z):
         if os.path.exists(ev_path):
             with open(ev_path) as f:
                 registry.save_eval(meta["id"], json.load(f))
+        v.setdefault("chip", summary.get("chip"))
+        v.setdefault("datasets", [summary.get("dataset")])
+        registry.save_training(meta["id"], registry.training_record(v, title, summary.get("batch", 32),
+                                                                    summary.get("block", 256), summary.get("seed", 42)))
         print(f"  {v['name']}: best validation loss {v['best_val']}  ->  {'saved' if added else 'already'} in the "
               f"library as \"{meta['name']}\"")
     print(f"\nThe comparison is in {os.path.relpath(out_dir, PROJECT_DIR)}/results.md (chart: losses.png);"

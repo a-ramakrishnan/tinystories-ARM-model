@@ -136,13 +136,28 @@ def chip_name(dev):
     return "Apple Silicon" if dev.device == "mps" else "CPU"
 
 
-def train_variant(name, cfg, lr, size, steps, data_root, dataset_name, out_dir, dev, say=print):
-    folder = os.path.join(out_dir, name)
-    os.makedirs(folder, exist_ok=True)
+def variant_config(cfg, size):
+    """The GPTConfig for a parsed variant (see parse_variant)."""
     n_layer, n_head, n_embd = shape(cfg, size)
     model_opts = {k: v for k, v in cfg.items() if k not in ("n_layer", "n_head", "n_embd")}
-    config = GPTConfig(vocab_size=50257, block_size=BLOCK, n_layer=n_layer, n_head=n_head, n_embd=n_embd,
-                       dropout=0.0, **{"bias": True, **model_opts})
+    return GPTConfig(vocab_size=50257, block_size=BLOCK, n_layer=n_layer, n_head=n_head, n_embd=n_embd,
+                     dropout=0.0, **{"bias": True, **model_opts})
+
+
+def train_variant(name, cfg, lr, size, steps, data_root, dataset_name, out_dir, dev, say=print):
+    r = train_model(name, variant_config(cfg, size), lr, steps, data_root, [dataset_name], out_dir, dev, say,
+                    description=describe(cfg, lr, size))
+    r.update(options=cfg, size=size)
+    return r
+
+
+def train_model(name, config, lr, steps, data_root, dataset_names, out_dir, dev, say=print, progress=None,
+                mix="size", description=None, platform="ab_test"):
+    """Train one model the A/B way (seed 42, 32 × 256-token updates, warmup a tenth, 4 evaluations) and save it to
+    out_dir/name/. data_root: one dataset folder or a list (mixed by `mix`, as in the web app). progress: optional
+    function called with each pretrain event; returning False stops early."""
+    folder = os.path.join(out_dir, name)
+    os.makedirs(folder, exist_ok=True)
     torch.manual_seed(SEED)
     model = GPT(config).to(dev.device)
     micro = 8 if dev.device != "cuda" else BATCH       # the Mac's 16 GB can't hold a batch of 32 at once
@@ -152,15 +167,20 @@ def train_variant(name, cfg, lr, size, steps, data_root, dataset_name, out_dir, 
                        warmup_steps=max(1, steps // 10) * accum, eval_interval=max(1, steps // 4) * accum,
                        eval_iters=50 * accum, batch_size=micro, gradient_accumulation_steps=accum, seed=SEED,
                        best_model_path=os.path.join(folder, "best_model_params.pt"))
-    loader = BatchLoader(data_root, BLOCK, micro, dev.device)
-    step_losses = []
+    loader = BatchLoader(data_root, BLOCK, micro, dev.device, mix=mix)
+    step_losses, stopped = [], [False]
 
     def cb(e):
         if e["type"] == "step" and e["step"] % accum == 0:
             step_losses.append(round(e["loss"], 4))
+        if progress is not None and progress({**e, "update": e["step"] // accum, "accum": accum}) is False:
+            stopped[0] = True
+            return False
+        return True
 
     torch.manual_seed(SEED)
-    say(f"\n=== {name}: {describe(cfg, lr, size)}, {steps:,} updates of {BATCH} × {BLOCK} tokens"
+    description = description or name
+    say(f"\n=== {name}: {description}, {steps:,} updates of {BATCH} × {BLOCK} tokens"
         + (f" ({accum} micro-batches of {micro})" if accum > 1 else ""))
     t0 = time.time()
     _, val = pretrain(model, loader, tcfg, dev, callback=cb, save_state=False)
@@ -169,16 +189,20 @@ def train_variant(name, cfg, lr, size, steps, data_root, dataset_name, out_dir, 
     from model import param_breakdown
     active = param_breakdown(config).get("active", n)
     finite = [v for v in val if math.isfinite(v)]
+    done = len(step_losses)
     save_model_config(os.path.join(folder, "model_config.json"), config,
-                      {"datasets": [dataset_name], "steps": steps, "updates": steps, "params": n,
+                      {"datasets": list(dataset_names), "steps": done, "updates": done, "params": n,
                        "best_val": min(finite) if finite else None, "seconds": round(secs, 1),
                        "trained_at": time.strftime("%Y-%m-%d %H:%M"), "device": dev.device, "chip": chip_name(dev),
-                       "platform": "ab_test", "tokens": steps * BATCH * BLOCK})
+                       "platform": platform, "tokens": done * BATCH * BLOCK})
     del model
-    return {"name": name, "steps": steps, "options": cfg, "lr": lr, "size": size, "description": describe(cfg, lr, size),
-            "params": n, "active_params": active, "val_curve": [round(v, 4) for v in val], "eval_every": max(1, steps // 4),
-            "best_val": round(min(finite), 4) if finite else None, "seconds": round(secs, 1),
-            "updates_per_sec": round(steps / secs, 2), "step_losses": step_losses,
+    return {"name": name, "steps": steps, "updates_done": done, "stopped": stopped[0], "lr": lr,
+            "description": description, "datasets": list(dataset_names), "mix": mix if not isinstance(data_root, str) else None,
+            "chip": chip_name(dev), "params": n, "active_params": active, "val_curve": [round(v, 4) for v in val],
+            "eval_every": max(1, steps // 4), "best_val": round(min(finite), 4) if finite else None,
+            # pretrain evaluates every eval_every updates before the end, then once more at the end
+            "val_steps": [max(1, steps // 4) * (k + 1) for k in range(len(val) - 1)] + ([done] if val else []),
+            "seconds": round(secs, 1), "updates_per_sec": round(done / max(secs, 1e-6), 2), "step_losses": step_losses,
             "loss_spikes": spikes(step_losses), "config": asdict(config)}
 
 
@@ -193,10 +217,11 @@ def spikes(losses, window=50, factor=1.5):
     return out
 
 
-def evaluate_variant(r, out_dir, dataset_name, dev, eval_sets, title=None, say=print):
+def evaluate_variant(r, out_dir, dataset_name, dev, eval_sets, title=None, say=print, model_name=None):
     folder = os.path.join(out_dir, r["name"])
     meta, _ = registry.add_model(os.path.join(folder, "best_model_params.pt"), os.path.join(folder, "model_config.json"),
-                                 source="trained", name=f"{title or 'A/B'} · {r['name']} · {r['description']} · {r['steps']:,} updates")
+                                 source="trained",
+                                 name=model_name or f"{title or 'A/B'} · {r['name']} · {r['description']} · {r['steps']:,} updates")
     say(f"Evaluating {r['name']}")
     ev = evaluate.evaluate_model(meta["id"], dev.device, datasets=eval_sets, progress=lambda m: None)
     with open(os.path.join(folder, "eval.json"), "w") as f:
@@ -214,6 +239,7 @@ def evaluate_variant(r, out_dir, dataset_name, dev, eval_sets, title=None, say=p
               "kv_speedup": bench["speedup"], "kv_recomputes": bench["kv_cache"]["recomputes"],
               "kv_bytes_per_token": ev["size"]["kv_bytes_per_token"], "tokens_per_sec": bench["kv_cache"]["tokens_per_sec"],
               "head_accuracy": acc, "draft_agreement": agree, "expert_busiest_share": busiest})
+    registry.save_training(meta["id"], registry.training_record(r, title, BATCH, BLOCK, SEED))
     if dev.device == "mps":
         torch.mps.empty_cache()
     elif dev.device == "cuda":
