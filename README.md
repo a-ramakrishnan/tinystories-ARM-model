@@ -476,6 +476,7 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 13 | **Grouped-query attention** (A6) | Query heads share key/value heads (**Key/value heads** in the Model step, `--kv-heads N`); the KV cache stores only the shared heads ([the A/B](docs/journey.md#17-architecture-step-six-grouped-query-attention)) | 3 KV heads: **cache 2× smaller for free** (2.251 → 2.252); 2: 3× smaller, +0.013; 1 (multi-query): 6× smaller, +0.033. No generation speedup at this size: the cache is tiny and the shared heads are copied out |
 | 14 | **Depth vs width** (A7) | Four shapes at ~29.9M parameters: 3×448, 6×384, 11×320, 22×256 (`ab_test.py` `layers=`/`embd=`/`heads=`) ([the A/B](docs/journey.md#18-architecture-step-seven-deep-and-thin-or-wide-and-shallow)) | **6×384 is best** at 1,000 updates (2.251); 3 and 11 layers 2.27; 22 layers 2.40 (slow start, still closing). The 3-layer model generates **5× faster** than the 22-layer one, with a 4× smaller KV cache |
 | 15 | **Layer sharing** (A8) | Each block applied 2–3× in a row with the same weights (**Repeat each block** in the Model step, `--block-repeat N`) ([the A/B](docs/journey.md#19-architecture-step-eight-layer-sharing)) | **Worse at this budget**: 2× sharing 2.251 → 2.346, 3× → 2.518; the wide model 2.271 → 2.345; and slower. Likely because shared weights get 2–3× the gradient (an effectively higher learning rate) and depth needs longer runs. Kept as an option |
+| 16 | **Multi-token prediction** (A9) | Extra heads also predict 2–4 tokens ahead during training (**Tokens predicted** in the Model step, `--mtp N`) ([the A/B](docs/journey.md#20-architecture-step-nine-predicting-several-tokens-at-once)) | **Worse at this size**: 2.251 → 2.336 (2 tokens), 2.490 (3), 2.536 (4), and slower to train, as Meta found for small models. The 2-ahead head agrees with the main head **51%** of the time: a candidate drafter for speculative decoding (I5) |
 
 ### Next: the architecture
 
@@ -501,7 +502,7 @@ python3 ab_test.py --title "A5 QK-norm" --variant "baseline: rope swiglu no-bias
 | ~~A6~~ | ~~**Grouped-query attention**~~ | Done: step 13 above | | |
 | ~~A7~~ | ~~**Deep and thin vs wide and shallow**~~ | Done: step 14 above | | |
 | ~~A8~~ | ~~**Layer sharing**~~ | Done: step 15 above | | |
-| A9 | **Multi-token prediction** | Extra heads that also predict the 2nd, 3rd… next token during training | Richer training signal; the extra heads can draft tokens for speculative decoding (I5) | Loss, and draft acceptance rate |
+| ~~A9~~ | ~~**Multi-token prediction**~~ | Done: step 16 above | | |
 | A10 | **Mixture of experts** | Several feed-forward "experts", each token routed to one or two | More parameters for the same compute per token | Loss at equal compute, memory |
 
 ### Next: inference

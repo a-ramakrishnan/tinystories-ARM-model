@@ -716,7 +716,7 @@ clearly, and here it produced a by-product (a cheap drafter) worth testing on it
 ## 22. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** multi-token prediction, mixture of experts.
+- **Architecture:** mixture of experts.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.
