@@ -30,8 +30,9 @@ that are easy to get wrong and rarely explained.
 19. [Architecture, step eight: layer sharing](#19-architecture-step-eight-layer-sharing)
 20. [Architecture, step nine: predicting several tokens at once](#20-architecture-step-nine-predicting-several-tokens-at-once)
 21. [Architecture, step ten: a mixture of experts](#21-architecture-step-ten-a-mixture-of-experts)
-22. [Lessons](#22-lessons)
-23. [What's next](#23-whats-next)
+22. [Putting it together: the original model vs all the wins](#22-putting-it-together-the-original-model-vs-all-the-wins)
+23. [Lessons](#23-lessons)
+24. [What's next](#24-whats-next)
 
 ---
 
@@ -722,7 +723,67 @@ depends on the routing (here, top-2 beat top-1 decisively) and on training long 
 
 ---
 
-## 22. Lessons
+## 22. Putting it together: the original model vs all the wins
+
+Every result above came from a short run (1,000 updates), one change at a time. Do the wins add up, and do they
+survive a longer run? The closing experiment trained four models for **5,000 updates** each on the L4, with the
+same data, seed and batches:
+
+- **GPT-2 style**: learned positions, LayerNorm, GELU, biases, learning rate 6e-4. Where step 11 started.
+- **GPT-2 style, learning rate 1.8e-3**: the same model with step 16's learning rate, to separate the two.
+- **Best dense**: RoPE, SwiGLU, no biases, QK-norm, learning rate 1.8e-3.
+- **Best with experts**: the same, with 4 experts and 2 per token (step 21).
+
+| Small model, 5,000 updates, L4 | GPT-2 style | + learning rate 1.8e-3 | Best dense | Best with experts |
+|---|---|---|---|---|
+| Parameters: total / active per token | 30.0M / 30.0M | 30.0M / 30.0M | 29.9M / 29.9M | 51.2M / 37.0M |
+| Validation loss at updates 1,250 / 2,500 / 3,750 / 5,000 | 2.448 / 2.138 / 1.987 / 1.903 | 2.403 / 2.117 / 1.950 / 1.851 | 2.248 / 2.020 / 1.870 / 1.782 | 2.213 / 1.977 / 1.824 / **1.732** |
+| Held-out: TinyStories | 1.878 | 1.820 | 1.754 | **1.700** |
+| Held-out: Tiny Shakespeare | 8.342 | 8.344 | 8.300 | **8.194** |
+| Top-1 accuracy: next token | 55.9% | 56.2% | 57.5% | **58.1%** |
+| Greedy repetition | 27.0% | 27.4% | 27.5% | **7.9%** |
+| Training speed (updates/s) | **8.75** | 8.73 | 7.34 | 5.68 |
+| Generation, tokens/s | 232 | **234** | 132 | 66 |
+
+![Validation and training loss over 5,000 updates for the four models](screenshots/final-comparison.png)
+
+**The wins held, and added up.** Over a run five times longer, the gaps from the short A/B tests stayed: the
+learning rate alone is worth 0.05, the architecture changes another 0.07, and the experts another 0.05, for
+**1.903 → 1.732** in all. Put differently, the best dense model passed the GPT-2-style model's final loss before
+update 3,750, and the model with experts around update 3,100: the same quality with roughly a quarter to a third
+fewer updates. The best model also repeats itself far less when decoding greedily, and is better on Tiny
+Shakespeare, which neither model trained on.
+
+**The bill is speed.** In this implementation, the new architecture trains 16% slower and generates at about
+half the speed (232 → 132 tokens/s; 66 with experts). None of that is inherent: the rotation angles are
+recomputed for every token, QK-norm and SwiGLU add small separate operations that PyTorch doesn't fuse, and the
+experts run one after another in a Python loop. Production models use fused kernels for exactly these parts.
+Making generation fast again is the job of the inference track (caching the RoPE tables, compiled generation,
+half precision, and speculative decoding with step 20's extra head).
+
+Two stories from the prompt "Once upon a time there was a little girl who" (Balanced sampling, same seed):
+
+> **GPT-2 style:** …loved to explore. She would go on adventures and play in the garden. One day she decided to
+> climb a tree in her backyard. As she was climbing, she saw a little bird stuck inside. The little girl thought
+> that maybe it could help the bird find its home. So she climbed up the tree and saw how many animals needed its
+> own food…
+
+> **Best with experts:** …loved to explore. She had a special box full of toys that she would play with every
+> day. One day, the little girl decided it was time to go on an adventure. She grabbed her box and opened it up.
+> Inside was a beautiful necklace that sparkled in the light of the box. The little girl thought about how
+> magical the necklace looked in the box. But then suddenly something strange happened! The necklace started to
+> move…
+
+Both are fluent; the second keeps better track of its own objects (the box, the necklace) from sentence to
+sentence, which is what a lower loss feels like in practice.
+
+**Lesson.** Small, careful steps compound. No single change here was dramatic, but measured one at a time and
+kept only when they helped, they added up to a model that learns noticeably faster from the same data, and a
+clear list of what to fix next.
+
+---
+
+## 23. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -756,12 +817,15 @@ depends on the routing (here, top-2 beat top-1 decisively) and on training long 
     models, but left behind heads that could speed up generation.
 19. **Count compute, not just parameters.** A mixture of experts can have 2.6× the parameters for the same
     compute per token; compare models on both, and on speed in your own implementation.
+20. **Check that short-run wins survive a long run.** Here they did, and added up: 1.903 → 1.732 at 5,000
+    updates. That's what made the short A/B tests worth trusting.
 
-## 23. What's next
+## 24. What's next
 
 The [roadmap in the README](../README.md#improving-the-model-step-by-step) lists the next steps.
-- **Architecture:** combine the wins (RoPE, SwiGLU, QK-norm, the 1.8e-3 learning rate, and a 4-expert top-2 mixture)
-  in one longer run, and re-test depth and layer sharing with more training.
+- **Inference, first:** win back the generation speed the new architecture lost (cached RoPE tables, compiled
+  generation, half precision), then speculative decoding with the multi-token head.
+- **Architecture:** re-test depth and layer sharing with longer runs and tuned learning rates.
 - **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
   prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.
