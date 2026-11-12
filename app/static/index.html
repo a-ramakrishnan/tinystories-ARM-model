@@ -337,6 +337,18 @@
             </div>
             <div id="ex-wrap" class="hidden">
               <p class="muted small ex-hint">Hover a row to follow a token; click a token's name to follow it through every block; click any part for its explanation, or an attention cell for its calculation.</p>
+              <div id="fl-player" class="fl-player hidden">
+                <div class="fl-ctrls">
+                  <button id="fl-play" class="btn primary small">▶ Play the data flow</button>
+                  <button id="fl-prev" class="btn small" title="Previous step (←)">◀</button>
+                  <button id="fl-next" class="btn small" title="Next step (→)">▶</button>
+                  <button id="fl-stop" class="btn small">Stop</button>
+                  <label class="inline">Follow <select id="fl-tok" class="select"></select></label>
+                  <div id="fl-dots" class="fl-dots"></div>
+                  <span class="muted small">one token through block <span id="fl-blockno"></span>, stage by stage · space, ← →</span>
+                </div>
+                <div id="fl-caption" class="fl-caption hidden"></div>
+              </div>
               <div id="ex-svg" class="ex-svg"></div>
               <div id="ex-token" class="ex-token hidden"></div>
               <div class="ex-bottom">
@@ -781,5 +793,6 @@
   <script src="/static/journey.js"></script>
   <script src="/static/explorer.js"></script>
   <script src="/static/flow.js"></script>
+  <script src="/static/flowplay.js"></script>
 </body>
 </html>

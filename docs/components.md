@@ -89,7 +89,16 @@ a tab or ‹ ›) lists the keys, queries and values, with key lines dropping in
 running into their rows and the values flowing to Out; each token's ribbon then dips into the feed-forward
 layer's wider hidden layer (2.7× for SwiGLU, 4× for GELU) and comes back up beside the residual connection,
 passes the other blocks, and the last token fans out into the next-token probabilities. **Diagram** shows the
-numbers themselves. In the Diagram, the block is drawn as two bands, one per half of a transformer block: **1 · Attention** (tokens share
+numbers themselves.
+
+**▶ Play the data flow** (in the Flow view) follows one token (the one you clicked, or the last) through a whole
+block in 11 steps: embedding; query, key and value; into the chosen head; the scores against every key; the mask;
+softmax; the weighted values flowing to Out; the residual addition; the feed-forward layer (or the experts'
+router); the other blocks (with the logit lens for that token); and the next-token probabilities, or, for an
+earlier token, its own prediction against the real next token. Each step lights only the parts that work on the
+token, sends particles along its ribbons and explains the step with the model's real numbers (its scores and
+weights, the values it mixes, how much of the hidden layer is active, how its vector grows). It plays on its own
+(about 4 s a step); pause, step with ← → or the step dots, or pick another token to follow. In the Diagram, the block is drawn as two bands, one per half of a transformer block: **1 · Attention** (tokens share
 information: embedding → query, key, value → the attention matrix) and **2 · Feed-forward** (each token on its
 own: out + residual → feed-forward or experts → the other blocks). The step widens to use the window, and
 **Full screen** (Esc to leave) gives the diagram the whole screen, up to 1.35× larger.

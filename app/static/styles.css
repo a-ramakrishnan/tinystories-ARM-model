@@ -937,3 +937,26 @@ body.ex-noscroll { overflow: hidden; }
 .fl-ppct { font-size: 15px; }
 .fl-nav { font-size: 15px; }
 .fl-tabtxt { font-size: 11px; }
+
+/* Flow player */
+.fl-player { margin: 4px 0 8px; }
+.fl-ctrls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fl-dots { display: inline-flex; gap: 5px; margin: 0 6px; }
+.fl-dot-btn { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--accent); background: transparent; padding: 0; cursor: pointer; }
+.fl-dot-btn.done { background: var(--accent-soft); }
+.fl-dot-btn.on { background: var(--accent); transform: scale(1.25); }
+.fl-caption { margin-top: 8px; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--accent); background: var(--accent-soft); font-size: 15px; line-height: 1.6; }
+.fl-caption code { font-size: 13.5px; }
+.fl-capname { font-weight: 700; margin-bottom: 4px; color: var(--accent); }
+.fl-play path, .fl-play rect, .fl-play circle, .fl-play text { opacity: .1; transition: opacity .35s; }
+.fl-play .fl-lit, .fl-play .fl-lit * { opacity: 1; }
+.fl-play #fl-overlay * { opacity: 1; }
+.fl-play .fl-lit.fl-fan, .fl-play .fl-lit.fl-line, .fl-play .fl-lit.fl-kline, .fl-play .fl-lit.fl-outline { stroke-opacity: .9; stroke-width: 2.6; }
+.fl-play .fl-lit.fl-dip { stroke-opacity: .55; }
+.fl-play .fl-lit.fl-pband, .fl-play .fl-lit.fl-vband { fill-opacity: .22; }
+.fl-pline { fill: none; stroke: #7d9be6; stroke-opacity: 0; }
+.fl-play .fl-lit.fl-pline { stroke-opacity: .5; stroke-width: 2; }
+.fl-ovpath { fill: none; stroke: #2f9e66; stroke-opacity: .7; }
+.fl-ovnum { font-size: 12px; font-weight: 700; fill: var(--accent); paint-order: stroke; stroke: var(--panel); stroke-width: 4px; }
+.fl-ovnum.masked { fill: var(--muted); }
+.fl-particle { filter: drop-shadow(0 0 4px rgba(122,92,240,.8)); pointer-events: none; }

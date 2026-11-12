@@ -61,13 +61,13 @@ function exRenderFlow(d, c, T, L, H) {
     for (let h = 0; h < H; h++) {
       for (let k = 0; k < 3; k++) {
         const col = [FL.Q, FL.K, FL.V][k];
-        fan += `<path class="ex-rib fl-fan${h === ex.head ? " on" : ""}" data-row="${i}" d="${flCurve(xEmb + 14, yT(i), xTab, tabY(h, k) + tab / 2, 0.6)}" stroke="${col}" stroke-width="${h === ex.head ? 1.6 : 1}" fill="none"/>`;
+        fan += `<path class="ex-rib fl-fan${h === ex.head ? " on" : ""}" data-row="${i}"${h === ex.head ? ` data-p="fan" data-k="${k}"` : ""} d="${flCurve(xEmb + 14, yT(i), xTab, tabY(h, k) + tab / 2, 0.6)}" stroke="${col}" stroke-width="${h === ex.head ? 1.6 : 1}" fill="none"/>`;
       }
     }
   }
   s += `<g data-focus="qkv">${fan}</g>`;
   for (let i = 0; i < T; i++) {
-    s += `<g class="ex-row" data-row="${i}"><g class="ex-tokg" data-tok="${i}" data-focus="embedding"><rect x="4" y="${yT(i) - 13}" width="${xEmb + 18}" height="26" rx="6" class="ex-tokbg"/>` +
+    s += `<g class="ex-row fl-embrow" data-row="${i}"><g class="ex-tokg" data-tok="${i}" data-focus="embedding"><rect x="4" y="${yT(i) - 13}" width="${xEmb + 18}" height="26" rx="6" class="ex-tokbg"/>` +
       flText(xTokR, yT(i) + 5, flTok(d.tokens[i].text), "ex-tok", "end") + `<rect x="${xEmb}" y="${yT(i) - 10}" width="14" height="20" rx="3" class="fl-emb"/></g></g>`;
   }
   s += `<g data-focus="qkv">`;
@@ -88,34 +88,34 @@ function exRenderFlow(d, c, T, L, H) {
   const tk = (k) => tabY(ex.head, k) + tab / 2;
   let lines = "";
   for (let i = 0; i < T; i++) {
-    lines += `<path class="ex-rib fl-line" data-row="${i}" d="${flCurve(xTab + 24, tk(1), xTick, yK(i), 0.55)}" stroke="${FL.K}"/>`;
-    lines += `<path class="ex-rib fl-line" data-row="${i}" d="${flCurve(xTab + 24, tk(0), xTick, yQ(i), 0.55)}" stroke="${FL.Q}"/>`;
-    lines += `<path class="ex-rib fl-line" data-row="${i}" d="${flCurve(xTab + 24, tk(2), xTick, yV(i), 0.55)}" stroke="${FL.V}"/>`;
+    lines += `<path class="ex-rib fl-line" data-row="${i}" data-p="list" d="${flCurve(xTab + 24, tk(1), xTick, yK(i), 0.55)}" stroke="${FL.K}"/>`;
+    lines += `<path class="ex-rib fl-line" data-row="${i}" data-p="list" d="${flCurve(xTab + 24, tk(0), xTick, yQ(i), 0.55)}" stroke="${FL.Q}"/>`;
+    lines += `<path class="ex-rib fl-line" data-row="${i}" data-p="list" d="${flCurve(xTab + 24, tk(2), xTick, yV(i), 0.55)}" stroke="${FL.V}"/>`;
   }
   s += `<g data-focus="qkv">${lines}</g>`;
   s += `<g data-focus="attention">`;
-  s += flText(xLab + 10, yKey - 14, "Key", "fl-lt", "middle", `style="fill:${FL.K}"`);
-  s += flText(xLab + 10, yQry - 14, "Query", "fl-lt", "middle", `style="fill:${FL.Q}"`);
-  s += flText(xLab + 10, yVal - 14, "Value", "fl-lt", "middle", `style="fill:${FL.V}"`);
+  s += flText(xLab + 10, yKey - 14, "Key", "fl-lt fl-cardtitle", "middle", `style="fill:${FL.K}"`);
+  s += flText(xLab + 10, yQry - 14, "Query", "fl-lt fl-cardtitle", "middle", `style="fill:${FL.Q}"`);
+  s += flText(xLab + 10, yVal - 14, "Value", "fl-lt fl-cardtitle", "middle", `style="fill:${FL.V}"`);
   // key lines run right to their column, then down into the attention dots
   for (let j = 0; j < T; j++) {
     const x = colX(j), y = yK(j), r = 7;
-    s += `<path class="ex-rib fl-kline" data-row="${j}" d="M${xTick + 14},${y} H${x - r} Q${x},${y} ${x},${y + r} V${yQ(0) - S / 2}" stroke="${FL.K}"/>`;
+    s += `<path class="ex-rib fl-kline" data-row="${j}" data-p="kline" d="M${xTick + 14},${y} H${x - r} Q${x},${y} ${x},${y + r} V${yQ(0) - S / 2}" stroke="${FL.K}"/>`;
   }
   // query lines run straight into their row of dots
-  for (let i = 0; i < T; i++) s += `<path class="ex-rib fl-kline" data-row="${i}" d="M${xTick + 14},${yQ(i)} H${xM0}" stroke="${FL.Q}"/>`;
+  for (let i = 0; i < T; i++) s += `<path class="ex-rib fl-kline" data-row="${i}" data-p="qline" d="M${xTick + 14},${yQ(i)} H${xM0}" stroke="${FL.Q}"/>`;
   // value ribbon up to Out, and the fan from the dots to Out
   s += `<path class="fl-vband" d="${flBand(xTick + 14, yV(0) - S / 2, yV(T - 1) + S / 2, xOut - 6, yQ(0) - S / 2, yQ(T - 1) + S / 2, 0.55)}"/>`;
   s += `<path class="fl-oband" d="${flBand(xM0 + T * S + 4, yQ(0) - S / 2, yQ(T - 1) + S / 2, xOut - 6, yQ(0) - S / 2, yQ(T - 1) + S / 2, 0.5)}"/>`;
   for (let i = 0; i < T; i++) {
     const label = flTok(d.tokens[i].text);
-    s += `<g class="ex-row" data-row="${i}">` +
+    s += `<g class="ex-row fl-cardrow" data-row="${i}">` +
       flText(xLab, yK(i) + 4, label, "fl-lab", "end") + `<rect x="${xTick}" y="${yK(i) - 1.5}" width="14" height="3" fill="${FL.K}"/>` +
       flText(xLab, yQ(i) + 4, label, "fl-lab", "end") + `<rect x="${xTick}" y="${yQ(i) - 1.5}" width="14" height="3" fill="${FL.Q}"/>` +
       flText(xLab, yV(i) + 4, label, "fl-lab", "end") + `<rect x="${xTick}" y="${yV(i) - 1.5}" width="14" height="3" fill="${FL.V}"/>` +
       `<rect x="${xOut}" y="${yQ(i) - 2}" width="18" height="4" rx="1" fill="${FL.A}"/></g>`;
   }
-  s += flText(xOut + 9, yQry - 14, "Out", "fl-lt", "middle", `style="fill:${FL.A}"`);
+  s += flText(xOut + 9, yQry - 14, "Out", "fl-lt fl-cardtitle", "middle", `style="fill:${FL.A}"`);
   // the attention dots: size and colour follow the weight; future positions are masked
   for (let i = 0; i < T; i++) {
     for (let j = 0; j < T; j++) {
@@ -125,7 +125,7 @@ function exRenderFlow(d, c, T, L, H) {
       s += `<g class="ex-ag" data-i="${i}" data-j="${j}"><title>${esc(d.tokens[i].text)} → ${esc(d.tokens[j].text)}: ${j > i ? "masked" : (w * 100).toFixed(1) + "%"}</title>${dot}${sel ? `<circle cx="${cx}" cy="${cy}" r="${S * 0.46}" class="ex-sel"/>` : ""}</g>`;
     }
   }
-  s += flText(xM0 + T * S / 2, yQ(T - 1) + S + 18, "Attention", "fl-lt", "middle", `style="fill:${FL.A}"`);
+  s += flText(xM0 + T * S / 2, yQ(T - 1) + S + 18, "Attention", "fl-lt fl-cardtitle", "middle", `style="fill:${FL.A}"`);
   // head navigation inside the card
   const nx = x0 + cardW - 150, ny = y0 + cardH - 22;
   s += flText(nx, ny, `Head ${ex.head + 1} of ${H}`, "fl-nav") +
@@ -136,7 +136,7 @@ function exRenderFlow(d, c, T, L, H) {
   // ---------- out → feed-forward rows ----------
   s += `<g data-focus="out">`;
   for (let i = 0; i < T; i++) {
-    s += `<path class="ex-rib fl-outline" data-row="${i}" d="${flCurve(xOut + 18, yQ(i), xm + 8, yM(i), 0.5)}" stroke="${FL.A}"/>`;
+    s += `<path class="ex-rib fl-outline" data-row="${i}" data-p="outline" d="${flCurve(xOut + 18, yQ(i), xm + 8, yM(i), 0.5)}" stroke="${FL.A}"/>`;
   }
   s += `</g><g data-focus="mlp">`;
   // each token's ribbon dips into the wider hidden layer and comes back up (the residual runs alongside)
@@ -145,18 +145,18 @@ function exRenderFlow(d, c, T, L, H) {
     const y = yM(i), yb = ybot(i);
     const path = `M${xm + 24},${y} C${xm + 100},${y} ${xh - 60},${yb} ${xh},${yb} C${xh + 60},${yb} ${xRes2 - 80},${y} ${xRes2},${y}`;
     s += `<path d="${path}" class="fl-dipgap" stroke-width="${bw + 5}"/>`;
-    s += `<path d="${path}" class="ex-rib fl-dip" data-row="${i}" stroke-width="${bw}"/>`;
+    s += `<path d="${path}" class="ex-rib fl-dip" data-row="${i}" data-p="dip" stroke-width="${bw}"/>`;
   }
   s += `<rect x="${xh - 7}" y="${ybot(0) - bw / 2 - 6}" width="14" height="${ybot(T - 1) - ybot(0) + bw + 12}" rx="5" class="fl-hidden"/>`;
   for (let i = 0; i < T; i++) {
     const a = c.n_experts > 1 ? Math.max(...L.router.probs[i]) : L.mlp.active[i];
-    s += `<circle cx="${xh}" cy="${ybot(i)}" r="4.5" class="fl-act" fill-opacity="${(0.25 + 0.75 * Math.min(1, a * (c.n_experts > 1 ? 1 : 4))).toFixed(2)}"><title>${esc(d.tokens[i].text)}: ${c.n_experts > 1 ? `router's top expert ${(a * 100).toFixed(0)}%` : `${(a * 100).toFixed(0)}% of the hidden layer strongly active`}</title></circle>`;
+    s += `<circle cx="${xh}" cy="${ybot(i)}" r="4.5" class="fl-act" data-row="${i}" fill-opacity="${(0.25 + 0.75 * Math.min(1, a * (c.n_experts > 1 ? 1 : 4))).toFixed(2)}"><title>${esc(d.tokens[i].text)}: ${c.n_experts > 1 ? `router's top expert ${(a * 100).toFixed(0)}%` : `${(a * 100).toFixed(0)}% of the hidden layer strongly active`}</title></circle>`;
   }
   s += flText(xh, ybot(T - 1) + bw / 2 + 26, c.n_experts > 1 ? "experts" : `hidden layer: ${L.mlp.width} numbers (${ratio.toFixed(1)}× wider)`, "ex-sub", "middle");
   // residual brackets and bars
   s += `<path d="M${xm + 8},${yM(0) - MR / 2 - 4} q0,-14 18,-14 H${xRes2 - 18} q18,0 18,14" class="fl-resid"/>` + flText((xm + xRes2) / 2, yM(0) - MR / 2 - 22, "residual: added back", "ex-sub", "middle");
   for (let i = 0; i < T; i++) {
-    s += `<g class="ex-row" data-row="${i}">${flText(xm - 4, yM(i) + 5, flTok(d.tokens[i].text), "ex-tok", "end")}` +
+    s += `<g class="ex-row fl-mlprow" data-row="${i}">${flText(xm - 4, yM(i) + 5, flTok(d.tokens[i].text), "ex-tok", "end")}` +
       `<rect x="${xm + 8}" y="${yM(i) - bw / 2}" width="16" height="${bw}" rx="3" class="fl-res"/>` +
       `<rect x="${xRes2}" y="${yM(i) - bw / 2}" width="16" height="${bw}" rx="3" class="fl-res"/></g>`;
   }
@@ -165,15 +165,17 @@ function exRenderFlow(d, c, T, L, H) {
   // ---------- the other blocks, then the probabilities ----------
   s += `<g data-focus="blocks">`;
   for (let i = 0; i < T; i++) {
-    s += `<path class="ex-rib fl-outline" data-row="${i}" d="${flCurve(xRes2 + 16, yM(i), xBlk, yM(i), 0.5)}" stroke="${FL.M}"/>`;
-    for (let k = 0; k < 4; k++) s += `<rect x="${xBlk + k * 14}" y="${yM(i) - bw / 2}" width="9" height="${bw}" rx="2" class="fl-blk" fill-opacity="${0.35 + k * 0.15}"/>`;
+    s += `<path class="ex-rib fl-outline" data-row="${i}" data-p="blockline" d="${flCurve(xRes2 + 16, yM(i), xBlk, yM(i), 0.5)}" stroke="${FL.M}"/>`;
+    for (let k = 0; k < 4; k++) s += `<rect x="${xBlk + k * 14}" y="${yM(i) - bw / 2}" width="9" height="${bw}" rx="2" class="fl-blk" data-row="${i}" fill-opacity="${0.35 + k * 0.15}"/>`;
   }
   s += flText(xBlk + 28, yM(T - 1) + bw / 2 + 20, `${c.passes - 1 - ex.layer} more`, "ex-sub", "middle");
   s += `</g><g data-focus="probs">`;
   const yl = yM(T - 1);
   s += `<path class="fl-pband" d="${flBand(xBlk + 60, yl - bw / 2, yl + bw / 2, xProb + 10, y0 + 6, y0 + probs.length * PR, 0.5)}"/>`;
-  s += flText(xLast + 10, yl + 5, flTok(d.tokens[T - 1].text), "ex-tok", "middle");
+  s += `<path class="fl-pline" data-p="pline" d="${flCurve(xBlk + 60, yl, xProb + 60, y0 + 20, 0.5)}"/>`;
+  s += flText(xLast + 10, yl + 5, flTok(d.tokens[T - 1].text), "ex-tok fl-last", "middle");
   const top = probs.reduce((a, b) => (b.p > a.p ? b : a), probs[0]);
+  s += `<g class="fl-probs">`;
   probs.forEach((p, k) => {
     const y = y0 + 20 + k * PR, on = p === top;
     s += flText(xProb + 120, y + 5, flTok(p.text), `fl-ptok${p.cut ? " cut" : ""}${on ? " top" : ""}`, "end");
@@ -181,8 +183,11 @@ function exRenderFlow(d, c, T, L, H) {
     s += flText(xProb + 136 + Math.max(2, p.p * 110), y + 5, p.cut ? "0%" : `${(p.p * 100).toFixed(2)}%`, `fl-ppct${on ? " top" : ""}`);
   });
   s += `</g>`;
+  s += `</g>`;
 
-  $("#ex-svg").innerHTML = `<svg viewBox="0 0 ${W} ${Hh}" class="ex-svgel" style="width:100%;max-width:${Math.round(W * ($("#ex-card").classList.contains("ex-fullscreen") ? 1.15 : 1))}px;min-width:${Math.round(W * 0.8)}px">${s}</svg>`;
+  ex.fg = { S, xTick, xOut, xM0, colX, yQ, yV, yK, xm, yM };
+  $("#ex-svg").innerHTML = `<svg viewBox="0 0 ${W} ${Hh}" class="ex-svgel" style="width:100%;max-width:${Math.round(W * ($("#ex-card").classList.contains("ex-fullscreen") ? 1.15 : 1))}px;min-width:${Math.round(W * 0.8)}px">${s}<g id="fl-overlay"></g></svg>`;
+  if (typeof flAfterRender === "function") flAfterRender();
 }
 
 // head picks inside the Flow (a Q/K/V tab, or the ‹ › in the card)

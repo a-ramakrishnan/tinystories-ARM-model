@@ -66,6 +66,8 @@ function exRender() {
     exTokenPanel(); exProbBox(); exFocusClass(); exPanel(); exLens();
     return;
   }
+  if (typeof fpStop === "function" && fp.on) fpStop();          // the player belongs to the Flow view
+  $("#fl-player")?.classList.add("hidden");
   const R = EX_ROW, pad = 7, sh = R - 2 * pad;     // row height; strips leave a gap above and below
   // Two bands, one per half of a transformer block, so each fits the width at full size:
   //   band A (attention): tokens | embedding | query | key | value | attention matrix
