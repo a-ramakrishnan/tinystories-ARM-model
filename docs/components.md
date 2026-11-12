@@ -326,6 +326,7 @@ ab_test.py                 A/B tests: train named variants the same way, evaluat
 lab_run.ipynb              Notebook that runs a Lab run spec on Google Colab or Kaggle
 reference_gpt2.py          Loads OpenAI's GPT-2 small into the model library as a reference
 explain.py                 The model's internals for one prompt, for the Explorer in Inside the transformer
+benchmarks.py              Standard zero-shot benchmarks: HellaSwag, LAMBADA, ARC-Easy, PIQA, Winogrande
 docs/                      This documentation: usage.md, components.md, analysis.md, journey.md
 docs/screenshots/          Screenshots used in the documentation
 ```

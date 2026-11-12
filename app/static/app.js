@@ -23,6 +23,7 @@ const STEPS = [
   { id: "generate", title: "Generate", sub: "Write text" },
   { id: "models", title: "Models", sub: "Save, switch, compare" },
   { id: "lab", title: "Lab", sub: "Design, train, compare", explore: true, icon: "⚗" },
+  { id: "benchmarks", title: "Benchmarks", sub: "Standard tests", explore: true, icon: "◎" },
   { id: "journey", title: "Journey", sub: "How we got here", explore: true, icon: "⏱" },
 ];
 
@@ -116,6 +117,7 @@ function go(id) {
   if (id === "models") loadModels().catch((e) => toast(e.message, true));
   if (id === "lab" && typeof labOpen === "function") labOpen();
   if (id === "journey" && typeof journeyOpen === "function") journeyOpen();
+  if (id === "benchmarks" && typeof benchOpen === "function") benchOpen().catch((e) => toast(e.message, true));
   document.body.classList.toggle("ex-wide", id === "attention" && typeof exActive === "function" && exActive());
   render();
   if (id === "batches") renderBatchExample();
@@ -1429,7 +1431,7 @@ function renderLibrary() {
     return;
   }
   $("#lib-table").innerHTML = `<div class="ptable-scroll"><table class="ptable lib">
-    <thead><tr><th><input type="checkbox" id="lib-all" title="Select all"></th><th>Model</th><th>Trained on</th><th class="num">Best val loss</th><th class="num">Evaluated</th></tr></thead>
+    <thead><tr><th><input type="checkbox" id="lib-all" title="Select all"></th><th>Model</th><th>Trained on</th><th class="num">Best val loss</th><th class="num">Evaluated</th><th class="num" title="HellaSwag length-normalized accuracy (chance 25%); see the Benchmarks page">Benchmarks</th></tr></thead>
     <tbody>${models.map((m) => `<tr class="${m.active ? "in-use" : ""}">
       <td><input type="checkbox" data-pick="${esc(m.id)}" ${lib.picked.has(m.id) ? "checked" : ""}></td>
       <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}</div>
@@ -1438,6 +1440,7 @@ function renderLibrary() {
       <td>${esc(shortData(m.datasets))}<div class="muted small">${m.steps ? `${fmt(m.steps)} steps` : ""}${m.chip ? ` · ${esc(m.chip)}` : ""}${m.platform ? ` (${esc(m.platform)})` : ""}</div><div class="muted small">${when(m.trained_at)}</div></td>
       <td class="num">${fmtLoss(m.best_val)}<div class="muted small">on its own data</div></td>
       <td class="num">${m.eval ? `<span class="tag">${when(m.eval.evaluated_at)}</span>` : '<span class="muted small">not yet</span>'}</td>
+      <td class="num">${m.benchmarks?.results?.hellaswag ? `HellaSwag <b>${(m.benchmarks.results.hellaswag.acc_norm * 100).toFixed(1)}%</b><div class="muted small"><a href="#benchmarks" data-go="benchmarks">all results</a></div>` : '<span class="muted small">–</span>'}</td>
     </tr>`).join("")}</tbody></table></div>`;
   $("#lib-all").checked = models.every((m) => lib.picked.has(m.id));
 }
@@ -1465,6 +1468,12 @@ function renderEvaluation() {
     { label: "Weights", get: (m) => m.eval.size.weights_bytes, fmt: (v, m) => `${bytes(v)}<div class="muted small">${short(m.eval.size.params)} params</div>` },
     { label: "KV cache / token", get: (m) => m.eval.size.kv_bytes_per_token, fmt: (v) => bytes(v) },
   ];
+  // standard benchmarks (Benchmarks page), when any compared model has them
+  if (evald.some((m) => m.benchmarks?.results)) {
+    const bc = (label, task, key, tip) => ({ label, tip, get: (m) => m.benchmarks?.results?.[task]?.[key], fmt: (v) => `${(v * 100).toFixed(1)}%`, best: "max" });
+    cols.push(bc("HellaSwag", "hellaswag", "acc_norm", "length-normalized accuracy, chance 25%"), bc("LAMBADA", "lambada", "acc", "last-word accuracy"),
+      bc("ARC-Easy", "arc_easy", "acc", "accuracy, chance ~25%"), bc("PIQA", "piqa", "acc", "accuracy, chance 50%"), bc("Winogrande", "winogrande", "acc", "accuracy, chance 50%"));
+  }
   const bestOf = cols.map((c) => { const vals = evald.map(c.get).filter((v) => v != null); return !c.best || vals.length < 2 ? null : c.best === "min" ? Math.min(...vals) : Math.max(...vals); });
   $("#ev-table").innerHTML = `<div class="ptable-scroll"><table class="ptable ev">
     <thead><tr><th>Model</th>${cols.map((c) => `<th class="num" title="${esc(c.tip || "")}">${esc(c.label)}</th>`).join("")}</tr></thead>

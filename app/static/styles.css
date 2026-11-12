@@ -969,3 +969,23 @@ body.ex-noscroll { overflow: hidden; }
 .fl-realtxt { font-size: 14px; font-weight: 600; fill: var(--good); }
 .ex-prow.real code { color: var(--good); font-weight: 700; }
 .ex-realnext { margin-top: 6px; }
+
+/* Benchmarks page */
+.bn-tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.bn-task { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--panel-2); }
+.bn-task p { margin: 4px 0 6px; font-size: 14px; }
+.bn-ttitle { font-weight: 700; }
+.bn-models { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 16px; margin-bottom: 10px; }
+.bn-pick { font-size: 13.5px; display: flex; gap: 6px; align-items: baseline; }
+.bn-taskpick { display: inline-flex; gap: 14px; flex-wrap: wrap; }
+.ptable.bn tr.bn-first td { border-top: 1px solid var(--border); }
+.ptable.bn td .best { font-weight: 700; }
+
+.bn-models { display: block; }
+.bn-modelgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 16px; margin-bottom: 8px; }
+.bn-more { margin-bottom: 8px; }
+
+.bn-pick { display: grid !important; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: start; text-align: left; font-weight: 400; margin: 0; }
+.bn-pick input { width: auto !important; margin: 3px 0 0; }
+.bn-taskpick label { display: inline-flex; gap: 5px; align-items: center; }
+.bn-taskpick input { width: auto; }

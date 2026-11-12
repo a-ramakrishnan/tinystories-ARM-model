@@ -334,6 +334,35 @@ The **Samples** card shows every model's continuation of the same prompt side by
 
 ![Six models continuing "Photosynthesis is the process" with the same seed](screenshots/models-samples.png)
 
+### Standard benchmarks
+
+The **Benchmarks** page (under Explore) runs the standard zero-shot tests used to compare language models:
+
+| Test | What it tests | Questions | Chance |
+|---|---|---|---|
+| **HellaSwag** | picking the sensible ending of an everyday situation | 10,042 × 4 | 25% |
+| **LAMBADA** | predicting the last word of a passage, which needs the whole passage | 5,153 | ≈0% |
+| **ARC-Easy** | grade-school science questions | 2,376 | ~25% |
+| **PIQA** | physical common sense, two options | 1,838 | 50% |
+| **Winogrande** | filling a blank by common sense, two options | 1,267 | 50% |
+
+`benchmarks.py` scores them the way EleutherAI's lm-evaluation-harness does (the same prompts and text clean-up):
+each option is scored by how likely the model finds it after the question, and the most likely option is the
+answer (**accuracy**; **length-normalized accuracy** divides by the option's length first). OpenAI's GPT-2 small,
+loaded into this project's code, reproduces its published scores exactly (HellaSwag 28.92% / 31.14%, LAMBADA
+32.56% and perplexity 40.06, ARC-Easy 43.81%, PIQA 62.89%, Winogrande 51.62%), which checks the scoring. Results
+are saved with each model (`models/<id>/benchmarks.json`) and also shown on the Models page.
+
+```bash
+python3 benchmarks.py <model id>                         # all five, saved with the model
+python3 benchmarks.py <model id> --tasks hellaswag,piqa  # some of them
+python3 benchmarks.py <model id> --limit 200             # a quick check on 200 questions each (not saved)
+```
+
+A 124M model takes about 10 minutes for all five on an M5 (HellaSwag is most of it); the first run downloads
+the tests from Hugging Face. Models trained only on TinyStories score at chance: these tests need general
+knowledge. At GPT-2 size, scores sit close to chance, so compare them with the ± (one standard error) shown.
+
 ## Generating text from a trained model
 
 The web app's Generate step does this for you. From Python:

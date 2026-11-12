@@ -39,6 +39,7 @@ from inference import (attention_maps, beam_search, benchmark_generation, contra
 from model import GPT, GPTConfig, param_breakdown  # noqa: E402
 from explain import explain_forward  # noqa: E402
 import evaluate  # noqa: E402
+import benchmarks  # noqa: E402
 import registry  # noqa: E402
 from pretrain import pretrain, read_state_meta  # noqa: E402
 from tokenization import bin_files_exist, get_tokenizer, tokenize_and_save  # noqa: E402
@@ -1064,6 +1065,7 @@ def _model_row(m):
     return {k: m.get(k) for k in ("id", "name", "source", "origin", "added_at", "model_type", "model", "params",
                                   "datasets", "steps", "updates", "tokens", "best_val", "seconds", "trained_at", "chip",
                                   "platform", "bytes")} | {"eval": m.get("eval"), "training": training_summary(m),
+                                                           "benchmarks": benchmarks.load_results(m["id"]),
                                                            "active": m["id"] == S.active_model}
 
 
@@ -1144,6 +1146,45 @@ def eval_run(req: EvalReq):
         S.job["message"] = f"Evaluated {len(ids)} model{'s' if len(ids) > 1 else ''}."
 
     return start_job("evaluate", job)
+
+
+# ---------- benchmarks: HellaSwag, LAMBADA, ARC-Easy, PIQA, Winogrande ----------
+
+class BenchReq(BaseModel):
+    ids: List[str]
+    tasks: Optional[List[str]] = None
+
+
+@app.get("/api/benchmarks")
+def bench_list():
+    """The tasks (what they test, chance, GPT-2's published scores) and every saved model with its results."""
+    return {"tasks": [{"key": k, **v} for k, v in benchmarks.TASK_INFO.items()],
+            "models": [{k: m.get(k) for k in ("id", "name", "params", "best_val", "datasets", "steps", "trained_at")}
+                       | {"model": m.get("model"), "benchmarks": benchmarks.load_results(m["id"]),
+                          "active": m["id"] == S.active_model}
+                       for m in registry.list_models()]}
+
+
+@app.post("/api/benchmarks/run")
+def bench_run(req: BenchReq):
+    ids = [i for i in req.ids if i][:10]
+    tasks = [t for t in (req.tasks or benchmarks.TASKS) if t in benchmarks.TASKS]
+    if not ids or not tasks:
+        raise HTTPException(400, "Pick at least one model and one benchmark.")
+
+    def job():
+        S.inference_cache = None  # make room: models are loaded one at a time
+        for n, mid in enumerate(ids):
+            name = registry.get_model(mid)["name"]
+
+            def say(task, k, total, n=n, name=name):
+                S.job.update(message=f"{name} ({n + 1} of {len(ids)}): {benchmarks.TASK_INFO[task]['title']} "
+                                     f"({k + 1} of {total}; the first run downloads it)…",
+                             progress=(n + k / total) / len(ids))
+            benchmarks.run(mid, tasks, device=S.dev.device, progress=say)
+        S.job["message"] = f"Benchmarked {len(ids)} model{'s' if len(ids) > 1 else ''}."
+
+    return start_job("benchmarks", job)
 
 
 # ---------- lab: pick an architecture and datasets, train, compare ----------

@@ -680,6 +680,39 @@
         </div>
       </section>
 
+      <!-- ============ Benchmarks ============ -->
+      <section class="panel" data-step="benchmarks">
+        <header class="panel-head">
+          <span class="eyebrow">Explore</span>
+          <h1>Benchmarks</h1>
+          <p>The standard tests used to compare language models, run on your saved models: <b>HellaSwag</b>, <b>LAMBADA</b>, <b>ARC-Easy</b>, <b>PIQA</b> and <b>Winogrande</b>. They're scored zero-shot, the way EleutherAI's evaluation harness does, so the results line up with published ones: OpenAI's GPT-2 small, loaded into this app, reproduces its published scores, which checks the scoring.</p>
+        </header>
+
+        <div class="card">
+          <div class="card-head"><h3>Results</h3><span class="muted small">best in each row in bold</span></div>
+          <div id="bn-results"></div>
+          <div id="bn-chart" class="chart"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Run benchmarks</h3><span class="muted small">on this Mac's GPU · about 5–10 minutes per 124M model for all five</span></div>
+          <div id="bn-models" class="bn-models"></div>
+          <div class="actions tight"><span class="muted small">Tests</span><span id="bn-taskpick" class="bn-taskpick"></span></div>
+          <div class="actions tight"><button id="bn-run" class="btn primary">Run benchmarks</button>
+            <span class="muted small">The first run downloads each test from Hugging Face (a few hundred MB in all). Models trained only on TinyStories score at chance: these tests need general knowledge.</span></div>
+          <div data-job="benchmarks"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>The tests</h3></div>
+          <div id="bn-tasks" class="bn-tasks"></div>
+          <details class="hint"><summary>How a model takes a multiple-choice test</summary>
+            <p>The model never writes an answer. For each option, it reads the question followed by that option and adds up the log-probabilities of the option's tokens: how natural it finds that continuation. The option it finds most likely is its answer (<b>accuracy</b>). Longer options have more tokens and so lower totals, so <b>length-normalized accuracy</b> divides by the option's length first. LAMBADA is different: the model must produce the passage's last word itself (greedy), and its <b>perplexity</b> on the right word shows how close it came.</p>
+            <p>At this size, scores sit close to chance, and a gain of a point or two is real only if it's larger than the ± (one standard error) shown with each result.</p>
+          </details>
+        </div>
+      </section>
+
       <!-- ============ Lab ============ -->
       <section class="panel" data-step="lab">
         <header class="panel-head">
@@ -791,6 +824,7 @@
   <script src="/static/app.js"></script>
   <script src="/static/lab.js"></script>
   <script src="/static/journey.js"></script>
+  <script src="/static/bench.js"></script>
   <script src="/static/explorer.js"></script>
   <script src="/static/flow.js"></script>
   <script src="/static/flowplay.js"></script>

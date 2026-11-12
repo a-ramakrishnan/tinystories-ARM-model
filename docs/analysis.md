@@ -201,6 +201,24 @@ python3 ab_test.py --title "A5 QK-norm" --variant "baseline: rope swiglu no-bias
 | L7 | **Instruction fine-tuning** | Question-and-answer pairs so the model answers questions; a Chat mode in Generate |
 | L8 | **A masked diffusion language model** | Generate a whole block at once and refine it; reuses A1–A4 and the whole pipeline |
 
+## Standard benchmarks
+
+Zero-shot, scored the way EleutherAI's lm-evaluation-harness scores them (`benchmarks.py`, the
+[Benchmarks page](usage.md#standard-benchmarks)). First, the check: OpenAI's GPT-2 small, loaded into this
+project's code, against its published scores.
+
+| GPT-2 small | HellaSwag acc / acc_norm | LAMBADA acc / perplexity | ARC-Easy acc / acc_norm | PIQA acc / acc_norm | Winogrande acc |
+|---|---|---|---|---|---|
+| Published (lm-evaluation-harness) | 28.92% / 31.14% | 32.56% / 40.06 | 43.81% / 39.52% | 62.89% / 62.51% | 51.62% |
+| **Measured here** | **28.92% / 31.14%** | **32.56% / 40.06** | **43.81% / 39.48%** | **62.89% / 62.51%** | **51.62%** |
+
+Identical to the published numbers except ARC-Easy's length-normalized accuracy (0.04 points), so the scoring is
+the standard one and other models' numbers can be compared with published results. Chance is 25% for HellaSwag
+and ARC-Easy, 50% for PIQA and Winogrande. All five took 9.3 minutes for GPT-2 on an M5 (HellaSwag 7.2).
+
+Our Large 124M model with the best design is next (run it from the Benchmarks page, or
+`python3 benchmarks.py mini-fineweb-edu-202611121109-80c7d0`).
+
 ## Measured on a Colab T4
 
 A real run of this notebook on Colab's free-tier **Tesla T4** (15.6 GB): TinyStories, the **Large** model
