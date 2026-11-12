@@ -9,7 +9,7 @@ const JOURNEY = [
     why: "A pass of these models costs mostly fixed overhead, so many tokens per pass should come almost free.",
     result: { label: "Tokens/s in total, 64 samples vs one stream", text: "Small 92 → 2,864 (31×) · Large 124M 60 → 1,682 (28×); greedy rows identical" },
     calc: ["prefix caching skipped: a 250-token prompt takes 17–25 ms to read, at most ~16 ms to save",
-      "top-p sorts 50,257 probabilities per token: it halves the app's single-stream speed"],
+      "sampling (Balanced) is 10–25% slower than greedy, measured side by side"],
     cost: "no training: benchmarks on the Mac", anchor: "28-batched-generation-and-prefix-caching" },
   { when: "2026-11-12 15:10", kind: "tie", area: "Inference", title: "8-bit and 4-bit weights",
     decision: "Store each weight matrix as small integers and scales (quantize.py); keep the shared embedding at 8 bits.",

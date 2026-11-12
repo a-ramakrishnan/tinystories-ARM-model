@@ -1001,9 +1001,12 @@ comparing settings, building a dataset.
 Two side findings:
 - **Prefix caching isn't worth it at this size.** It saves re-reading a prompt that was seen before, and reading
   a 250-token prompt takes 17 ms (Small) to 25 ms (124M). With a 256-token window there's at most ~16 ms to save.
-- **Top-p sampling is expensive here.** It sorts all 50,257 probabilities every token, which halves the app's
-  single-stream speed (Balanced: 60–92 tokens/s, against 110–230 greedy). A faster exact top-p (sort only the top
-  few hundred tokens when they already hold p of the probability) is a possible next fix.
+- **Sampling costs a little speed, not half.** Measured side by side, under the same load, Balanced runs 10–25%
+  slower than greedy (Small 91 vs 103 tokens/s, Large 60 vs 79). Two fixes didn't help reliably: an exact,
+  faster way to draw the token (the "exponential race", 5× faster than `torch.multinomial` on its own) and copying
+  the penalty's token history to the GPU before the model's pass. Both were left out. (A first comparison made
+  sampling look twice as slow: it set this afternoon's numbers, with the GPU shared by other apps, against
+  this morning's quiet ones.)
 
 **Lesson.** The same property can sink one idea and float another. Fixed overhead per pass made a drafter
 nearly as expensive as the model it was helping, and made 64 samples cost little more than a few.
@@ -1058,7 +1061,7 @@ nearly as expensive as the model it was helping, and made 64 samples cost little
 ## 30. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
-- **Inference:** a faster exact top-p (the app's default sampling halves generation speed).
+- **Inference:** re-measure generation speed on a quiet machine; expose contrastive search and batched samples in the app.
 - **Architecture:** re-test depth and layer sharing with longer runs and tuned learning rates.
 - **Inference:** quantization, batching, prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.
