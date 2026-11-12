@@ -368,7 +368,7 @@ class GPT(nn.Module):
                 loss = loss + self.config.moe_aux_weight * torch.stack(aux).mean()
             return logits, loss
         else:
-            logits = self.lm_head(x[:, [-1], :])
+            logits = self.lm_head(x[:, -1:, :])  # a slice, not x[:, [-1]]: a list index is copied to the GPU, which waits
             return logits, None
 
     def rope_tables(self, start, t, device):

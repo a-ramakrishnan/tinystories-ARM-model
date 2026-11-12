@@ -33,8 +33,9 @@ that are easy to get wrong and rarely explained.
 22. [Putting it together: the original model vs all the wins](#22-putting-it-together-the-original-model-vs-all-the-wins)
 23. [The same designs on harder data: Mini FineWeb-Edu](#23-the-same-designs-on-harder-data-mini-fineweb-edu)
 24. [A yardstick: OpenAI's GPT-2](#24-a-yardstick-openais-gpt-2)
-25. [Lessons](#25-lessons)
-26. [What's next](#26-whats-next)
+25. [Winning back generation speed](#25-winning-back-generation-speed)
+26. [Lessons](#26-lessons)
+27. [What's next](#27-whats-next)
 
 ---
 
@@ -847,7 +848,45 @@ Wikipedia-style text, needs billions of tokens: FineWeb-Edu *full* plus Cosmoped
 **Lesson.** Measure against a known model, not only against your own baseline. GPT-2 turned "our best" into
 "0.33 short of a 2019 model of the same size", which says exactly where the remaining gains are: in the data.
 
-## 25. Lessons
+## 25. Winning back generation speed
+
+The new design trained better but generated slower: 232 → 132 tokens/s for the dense model and 66 with experts, on
+the Mac. Small models spend most of each token's time not on maths but on overhead: launching dozens of tiny GPU
+operations, and waiting for the GPU whenever Python needs a number back. So the fixes are about doing less of that.
+
+**The model (I0).**
+- RoPE's cos and sin tables are computed once and reused, instead of once per token.
+- RMSNorm uses PyTorch's fused kernel.
+- The mixture of experts ran a Python loop over the experts, each picking out its tokens. When generating, all
+  experts now run as two batched matrix products and the router's weights pick the result (for one token, four small
+  experts cost less than finding which two to run). Training keeps the sparse routing: the loss and gradients are
+  identical to the old maths.
+
+**The generation loop.** Profiling showed waits nobody wrote on purpose.
+- `x[:, [-1], :]` (a *list* index) copies the index to the GPU, which waits for the queue. A slice, `x[:, -1:, :]`,
+  gives the same result without it.
+- The token history was a GPU tensor grown with `torch.cat` every token, about 0.7 ms each; it's now a Python list.
+- The token, its probability, how many tokens sampling kept and the top-5 alternatives come back from the GPU in one
+  read instead of four.
+
+| Tokens/s, M5, KV cache, greedy (best of two runs) | Before | After | |
+|---|---|---|---|
+| Best + experts | 43 | **150** | 3.5× |
+| Best, dense | 127 | **232** | 1.8× |
+| GPT-2 style | 123–165 | **292–309** | ~2× |
+
+The output is identical: the same tokens, probabilities and alternatives over 300 tokens (past the 256-token
+window), greedy and sampled, with and without penalties and the cache.
+
+**Half precision (I2)** didn't help: float16 ran at the same speed (the time isn't in the maths at this size), and
+bfloat16 changed the greedy output after 11–38 tokens. **A compiled one-token step (I8)**, with fixed-size buffers
+and a mask so `torch.compile` builds it once, works on the Mac: +25% for the dense model and +35% with experts, but
+nothing for GPT-2 style, which then attends over the whole 256-token window from the first token. Not adopted yet.
+
+**Lesson.** Profile before optimizing. The biggest cost wasn't the maths or a missing compiler, but a few lines that
+made Python wait for the GPU, and one list index.
+
+## 26. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -885,15 +924,15 @@ Wikipedia-style text, needs billions of tokens: FineWeb-Edu *full* plus Cosmoped
     updates. That's what made the short A/B tests worth trusting.
 21. **Check on the data you care about.** The TinyStories choices held on web text, and gained twice as much.
 22. **Measure against a known model.** OpenAI's GPT-2 showed our 124M model is 0.33 short on web text, and why.
+23. **Profile before optimizing.** For small models, the time goes to overhead: every read back from the GPU waits
+    for it, and a list index can hide one. Removing them doubled generation speed with identical output.
 
-## 26. What's next
+## 27. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
-- **Inference, first:** win back the generation speed the new architecture lost (cached RoPE tables, compiled
-  generation, half precision), then speculative decoding with the multi-token head.
+- **Inference, first:** speculative decoding with the multi-token head, then better decoding algorithms.
 - **Architecture:** re-test depth and layer sharing with longer runs and tuned learning rates.
-- **Inference:** half precision, quantization, better decoding algorithms, speculative decoding, batching,
-  prefix caching, compiled generation.
+- **Inference:** quantization, batching, prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.
 
 Every step will be added here with what it measured.

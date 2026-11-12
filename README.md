@@ -44,6 +44,7 @@ Mac Studio**.
 | Better decoding (the Balanced default) | repeated 4-token runs 73% → **0%** |
 | Modern architecture changes, one at a time (RoPE, SwiGLU, no biases, QK-norm, learning rate, experts) | 2.631 → **2.200** (Small model, 1,000 updates) |
 | All of them over a longer run, on TinyStories / on Mini FineWeb-Edu | 1.903 → **1.732** / 4.495 → **4.143** (5,000 updates) |
+| Winning back generation speed (no hidden waits for the GPU, batched experts) | **1.8–3.5×** faster generation, identical output |
 | A yardstick: OpenAI's GPT-2 small (124M) on held-out web text | **3.401**, against 3.735 for our same-size model trained on 246M tokens |
 
 Details in [Analysis](docs/analysis.md) and [the journey](docs/journey.md).

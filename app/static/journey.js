@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-12 10:15", kind: "win", area: "Inference", best: true, title: "Winning back generation speed",
+    decision: "Remove the new design's overhead (cached RoPE tables, fused RMSNorm, batched experts) and every hidden wait for the GPU in the generation loop.",
+    why: "The better design generated about 2× slower (66 tokens/s with experts). For small models, the time goes to overhead, not maths.",
+    result: { label: "Tokens/s on an M5, KV cache, greedy, identical output", text: "experts 43 → 150 (3.5×) · dense 127 → 232 (1.8×) · GPT-2 style 123–165 → 292–309 (~2×)" },
+    calc: ["a list index x[:, [-1]] is copied to the GPU and waits: a slice does the same without waiting",
+      "torch.cat on the GPU token history cost ~0.7 ms per token: now a Python list",
+      "half precision: no faster at this size; a compiled step: +25–35% for the new designs, not adopted yet"],
+    cost: "no training: benchmarks on the Mac", anchor: "25-winning-back-generation-speed" },
   { when: "2026-11-11 22:30", kind: "tool", area: "Tooling", title: "A yardstick: OpenAI's GPT-2",
     decision: "Load OpenAI's GPT-2 small (124M) weights into our GPT class and run it through the same evaluation suite.",
     why: "Our losses only compared our own models. How far is our 124M model from the real GPT-2 of the same size?",

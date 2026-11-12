@@ -49,14 +49,17 @@ SAMPLING_DEFAULTS = {"top_p": 1.0, "min_p": 0.0, "repetition_penalty": 1.0, "fre
                      "presence_penalty": 0.0}
 
 
-def apply_penalties(logits, history, repetition_penalty=1.0, frequency_penalty=0.0, presence_penalty=0.0):
+def apply_penalties(logits, history, repetition_penalty=1.0, frequency_penalty=0.0, presence_penalty=0.0,
+                    need_counts=True):
     """Discourage tokens that already appear in `history` (1-D tensor of token ids).
 
     repetition_penalty (CTRL-style): divides a seen token's logit by the penalty if positive, multiplies if
     negative, so it always becomes less likely. frequency_penalty subtracts penalty × (times seen);
     presence_penalty subtracts a flat amount from every token seen at least once (OpenAI-style).
-    Returns (new logits, counts).
+    Returns (new logits, counts); counts is None when there are no penalties and need_counts is False.
     """
+    if repetition_penalty == 1.0 and frequency_penalty == 0.0 and presence_penalty == 0.0 and not need_counts:
+        return logits, None  # nothing to do (generation skips counting, to save GPU work on every token)
     counts = torch.zeros_like(logits).scatter_add_(0, history, torch.ones_like(history, dtype=logits.dtype))
     if repetition_penalty == 1.0 and frequency_penalty == 0.0 and presence_penalty == 0.0:
         return logits, counts
@@ -73,10 +76,12 @@ def sampling_distribution(logits, history, temperature=1.0, top_k=None, top_p=1.
     temperature <= 0 means greedy: all probability on the single most likely token (after penalties).
     top_k keeps the k most likely tokens; top_p keeps the smallest set whose probability adds up to p
     (nucleus sampling); min_p drops tokens less likely than min_p × the top token's probability.
-    Returns (probs, n_kept), or with stages=True a dict with every intermediate step (for the explorer).
+    Returns (probs, n_kept as a 0-d tensor), or with stages=True a dict with every intermediate step (for the
+    explorer).
     """
     logits = logits.float()
-    penalized, counts = apply_penalties(logits, history, repetition_penalty, frequency_penalty, presence_penalty)
+    penalized, counts = apply_penalties(logits, history, repetition_penalty, frequency_penalty, presence_penalty,
+                                       need_counts=stages)
     greedy = temperature <= 0
     scaled = penalized / (1.0 if greedy else temperature)
     p = F.softmax(scaled, dim=-1)
@@ -84,8 +89,7 @@ def sampling_distribution(logits, history, temperature=1.0, top_k=None, top_p=1.
     cut_p = torch.zeros_like(cut_k)
     cut_min = torch.zeros_like(cut_k)
     if greedy:
-        keep = torch.zeros_like(cut_k)
-        keep[torch.argmax(p)] = True
+        keep = torch.zeros_like(cut_k).scatter_(0, torch.argmax(p).view(1), True)
         cut_k = ~keep   # reported as "greedy" by callers
     else:
         if top_k:
@@ -102,9 +106,9 @@ def sampling_distribution(logits, history, temperature=1.0, top_k=None, top_p=1.
         keep = ~(cut_k | cut_p | cut_min)
     final = p.masked_fill(~keep, 0)
     final = final / final.sum()
-    n_kept = int(keep.sum())
     if not stages:
-        return final, n_kept
+        return final, keep.sum()  # n_kept stays on the GPU (a 0-d tensor): reading it would wait for the GPU
+    n_kept = int(keep.sum())
     return {"raw": F.softmax(logits, dim=-1), "penalized": F.softmax(penalized, dim=-1), "scaled": p, "final": final,
             "counts": counts, "cut_k": cut_k, "cut_p": cut_p, "cut_min": cut_min, "greedy": greedy, "n_kept": n_kept,
             "kept_mass": float(p[keep].sum())}
@@ -160,7 +164,12 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
     to be rebuilt ("recompute"). `stats`, if given, is filled with cache size and recompute counts.
     """
     block = model.config.block_size
-    idx = torch.tensor(prompt_ids, dtype=torch.long, device=device).unsqueeze(0)
+    # the tokens so far live in a Python list: growing a GPU tensor every step (torch.cat) waits for the GPU
+    ids = list(prompt_ids)
+    as_input = lambda toks: torch.tensor([toks], dtype=torch.long, device=device)
+    sampling = {**SAMPLING_DEFAULTS, **(sampling or {})}
+    penalized = any(sampling[k] != SAMPLING_DEFAULTS[k] for k in ("repetition_penalty", "frequency_penalty",
+                                                                  "presence_penalty"))
     sliding = getattr(model.config, "pos_encoding", "learned") == "rope"
     caches, cache_len, pos, recomputes = None, 0, 0, 0
     t0 = time.perf_counter()
@@ -172,22 +181,27 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
                 if caches is not None:
                     recomputes += 1
                 caches = [{"max_len": block} for _ in range(effective_layers(model.config))]
-                ctx = idx[:, -block:]
+                ctx = as_input(ids[-block:])
                 logits, _ = model(ctx, kv_caches=caches, start_pos=0)
                 cache_len = pos = ctx.size(1)
             else:
-                logits, _ = model(idx[:, -1:], kv_caches=caches, start_pos=pos)
+                logits, _ = model(as_input(ids[-1:]), kv_caches=caches, start_pos=pos)
                 pos += 1
                 cache_len = min(cache_len + 1, block)
         else:
-            idx_cond = idx if idx.size(1) <= block else idx[:, -block:]
-            logits, _ = model(idx_cond)
+            logits, _ = model(as_input(ids[-block:]))
         logits = logits[0, -1, :]
-        raw = F.softmax(logits.float(), dim=-1).unsqueeze(0)
-        probs, n_kept = sampling_distribution(logits, idx[0, -block:], temperature, top_k, **{**SAMPLING_DEFAULTS, **(sampling or {})})
+        raw = F.softmax(logits.float(), dim=-1)
+        history = torch.tensor(ids[-block:], dtype=torch.long, device=device) if penalized else None
+        probs, n_kept = sampling_distribution(logits, history, temperature, top_k, **sampling)
         idx_next = (torch.argmax(probs) if temperature <= 0 else torch.multinomial(probs, num_samples=1)).view(1, 1)
-        alt_p, alt_i = torch.topk(raw[0], n_alternatives)
-        token = int(idx_next.item())  # .item() waits for the GPU, so the timing below is real
+        alt_p, alt_i = torch.topk(raw, n_alternatives)
+        # one transfer from the GPU per token instead of several (each read waits for the GPU): token, its
+        # probability, how many tokens were kept, then the alternatives (ids < 2^24 are exact in float32)
+        packed = torch.cat((idx_next.view(1).float(), raw.gather(0, idx_next.view(1)), n_kept.view(1).float(),
+                            alt_i.float(), alt_p)).tolist()  # waits for the GPU, so the timing below is real
+        token, prob, n_kept = int(packed[0]), packed[1], int(packed[2])
+        alt_ids, alt_probs = packed[3:3 + n_alternatives], packed[3 + n_alternatives:]
         if stop_token is not None and token == stop_token:
             if stats is not None:
                 stats["stopped"] = True
@@ -195,10 +209,10 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
         if stats is not None:
             stats.update(kv_cache_bytes=kv_cache_bytes(caches) if caches else 0, cache_tokens=cache_len if caches else 0,
                          recomputes=recomputes, sliding=sliding)
-        yield {"id": token, "prob": float(raw[0, token]), "kept": n_kept,
-               "alternatives": list(zip(alt_i.tolist(), [round(p, 4) for p in alt_p.tolist()])),
+        yield {"id": token, "prob": prob, "kept": n_kept,
+               "alternatives": list(zip([int(i) for i in alt_ids], [round(p, 4) for p in alt_probs])),
                "ms": (time.perf_counter() - t0) * 1000}
-        idx = torch.cat((idx, idx_next), dim=1)
+        ids.append(token)
 
 
 def benchmark_generation(model, prompt_ids, device, n_tokens=100, seed=1234, repeats=2):
