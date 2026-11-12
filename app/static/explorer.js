@@ -1,11 +1,11 @@
 // Explorer: one prompt flowing through the real model, drawn as a diagram (Inside the transformer → Explorer).
 // Data comes from /api/explain (explain.py). Uses $, $$, esc, fmt, api, action and toast from app.js.
 
-const ex = { data: null, layer: 0, head: 0, stage: "softmax", hover: null, cell: null, focus: "overview",
+const ex = { data: null, layer: 0, head: 0, stage: "softmax", hover: null, cell: null, focus: "overview", tok: null,
   temp: 0.8, topk: 0, topp: 0.9 };
 
-const EX_ROW = 30;           // height of one token row; attention cells are square, so rows line up everywhere
-const EX_TOP = 92;           // room for column titles and the rotated key labels above the first row
+const EX_ROW = 40;           // height of one token row; attention cells are square, so rows line up everywhere
+const EX_TOP = 132;          // room for the band title, column titles and rotated key labels above the first row
 
 // ---------- colours: a value's sign picks the hue, its size the opacity (works on light and dark panels) ----------
 function exCell(x, y, w, h, v, scale, cls = "") {
@@ -60,58 +60,77 @@ function exRender() {
   const det = L.detail;
   const H = c.n_head;
   ex.head = Math.min(ex.head, H - 1);
-  const rowY = (i) => EX_TOP + i * EX_ROW;
-  const midY = (i) => rowY(i) + EX_ROW / 2;
-  // column positions
-  const xTok = 88, xEmb = 98, embW = 72, xQ = xEmb + embW + 46, qW = 56, xAtt = xQ + qW + 50;
-  const C = EX_ROW, attW = T * C, xOut = xAtt + attW + 40, outW = 56, xMlp = xOut + outW + 40;
-  const mlpW = c.n_experts > 1 ? c.n_experts * 18 : 96, xStack = xMlp + mlpW + (c.n_experts > 1 ? 40 : 70);
-  const W = xStack + 110, Hh = EX_TOP + T * EX_ROW + 24;
+  const R = EX_ROW, pad = 7, sh = R - 2 * pad;     // row height; strips leave a gap above and below
+  // Two bands, one per half of a transformer block, so each fits the width at full size:
+  //   band A (attention): tokens | embedding | query | key | value | attention matrix
+  //   band B (feed-forward): tokens | out + residual | feed-forward or experts | the other blocks
+  const yA = EX_TOP, yB = EX_TOP + T * R + 150;
+  const rowA = (i) => yA + i * R, rowB = (i) => yB + i * R;
+  const xTok = 128, xEmb = 142, embW = 132;
+  const vecW = 96, xQ = xEmb + embW + 70, xK = xQ + vecW + 18, xV = xK + vecW + 18;
+  const xAtt = xV + vecW + 72, C = R, attW = T * C;
+  const xOut = xEmb, outW = 132, xMlp = xOut + outW + 90;
+  const mlpW = c.n_experts > 1 ? c.n_experts * 30 : 300, xStack = xMlp + mlpW + (c.n_experts > 1 ? 70 : 110);
+  const W = Math.max(xAtt + attW + 30, xStack + 140), Hh = yB + T * R + 40;
   let s = "";
-  const title = (x, t, sub, key) => `<g class="ex-title" data-focus="${key}"><text x="${x}" y="18" class="ex-h">${t}</text>${sub ? `<text x="${x}" y="34" class="ex-sub">${sub}</text>` : ""}</g>`;
+  const title = (x, y, t, sub, key, color) => `<g class="ex-title" data-focus="${key}"><text x="${x}" y="${y}" class="ex-h"${color ? ` style="fill:${color}"` : ""}>${t}</text>${sub ? `<text x="${x}" y="${y + 18}" class="ex-sub">${sub}</text>` : ""}</g>`;
+  const band = (y, n, text) => `<text x="8" y="${y}" class="ex-band"><tspan class="ex-bandn">${n}</tspan> ${text}</text>`;
+  const tokLabel = (i, y) => `<g class="ex-tokg" data-tok="${i}"><rect x="4" y="${y + 3}" width="${xTok + 6}" height="${R - 6}" rx="6" class="ex-tokbg"/><text x="${xTok}" y="${y + R / 2 + 5}" class="ex-tok" text-anchor="end">${esc(d.tokens[i].text.replace(/\n/g, "↵")) || "␠"}</text></g>`;
+  const norm = c.norm === "rmsnorm" ? "RMSNorm" : "LayerNorm";
 
-  // titles
-  s += title(xEmb - 4, "Embedding", c.pos_encoding === "rope" ? "token (position: RoPE)" : "token + position", "embedding");
-  s += title(xQ - 4, "Q · K · V", `head ${ex.head + 1} of ${H}`, "qkv");
-  s += title(xAtt - 4, "Attention", { scores: "q·k / √d", masked: "future masked", softmax: "softmax: rows add to 100%" }[ex.stage], "attention");
-  s += title(xOut - 4, "Out", "+ residual", "out");
-  s += title(xMlp - 4, c.n_experts > 1 ? "Experts" : "Feed-forward", c.n_experts > 1 ? `router, top ${c.moe_top_k} of ${c.n_experts}` : (c.mlp === "swiglu" ? "SwiGLU" : "GELU"), "mlp");
-  s += title(xStack - 4, `Block ${ex.layer + 1} of ${c.passes}`, "← → to step", "blocks");
+  // ---- band A: attention ----
+  s += band(yA - 98, "1", `Attention: tokens share information · block ${ex.layer + 1} of ${c.passes}, head ${ex.head + 1} of ${H}`);
+  s += title(xEmb, yA - 66, "Embedding", c.pos_encoding === "rope" ? `${c.n_embd} numbers · position: RoPE` : `token + position · ${c.n_embd} numbers`, "embedding");
+  s += title(xQ, yA - 66, "Query", c.qk_norm ? "QK-norm applied" : `${c.head_dim} numbers`, "qkv", "#4f7fe0");
+  s += title(xK, yA - 66, "Key", `${c.head_dim} numbers`, "qkv", "#d65a5a");
+  s += title(xV, yA - 66, "Value", c.n_kv_head < H ? `shared by ${H / c.n_kv_head} heads` : `${c.head_dim} numbers`, "qkv", "#2f9e66");
+  s += title(xAtt, yA - 66, "Attention", { scores: "scores: q·k / √d", masked: "future masked (−∞)", softmax: "softmax: each row adds to 100%" }[ex.stage], "attention", "#6d4fe0");
+  let bg = `<rect class="ex-block" x="${xQ - 26}" y="${yA - 78}" width="${xAtt + attW + 18 - (xQ - 26)}" height="${T * R + 90}" rx="14"/>`;
 
-  // block frame behind attention … feed-forward
-  s += `<rect class="ex-block" x="${xQ - 26}" y="${EX_TOP - 22}" width="${xMlp + mlpW + 26 - (xQ - 26)}" height="${T * EX_ROW + 34}" rx="12"/>`;
+  // ---- band B: feed-forward ----
+  s += band(yB - 98, "2", `Feed-forward: each token on its own · block ${ex.layer + 1} of ${c.passes}`);
+  s += title(xOut, yB - 66, "Out + residual", `${H} heads combined, + residual`, "out");
+  s += title(xMlp, yB - 66, c.n_experts > 1 ? "Experts" : "Feed-forward",
+    c.n_experts > 1 ? `${norm} → router picks ${c.moe_top_k} of ${c.n_experts}` : `${norm} → ${c.mlp === "swiglu" ? "SwiGLU" : "GELU"} · ${L.mlp?.width ?? ""} hidden numbers (${L.mlp?.hidden?.[0]?.length ?? 64} shown)`, "mlp", "#b8862c");
+  s += title(xStack, yB - 66, "Next block", `${c.passes - 1 - ex.layer} more after this one`, "blocks");
+  bg += `<rect class="ex-block" x="${xMlp - 26}" y="${yB - 78}" width="${mlpW + (c.n_experts > 1 ? 52 : 96)}" height="${T * R + 90}" rx="14"/>`;
+  // the hand-over from band A to band B
+  s += `<path d="M${xAtt + attW / 2},${yA + T * R + 14} C${xAtt + attW / 2},${yB - 140} ${xOut + outW / 2},${yA + T * R + 40} ${xOut + outW / 2},${yB - 128}" class="ex-handover"/>`;
+  s += `<text x="${(xAtt + attW / 2 + xOut + outW / 2) / 2}" y="${yA + T * R + 54}" class="ex-sub" text-anchor="middle">each token's attention output continues below</text>`;
 
-  // rows: token label, embedding, ribbons, Q/K/V, out, mlp
   const qs = det.q[ex.head], ks = det.k[ex.head], vs = det.v[ex.head];
   const qkvScale = exRowScale([qs, ks, vs].flat(2));
   const step = Math.max(1, Math.round(c.head_dim / 32));
   const sub = (v) => v.filter((_, i) => i % step === 0).slice(0, 32);
   for (let i = 0; i < T; i++) {
-    const y = rowY(i);
-    s += `<g class="ex-row" data-row="${i}">`;
-    s += `<text x="${xTok}" y="${midY(i) + 4}" class="ex-tok" text-anchor="end">${esc(d.tokens[i].text.replace(/\n/g, "↵")) || "␠"}</text>`;
-    s += `<g data-focus="embedding">${exStrip(xEmb, y + 6, d.embedding.sum[i], embW / 48, EX_ROW - 12, exRowScale(d.embedding.sum[i]))}</g>`;
-    s += exRibbon(xEmb + embW, midY(i), xQ, y + 7, "#5b8def", i, 3);
-    s += exRibbon(xEmb + embW, midY(i), xQ, midY(i), "#e06a6a", i, 3);
-    s += exRibbon(xEmb + embW, midY(i), xQ, y + EX_ROW - 7, "#3fae74", i, 3);
-    s += `<g data-focus="qkv">${exStrip(xQ, y + 3, sub(qs[i]), qW / 32, 7, qkvScale)}${exStrip(xQ, y + 11, sub(ks[i]), qW / 32, 7, qkvScale)}${exStrip(xQ, y + 19, sub(vs[i]), qW / 32, 7, qkvScale)}</g>`;
-    s += exRibbon(xQ + qW, midY(i), xAtt, midY(i), "#8f86e8", i, 4);
-    s += exRibbon(xAtt + attW, midY(i), xOut, midY(i), "#8f86e8", i, 4);
-    s += `<g data-focus="out">${exStrip(xOut, y + 6, det.attn_out[i].filter((_, j) => j % 2 === 0), outW / 24, EX_ROW - 12, exRowScale(det.attn_out[i]))}</g>`;
-    s += exRibbon(xOut + outW, midY(i), xMlp, midY(i), "#c89b3c", i, 4);
+    const ya = rowA(i), yb = rowB(i), picked = ex.tok === i ? " ex-picked" : "";
+    // band A row
+    s += `<g class="ex-row${picked}" data-row="${i}">${tokLabel(i, ya)}`;
+    s += `<g data-focus="embedding">${exStrip(xEmb, ya + pad, d.embedding.sum[i], embW / 48, sh, exRowScale(d.embedding.sum[i]))}</g>`;
+    s += exRibbon(xEmb + embW, ya + R / 2, xQ, ya + R / 2, "#8a93ab", i, 6);
+    s += `<g data-focus="qkv">${exStrip(xQ, ya + pad, sub(qs[i]), vecW / 32, sh, qkvScale)}${exStrip(xK, ya + pad, sub(ks[i]), vecW / 32, sh, qkvScale)}${exStrip(xV, ya + pad, sub(vs[i]), vecW / 32, sh, qkvScale)}</g>`;
+    s += exRibbon(xV + vecW, ya + R / 2, xAtt, ya + R / 2, "#8f86e8", i, 7);
+    s += `</g>`;
+    // band B row
+    s += `<g class="ex-row${picked}" data-row="${i}">${tokLabel(i, yb)}`;
+    s += `<g data-focus="out">${exStrip(xOut, yb + pad, det.attn_out[i], outW / det.attn_out[i].length, sh, exRowScale(det.attn_out[i]))}</g>`;
+    s += exRibbon(xOut + outW, yb + R / 2, xMlp, yb + R / 2, "#c89b3c", i, 7);
     if (c.n_experts > 1) {
       const pr = L.router.probs[i], chosen = L.router.chosen[i];
-      s += `<g data-focus="mlp">${pr.map((p, e) => `<rect x="${xMlp + e * 18}" y="${y + EX_ROW - 4 - p * (EX_ROW - 8)}" width="14" height="${Math.max(1, p * (EX_ROW - 8))}" class="ex-router${chosen.includes(e) ? " on" : ""}"/>`).join("")}</g>`;
+      s += `<g data-focus="mlp">${pr.map((p, e) => `<rect x="${xMlp + e * 30}" y="${yb + R - 5 - p * (R - 10)}" width="24" height="${Math.max(1.5, p * (R - 10))}" class="ex-router${chosen.includes(e) ? " on" : ""}"/>`).join("")}</g>`;
     } else {
       const hv = L.mlp.hidden[i];
-      s += `<g data-focus="mlp">${exStrip(xMlp, y + 6, hv, mlpW / hv.length, EX_ROW - 12, exRowScale(hv))}<text x="${xMlp + mlpW + 6}" y="${midY(i) + 4}" class="ex-num">${Math.round(L.mlp.active[i] * 100)}%</text></g>`;
+      s += `<g data-focus="mlp">${exStrip(xMlp, yb + pad, hv, mlpW / hv.length, sh, exRowScale(hv))}<text x="${xMlp + mlpW + 10}" y="${yb + R / 2 + 4}" class="ex-num">${Math.round(L.mlp.active[i] * 100)}% active</text></g>`;
     }
-    s += exRibbon(xMlp + mlpW + (c.n_experts > 1 ? 0 : 34), midY(i), xStack, midY(i), "#9aa3b8", i, 3);
+    s += exRibbon(xMlp + mlpW + (c.n_experts > 1 ? 0 : 76), yb + R / 2, xStack, yb + R / 2, "#9aa3b8", i, 6);
     s += `</g>`;
   }
-  // column labels (keys) for the attention matrix
+  if (c.n_experts > 1) {
+    for (let e = 0; e < c.n_experts; e++) s += `<text x="${xMlp + e * 30 + 12}" y="${yB - 8}" class="ex-key" text-anchor="middle">expert ${e + 1}</text>`;
+  }
+  // key labels above the attention matrix; query labels are the token rows themselves
   for (let j = 0; j < T; j++) {
-    s += `<text x="${xAtt + j * C + C / 2}" y="${EX_TOP - 6}" class="ex-key" text-anchor="start" transform="rotate(-60 ${xAtt + j * C + C / 2} ${EX_TOP - 6})">${esc(d.tokens[j].text.trim() || "␠")}</text>`;
+    s += `<text x="${xAtt + j * C + C / 2 - 2}" y="${yA - 8}" class="ex-key" text-anchor="start" transform="rotate(-55 ${xAtt + j * C + C / 2 - 2} ${yA - 8})">${esc(d.tokens[j].text.trim() || "␠")}</text>`;
   }
   // attention matrix of the chosen head, at the chosen stage
   const att = L.attention[ex.head], sc = det.scores[ex.head];
@@ -119,31 +138,60 @@ function exRender() {
   s += `<g data-focus="attention">`;
   for (let i = 0; i < T; i++) {
     for (let j = 0; j < T; j++) {
-      const x = xAtt + j * C, y = rowY(i), future = j > i, sel = ex.cell && ex.cell[0] === i && ex.cell[1] === j;
+      const x = xAtt + j * C, y = rowA(i), future = j > i, sel = ex.cell && ex.cell[0] === i && ex.cell[1] === j;
       let cell, label = "";
-      if (ex.stage === "scores") { cell = exCell(x + 1, y + 1, C - 2, C - 2, sc[i][j], scScale, "ex-acell"); label = sc[i][j].toFixed(1); }
-      else if (future) { cell = `<rect class="ex-acell ex-masked" x="${x + 1}" y="${y + 1}" width="${C - 2}" height="${C - 2}"/>`; label = ex.stage === "masked" ? "−∞" : ""; }
-      else if (ex.stage === "masked") { cell = exCell(x + 1, y + 1, C - 2, C - 2, sc[i][j], scScale, "ex-acell"); label = sc[i][j].toFixed(1); }
-      else { cell = `<rect class="ex-acell" x="${x + 1}" y="${y + 1}" width="${C - 2}" height="${C - 2}" fill="#7a5cf0" fill-opacity="${(0.06 + 0.94 * att[i][j]).toFixed(3)}"/>`; label = att[i][j] >= 0.1 ? Math.round(att[i][j] * 100) : ""; }
-      s += `<g class="ex-ag" data-i="${i}" data-j="${j}">${cell}${label !== "" ? `<text x="${x + C / 2}" y="${y + C / 2 + 3}" class="ex-anum${ex.stage === "softmax" && att[i][j] > 0.55 ? " inv" : ""}" text-anchor="middle">${label}</text>` : ""}${sel ? `<rect x="${x + 1}" y="${y + 1}" width="${C - 2}" height="${C - 2}" class="ex-sel"/>` : ""}</g>`;
+      if (ex.stage === "scores") { cell = exCell(x + 1.5, y + 1.5, C - 3, C - 3, sc[i][j], scScale, "ex-acell"); label = sc[i][j].toFixed(1); }
+      else if (future) { cell = `<rect class="ex-acell ex-masked" x="${x + 1.5}" y="${y + 1.5}" width="${C - 3}" height="${C - 3}" rx="3"/>`; label = ex.stage === "masked" ? "−∞" : ""; }
+      else if (ex.stage === "masked") { cell = exCell(x + 1.5, y + 1.5, C - 3, C - 3, sc[i][j], scScale, "ex-acell"); label = sc[i][j].toFixed(1); }
+      else { cell = `<rect class="ex-acell" x="${x + 1.5}" y="${y + 1.5}" width="${C - 3}" height="${C - 3}" rx="3" fill="#7a5cf0" fill-opacity="${(0.06 + 0.94 * att[i][j]).toFixed(3)}"/>`; label = att[i][j] >= 0.05 ? Math.round(att[i][j] * 100) : ""; }
+      s += `<g class="ex-ag" data-i="${i}" data-j="${j}">${cell}${label !== "" ? `<text x="${x + C / 2}" y="${y + C / 2 + 4}" class="ex-anum${ex.stage === "softmax" && att[i][j] > 0.55 ? " inv" : ""}" text-anchor="middle">${label}</text>` : ""}${sel ? `<rect x="${x + 1.5}" y="${y + 1.5}" width="${C - 3}" height="${C - 3}" rx="3" class="ex-sel"/>` : ""}</g>`;
     }
   }
   s += `</g>`;
-  // stacked blocks
+  // the other blocks, as a stack
   const remaining = c.passes - 1;
   s += `<g data-focus="blocks">`;
   for (let k = Math.min(4, remaining); k >= 0; k--) {
-    s += `<rect class="ex-stack${k === 0 ? " front" : ""}" x="${xStack + k * 6}" y="${EX_TOP - 10 + k * 6}" width="70" height="${T * EX_ROW + 10}" rx="8"/>`;
+    s += `<rect class="ex-stack${k === 0 ? " front" : ""}" x="${xStack + k * 7}" y="${yB - 12 + k * 7}" width="96" height="${T * R + 12}" rx="10"/>`;
   }
-  s += `<text x="${xStack + 35}" y="${EX_TOP + T * EX_ROW / 2}" class="ex-stacktxt" text-anchor="middle">×${c.passes}</text>`;
-  s += `<text x="${xStack + 35}" y="${EX_TOP + T * EX_ROW / 2 + 16}" class="ex-sub" text-anchor="middle">blocks</text></g>`;
+  s += `<text x="${xStack + 48}" y="${yB + T * R / 2}" class="ex-stacktxt" text-anchor="middle">×${c.passes}</text>`;
+  s += `<text x="${xStack + 48}" y="${yB + T * R / 2 + 20}" class="ex-sub" text-anchor="middle">blocks, then</text>`;
+  s += `<text x="${xStack + 48}" y="${yB + T * R / 2 + 36}" class="ex-sub" text-anchor="middle">next token ↓</text></g>`;
 
-  // scales down to fit the card (to 80% at most), then scrolls sideways
-  $("#ex-svg").innerHTML = `<svg viewBox="0 0 ${W} ${Hh}" class="ex-svgel" style="width:100%;max-width:${W}px;min-width:${Math.round(W * 0.8)}px">${s}</svg>`;
+  // natural size: scrolls sideways only for long prompts (full screen gives it the whole window)
+  $("#ex-svg").innerHTML = `<svg viewBox="0 0 ${W} ${Hh}" class="ex-svgel" style="width:100%;max-width:${Math.round(W * ($("#ex-card").classList.contains("ex-fullscreen") ? 1.35 : 1))}px;min-width:${Math.round(W * 0.92)}px">${bg}${s}</svg>`;
+  exTokenPanel();
   exProbBox();
   exFocusClass();
   exPanel();
   exLens();
+}
+
+function exTokenPanel() {
+  const d = ex.data, box = $("#ex-token");
+  if (ex.tok == null || !d || ex.tok >= d.tokens.length) { box.classList.add("hidden"); return; }
+  const t = ex.tok, toks = d.tokens.map((x) => x.text.trim() || "␠"), H = d.config.n_head;
+  const norms = d.layers.map((L) => L.resid_norm[t]);
+  const maxN = Math.max(...norms, d.embedding.token_norm[t]);
+  const rows = d.layers.map((L, b) => {
+    // which earlier token this token attends to most, averaged over heads, and the single most focused head
+    const avg = toks.map((_, j) => L.attention.reduce((a, head) => a + head[t][j], 0) / H);
+    const jBest = avg.indexOf(Math.max(...avg));
+    let hBest = 0, hVal = -1, hTo = 0;
+    L.attention.forEach((head, h) => head[t].forEach((v, j) => { if (v > hVal) { hVal = v; hBest = h; hTo = j; } }));
+    const lens = L.lens[t];
+    return `<tr class="${b === ex.layer ? "on" : ""}" data-block="${b}"><td class="muted">${b + 1}</td>
+      <td><code>${esc(toks[jBest])}</code> <span class="muted small">${Math.round(avg[jBest] * 100)}% avg</span></td>
+      <td>head ${hBest + 1} → <code>${esc(toks[hTo])}</code> <span class="muted small">${Math.round(hVal * 100)}%</span></td>
+      <td><span class="ex-nbar"><i style="width:${(norms[b] / maxN * 100).toFixed(1)}%"></i></span> <span class="muted small">${norms[b].toFixed(1)}</span></td>
+      <td>${lens.map((x, k) => `<code class="${k ? "muted" : ""}">${esc(x.text.replace(/\n/g, "↵")) || "␠"}</code> <span class="muted small">${Math.round(x.p * 100)}%</span>`).join(" &nbsp;")}</td></tr>`;
+  }).join("");
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="card-head"><h3>Following <code>${esc(d.tokens[t].text)}</code> (token ${t + 1}) through the ${d.config.passes} blocks</h3><button class="btn small" id="ex-token-close">Close</button></div>
+    <p class="muted small">Each block, this token's attention (averaged over the ${H} heads, and the head that focuses hardest), the size of its vector (it grows as blocks add to it through the residual connections), and what the model would predict after it if it stopped at that block. Click a row to show that block above.</p>
+    <table class="ex-ttab"><tr><th>block</th><th>attends most to</th><th>sharpest head</th><th>vector size</th><th>would predict next (top 3)</th></tr>${rows}</table>`;
+  $("#ex-token-close").addEventListener("click", () => { ex.tok = null; exRender(); });
+  $$("#ex-token tr[data-block]").forEach((tr) => tr.addEventListener("click", () => action(null, () => exSetLayer(+tr.dataset.block))));
 }
 
 function exProbBox() {
@@ -238,6 +286,8 @@ function exInit() {
   $("#ex-svg").addEventListener("click", (e) => {
     const ag = e.target.closest(".ex-ag");
     const f = e.target.closest("[data-focus]");
+    const tk = e.target.closest(".ex-tokg");
+    if (tk) { ex.tok = ex.tok === +tk.dataset.tok ? null : +tk.dataset.tok; exRender(); if (ex.tok != null) $("#ex-token").scrollIntoView({ behavior: "smooth", block: "nearest" }); return; }
     if (ag) { ex.cell = [+ag.dataset.i, +ag.dataset.j]; ex.focus = "attention"; exRender(); return; }
     if (f) { ex.focus = f.dataset.focus; ex.cell = null; exRender(); }
   });
@@ -253,6 +303,8 @@ function exInit() {
     $$("#ex-stage .seg-btn").forEach((x) => x.classList.toggle("on", x === b));
     exRender();
   }));
+  $("#ex-full").addEventListener("click", () => exFull(!$("#ex-card").classList.contains("ex-fullscreen")));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("#ex-card").classList.contains("ex-fullscreen")) exFull(false); });
   $("#ex-prev").addEventListener("click", () => action($("#ex-prev"), () => exSetLayer(ex.layer - 1)));
   $("#ex-next").addEventListener("click", () => action($("#ex-next"), () => exSetLayer(ex.layer + 1)));
   $$(".ex-tab").forEach((b) => b.addEventListener("click", () => { ex.focus = b.dataset.focus; ex.cell = null; exRender(); }));
@@ -269,10 +321,29 @@ function exInit() {
     $("#a-walk-view").classList.toggle("hidden", v !== "walk");
     $("#a-explorer-view").classList.toggle("hidden", v !== "explorer");
     $("#a-run").textContent = v === "explorer" ? "Explore" : "Walk through";
+    document.body.classList.toggle("ex-wide", v === "explorer");
     try { localStorage.setItem("lmstudio.aview", v); } catch (e) { /* ignore */ }
     if (v === "explorer" && !ex.data && $("#a-prompt").value.trim()) action($("#a-run"), exRun);
   }));
   try { if (localStorage.getItem("lmstudio.aview") === "explorer") $('.a-view[data-view="explorer"]').click(); } catch (e) { /* ignore */ }
+}
+
+function exFull(on) {
+  // moved to <body> while full screen: inside the step panel, its fade-in animation would pin a fixed
+  // element to the panel instead of the window
+  const card = $("#ex-card");
+  if (on && !ex.placeholder) {
+    ex.placeholder = document.createComment("ex-card");
+    card.before(ex.placeholder);
+    document.body.appendChild(card);
+  } else if (!on && ex.placeholder) {
+    ex.placeholder.replaceWith(card);
+    ex.placeholder = null;
+  }
+  card.classList.toggle("ex-fullscreen", on);
+  document.body.classList.toggle("ex-noscroll", on);
+  $("#ex-full").textContent = on ? "Exit full screen (Esc)" : "Full screen";
+  if (ex.data) exRender();
 }
 
 function exActive() { return !$("#a-explorer-view").classList.contains("hidden"); }

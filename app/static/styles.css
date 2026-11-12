@@ -851,3 +851,34 @@ label.inline.grow input[type="range"] { flex: 1; }
 .ex-prow.cut code { color: var(--muted); text-decoration: line-through; }
 .ex-probbox .ex-controls { flex-direction: column; align-items: stretch; gap: 6px; margin: 10px 0 4px; }
 .ex-probbox .ex-controls label { justify-content: space-between; }
+
+/* Explorer: bigger, wide layout, full screen, token panel */
+body.ex-wide main { max-width: 1720px; }
+body.ex-noscroll { overflow: hidden; }
+#ex-card.ex-fullscreen { position: fixed; inset: 0; z-index: 900; margin: 0; border-radius: 0; overflow: auto; padding: 18px 24px; }
+.ex-hint { margin: 2px 0 6px; }
+.ex-h { font-size: 15px; }
+.ex-sub { font-size: 12px; }
+.ex-tok { font-size: 15px; }
+.ex-key { font-size: 13px; }
+.ex-anum { font-size: 12px; }
+.ex-num { font-size: 12px; }
+.ex-tokbg { fill: transparent; cursor: pointer; }
+.ex-tokg:hover .ex-tokbg { fill: var(--accent-soft); }
+.ex-picked .ex-tokbg { fill: var(--accent-soft); stroke: var(--accent); }
+.ex-picked .ex-tok { fill: var(--accent); font-weight: 700; }
+.ex-token { margin: 10px 0 14px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 12px; background: var(--panel); }
+.ex-token .card-head { display: flex; justify-content: space-between; align-items: center; }
+.ex-token h3 { margin: 0; font-size: 15px; }
+.ex-ttab { border-collapse: collapse; width: 100%; font-size: 13px; }
+.ex-ttab th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.ex-ttab td { padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.ex-ttab tr[data-block] { cursor: pointer; }
+.ex-ttab tr[data-block]:hover td { background: var(--panel-2); }
+.ex-ttab tr.on td { background: var(--accent-soft); }
+.ex-nbar { display: inline-block; width: 90px; height: 9px; border-radius: 3px; background: var(--border); vertical-align: middle; overflow: hidden; }
+.ex-nbar i { display: block; height: 100%; background: var(--accent-2); }
+
+.ex-band { font-size: 14px; font-weight: 600; fill: var(--muted); }
+.ex-bandn { fill: var(--accent); font-weight: 800; }
+.ex-handover { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 5; opacity: .5; }

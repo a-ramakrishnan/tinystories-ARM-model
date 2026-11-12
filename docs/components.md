@@ -83,8 +83,16 @@ replays the forward pass block by block and records each stage; its final logits
   guess is "not" for seven blocks, "Paris" after block 8 (the earlier answer in the prompt) and "Berlin"
   (80%) from block 9.
 
+The block is drawn as two bands, one per half of a transformer block: **1 · Attention** (tokens share
+information: embedding → query, key, value → the attention matrix) and **2 · Feed-forward** (each token on its
+own: out + residual → feed-forward or experts → the other blocks). The step widens to use the window, and
+**Full screen** (Esc to leave) gives the diagram the whole screen, up to 1.35× larger.
+
 Every part has an explanation that uses the model's own sizes; hovering a token highlights its path, and the
-rows line up across the diagram so one token can be followed from embedding to prediction. The layout follows
+rows line up across the diagram so one token can be followed from embedding to prediction. **Click a token's
+name** to follow it through every block in a table: what it attends to most (averaged over heads, and the head
+that focuses hardest), how big its vector gets as the blocks add to it, and what the model would predict next
+if it stopped after that block. The layout follows
 the idea of [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) (Georgia Tech's Polo
 Club), with the app's own models and designs (RoPE, QK-norm, SwiGLU, experts) and the logit lens added.
 

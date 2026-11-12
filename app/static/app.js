@@ -116,6 +116,7 @@ function go(id) {
   if (id === "models") loadModels().catch((e) => toast(e.message, true));
   if (id === "lab" && typeof labOpen === "function") labOpen();
   if (id === "journey" && typeof journeyOpen === "function") journeyOpen();
+  document.body.classList.toggle("ex-wide", id === "attention" && typeof exActive === "function" && exActive());
   render();
   if (id === "batches") renderBatchExample();
   if (id === "tokenize") renderTokenExamples();

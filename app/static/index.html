@@ -320,7 +320,7 @@
         </div>
 
         <div id="a-explorer-view" class="hidden">
-          <div class="card">
+          <div class="card" id="ex-card">
             <div class="card-head ex-head">
               <div class="toolbar">
                 <button id="ex-prev" class="btn small" title="Previous block">←</button>
@@ -331,10 +331,13 @@
               <div class="toolbar">
                 <span class="muted small">Attention</span>
                 <div class="seg" id="ex-stage"><button class="seg-btn" data-stage="scores">Scores</button><button class="seg-btn" data-stage="masked">Mask</button><button class="seg-btn on" data-stage="softmax">Softmax</button></div>
+                <button id="ex-full" class="btn small">Full screen</button>
               </div>
             </div>
             <div id="ex-wrap" class="hidden">
+              <p class="muted small ex-hint">Hover a row to follow a token; click a token's name to follow it through every block; click any part for its explanation, or an attention cell for its calculation.</p>
               <div id="ex-svg" class="ex-svg"></div>
+              <div id="ex-token" class="ex-token hidden"></div>
               <div class="ex-bottom">
                 <div class="ex-probbox">
                   <div id="ex-probs"></div>
