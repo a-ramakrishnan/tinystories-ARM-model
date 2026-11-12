@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-12 14:30", kind: "win", area: "Inference", title: "Better decoding: DRY, contrastive and beam search",
+    decision: "Add DRY (penalize only continuing a repeated sequence) and typical-p to Generate, plus contrastive and beam search; compare all on the suite's prompts.",
+    why: "Greedy loops (27.5% of 4-token runs on stories, 76% on web text); the repetition penalty fixes that by punishing every word already used.",
+    result: { label: "TinyStories: repeated 4-grams / judge perplexity (Medium 51M)", text: "greedy 27.5% / 2.70 → greedy + DRY 1.2% / 2.67 · Balanced 0.3% / 5.67 → T 0.8, top-p 0.9 + DRY 1.4% / 4.16" },
+    calc: ["DRY penalty: 0.8 × 1.75^(n − 2) for a token that would extend an n-token repeat (n ≥ 2)",
+      "web text: contrastive search 0.7% repeats at judge perplexity 8.0, vs Balanced 1.2% at 23.4",
+      "plain beam search loops (65% on web text); typical sampling: word salad at 30M"],
+    cost: "no training: about 15 minutes of generation on the Mac", anchor: "26-better-decoding-algorithms" },
   { when: "2026-11-12 13:00", kind: "tie", area: "Inference", title: "Speculative decoding",
     decision: "A small model drafts a few tokens; the large model checks them all in one pass and keeps those it agrees with.",
     why: "Each pass of the large model could then give several tokens, with exactly the large model's output.",

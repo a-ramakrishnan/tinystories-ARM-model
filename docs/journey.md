@@ -34,8 +34,9 @@ that are easy to get wrong and rarely explained.
 23. [The same designs on harder data: Mini FineWeb-Edu](#23-the-same-designs-on-harder-data-mini-fineweb-edu)
 24. [A yardstick: OpenAI's GPT-2](#24-a-yardstick-openais-gpt-2)
 25. [Winning back generation speed](#25-winning-back-generation-speed)
-26. [Lessons](#26-lessons)
-27. [What's next](#27-whats-next)
+26. [Better decoding algorithms](#26-better-decoding-algorithms)
+27. [Lessons](#27-lessons)
+28. [What's next](#28-whats-next)
 
 ---
 
@@ -906,7 +907,50 @@ drafter: bigger models, or slower hardware. Kept as a tool (`speculative_generat
 **Lesson.** Profile before optimizing. The biggest cost wasn't the maths or a missing compiler, but a few lines that
 made Python wait for the GPU, and one list index.
 
-## 26. Lessons
+## 26. Better decoding algorithms
+
+Greedy decoding loops: our small FineWeb model repeats 76% of its 4-token runs, the TinyStories one 27.5%. The
+Balanced preset fixes that with randomness and a repetition penalty, but the penalty pushes down every word
+already used, including "the" and the story's characters. Four alternatives:
+
+- **DRY** ("don't repeat yourself"): penalize only a token that would *continue a sequence already in the text*,
+  by 0.8 × 1.75^(n − 2) for a repeat n tokens long (n ≥ 2). Single words can come back freely.
+- **Typical sampling** (Meier et al. 2022): keep the tokens whose surprise is closest to the model's average
+  surprise at that point, dropping the blandest choices as well as the unlikely ones.
+- **Contrastive search** (Su et al. 2022): of the 4 most likely tokens, take the best of
+  0.4 × probability − 0.6 × (how similar its hidden state is to anything already written). Deterministic.
+- **Beam search**: keep the 4 most probable continuations; optionally never repeat a 3-token sequence.
+
+Each method continued the evaluation suite's 6 prompts for 100 tokens (sampled ones with 2 seeds). Fluency is
+how likely a bigger model (the judge) finds the text: Medium 51M for TinyStories, our Large 124M for FineWeb.
+Lower is more fluent, but looping text is easy to predict too, so it only compares methods that don't loop.
+
+| Method | TinyStories: repeated 4-grams | judge perplexity | FineWeb: repeated 4-grams | judge perplexity |
+|---|---|---|---|---|
+| Greedy | 27.5% | 2.70 | 76.1% | 2.63 |
+| Greedy + DRY | **1.2%** | **2.67** | 12.4% | 5.76 |
+| Balanced (T 0.8, top-p 0.9, repetition penalty 1.15) | 0.3% | 5.67 | 1.2% | 23.4 |
+| T 0.8, top-p 0.9 + DRY | 1.4% | **4.16** | 0.9% | **18.8** |
+| Typical 0.9 (T 1.0) | 1.9% | 7.79 | 0.1% | 89.9 |
+| Contrastive search (k 4, α 0.6) | 1.2% | 3.66 | 0.7% | **7.99** |
+| Beam 4 | 18.7% | 2.05 | 65.2% | 2.59 |
+| Beam 4, no repeated 3-grams | 0.0% | 2.34 | 0.0% | 5.05 |
+
+- **DRY does what a repetition penalty can't.** Greedy + DRY keeps greedy's fluency on stories and stops its
+  loops; with sampling it matches Balanced's low repetition and the judge finds it more fluent, because common
+  words aren't penalized. On web text 0.8 is too weak for greedy: loops there are longer and vary a little.
+- **Contrastive search** gave the most coherent web text of the methods that don't loop.
+- **Beam search** finds more probable text and loops more than greedy, as is well known. Banning repeated
+  3-grams stops the exact repeats, but the text circles the same idea ("the first woman… the second woman…").
+- **Typical sampling** turned into word salad: a 30M model's "typical" tokens are often nonsense.
+
+DRY and typical-p are sliders in the Generate step, with a **Greedy + DRY** preset; contrastive and beam search
+are functions in `inference.py` for now. Six prompts is a small sample, and these are 30M models.
+
+**Lesson.** Penalize what you actually don't want. A repetition penalty punishes words; the problem was
+repeated *sequences*. DRY targets exactly that and costs greedy decoding nothing on the stories it was fluent on.
+
+## 27. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -946,11 +990,13 @@ made Python wait for the GPU, and one list index.
 22. **Measure against a known model.** OpenAI's GPT-2 showed our 124M model is 0.33 short on web text, and why.
 23. **Profile before optimizing.** For small models, the time goes to overhead: every read back from the GPU waits
     for it, and a list index can hide one. Removing them doubled generation speed with identical output.
+24. **Penalize what you actually don't want.** Loops are repeated sequences, not repeated words: DRY stopped
+    greedy's loops on stories without making the text less fluent, where a repetition penalty punishes every word.
 
-## 27. What's next
+## 28. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
-- **Inference, first:** better decoding algorithms (beam, contrastive, typical sampling, DRY).
+- **Inference, first:** 8-bit weights and KV cache, prefix caching, batched generation.
 - **Architecture:** re-test depth and layer sharing with longer runs and tuned learning rates.
 - **Inference:** quantization, batching, prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.

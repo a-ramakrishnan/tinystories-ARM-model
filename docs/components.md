@@ -140,15 +140,22 @@ can be picked. The Generate step has all the common ones, applied in this order:
 |---|---|---|
 | Repetition penalty | Divides the score of every token already in the context by the penalty (CTRL-style) | 1 |
 | Frequency / presence penalty | Subtracts penalty × times seen / a flat amount for tokens seen at all (OpenAI-style) | 0 |
+| DRY | Lowers only tokens that would continue a sequence already in the text, by multiplier × 1.75^(length − 2) for a repeat of 2+ tokens; single words can come back freely | 0 |
 | Temperature | Sharpens (below 1) or flattens (above 1) the probabilities. **0 = greedy**: always the most likely token | – |
 | Top-k | Keeps the k most likely tokens | 0 |
 | Top-p (nucleus) | Keeps the smallest set of tokens whose probabilities add up to p | 1 |
 | Min-p | Drops tokens less likely than min-p × the top token's probability | 0 |
+| Typical-p | Keeps the tokens whose surprise is closest to the average surprise (the entropy), up to p of the probability: drops the blandest choices as well as the unlikely ones | 1 |
 
-Presets set them in one click: **Greedy**, **Balanced** (temperature 0.8, top-p 0.9, repetition penalty
+Presets set them in one click: **Greedy**, **Greedy + DRY** (deterministic, without loops), **Balanced** (temperature 0.8, top-p 0.9, repetition penalty
 1.15), **Creative** (temperature 1.1, min-p 0.05) and **Old default** (temperature 0.8, top-k 50, no
 penalty). **Balanced is the default**: with the old default, the FineWeb model often fell into loops,
 repeating one sentence over and over (73% of 4-token runs repeated with greedy decoding, 0% with Balanced).
+
+Two deterministic alternatives to greedy are in `inference.py` (not in the app yet): **contrastive search**
+(`contrastive_search`: of the k most likely tokens, prefer the one whose hidden state is least like anything
+already written) and **beam search** (`beam_search`, optionally never repeating an n-gram). How all of them
+compare is in [Analysis](analysis.md) (step 23).
 
 **How the next token is picked** shows the model's top candidates for the token after your prompt and updates
 as you move the sliders: the model's own probability, the probability after the settings, which tokens a

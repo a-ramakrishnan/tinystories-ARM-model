@@ -46,7 +46,35 @@ def generate_text(model, enc, prompt, device, max_new_tokens=200, temperature=1.
 # Order (the usual one): penalties -> temperature -> top-k -> top-p -> min-p, then sample (or argmax when greedy).
 
 SAMPLING_DEFAULTS = {"top_p": 1.0, "min_p": 0.0, "repetition_penalty": 1.0, "frequency_penalty": 0.0,
-                     "presence_penalty": 0.0}
+                     "presence_penalty": 0.0, "typical_p": 1.0, "dry_multiplier": 0.0, "dry_base": 1.75,
+                     "dry_allowed_length": 2}
+PENALTY_KEYS = ("repetition_penalty", "frequency_penalty", "presence_penalty", "dry_multiplier")  # need the history
+
+
+def dry_penalty(history, multiplier=0.8, base=1.75, allowed_length=2):
+    """DRY ("don't repeat yourself", p-e-w 2024): penalize the tokens that would continue a sequence already seen.
+
+    For each earlier place where the text matched its own ending, the token that came next there would repeat
+    that passage. If the match is n tokens long and n >= allowed_length, that token's logit is lowered by
+    multiplier × base^(n − allowed_length): short echoes (a name, "of the") are left alone, and the longer a
+    repeat would get, the harder it is pushed away. Unlike a repetition penalty it doesn't punish single words
+    for appearing again, only sequences. history: a list of token ids. Returns {token id: penalty}.
+    """
+    n = len(history)
+    best = {}
+    if multiplier <= 0 or n < 2:
+        return best
+    last = history[-1]
+    for j in range(n - 1):              # history[j + 1] followed a place that may match the ending
+        if history[j] != last:
+            continue
+        m = 1
+        while m <= j and history[j - m] == history[n - 1 - m]:
+            m += 1
+        if m >= allowed_length:
+            t = history[j + 1]
+            best[t] = max(best.get(t, 0), m)
+    return {t: multiplier * base ** (m - allowed_length) for t, m in best.items()}
 
 
 def apply_penalties(logits, history, repetition_penalty=1.0, frequency_penalty=0.0, presence_penalty=0.0,
@@ -70,24 +98,35 @@ def apply_penalties(logits, history, repetition_penalty=1.0, frequency_penalty=0
 
 
 def sampling_distribution(logits, history, temperature=1.0, top_k=None, top_p=1.0, min_p=0.0,
-                          repetition_penalty=1.0, frequency_penalty=0.0, presence_penalty=0.0, stages=False):
+                          repetition_penalty=1.0, frequency_penalty=0.0, presence_penalty=0.0, typical_p=1.0,
+                          dry_multiplier=0.0, dry_base=1.75, dry_allowed_length=2, stages=False):
     """Turn one position's logits (1-D) into the distribution the next token is drawn from.
 
     temperature <= 0 means greedy: all probability on the single most likely token (after penalties).
     top_k keeps the k most likely tokens; top_p keeps the smallest set whose probability adds up to p
-    (nucleus sampling); min_p drops tokens less likely than min_p × the top token's probability.
+    (nucleus sampling); min_p drops tokens less likely than min_p × the top token's probability; typical_p
+    (Meier et al. 2022) keeps the tokens whose surprise is closest to the distribution's average surprise (its
+    entropy), up to typical_p of the probability: it drops both the very likely, bland choices and the unlikely
+    ones. dry_multiplier > 0 adds the DRY penalty against repeating earlier sequences (see dry_penalty).
     Returns (probs, n_kept as a 0-d tensor), or with stages=True a dict with every intermediate step (for the
     explorer).
     """
     logits = logits.float()
     penalized, counts = apply_penalties(logits, history, repetition_penalty, frequency_penalty, presence_penalty,
                                        need_counts=stages)
+    if dry_multiplier > 0 and history is not None:
+        pen = dry_penalty(history.tolist(), dry_multiplier, dry_base, int(dry_allowed_length))
+        if pen:
+            idx = torch.tensor(list(pen), dtype=torch.long, device=logits.device)
+            val = torch.tensor(list(pen.values()), dtype=penalized.dtype, device=logits.device)
+            penalized = penalized.index_put((idx,), -val, accumulate=True)
     greedy = temperature <= 0
     scaled = penalized / (1.0 if greedy else temperature)
     p = F.softmax(scaled, dim=-1)
     cut_k = torch.zeros_like(p, dtype=torch.bool)
     cut_p = torch.zeros_like(cut_k)
     cut_min = torch.zeros_like(cut_k)
+    cut_typ = torch.zeros_like(cut_k)
     if greedy:
         keep = torch.zeros_like(cut_k).scatter_(0, torch.argmax(p).view(1), True)
         cut_k = ~keep   # reported as "greedy" by callers
@@ -103,14 +142,24 @@ def sampling_distribution(logits, history, temperature=1.0, top_k=None, top_p=1.
             cut_p = torch.zeros_like(cut_k).scatter_(0, si, drop) & ~cut_k
         if min_p > 0.0:
             cut_min = (p < min_p * p.max()) & ~cut_k & ~cut_p
-        keep = ~(cut_k | cut_p | cut_min)
+        if typical_p < 1.0:
+            q = p.masked_fill(cut_k | cut_p | cut_min, 0)
+            q = q / q.sum()
+            surprise = -torch.log(q.clamp_min(1e-30))
+            entropy = (q * surprise).sum()
+            dist = (surprise - entropy).abs().masked_fill(q == 0, float("inf"))
+            sd, si = torch.sort(dist)
+            before = torch.cumsum(q[si], 0) - q[si]       # probability of the more typical tokens
+            drop = before >= typical_p
+            cut_typ = torch.zeros_like(cut_k).scatter_(0, si, drop) & ~(cut_k | cut_p | cut_min)
+        keep = ~(cut_k | cut_p | cut_min | cut_typ)
     final = p.masked_fill(~keep, 0)
     final = final / final.sum()
     if not stages:
         return final, keep.sum()  # n_kept stays on the GPU (a 0-d tensor): reading it would wait for the GPU
     n_kept = int(keep.sum())
     return {"raw": F.softmax(logits, dim=-1), "penalized": F.softmax(penalized, dim=-1), "scaled": p, "final": final,
-            "counts": counts, "cut_k": cut_k, "cut_p": cut_p, "cut_min": cut_min, "greedy": greedy, "n_kept": n_kept,
+            "counts": counts, "cut_k": cut_k, "cut_p": cut_p, "cut_min": cut_min, "cut_typ": cut_typ, "greedy": greedy, "n_kept": n_kept,
             "kept_mass": float(p[keep].sum())}
 
 
@@ -168,8 +217,7 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
     ids = list(prompt_ids)
     as_input = lambda toks: torch.tensor([toks], dtype=torch.long, device=device)
     sampling = {**SAMPLING_DEFAULTS, **(sampling or {})}
-    penalized = any(sampling[k] != SAMPLING_DEFAULTS[k] for k in ("repetition_penalty", "frequency_penalty",
-                                                                  "presence_penalty"))
+    penalized = any(sampling[k] != SAMPLING_DEFAULTS[k] for k in PENALTY_KEYS)
     sliding = getattr(model.config, "pos_encoding", "learned") == "rope"
     caches, cache_len, pos, recomputes = None, 0, 0, 0
     t0 = time.perf_counter()
@@ -213,6 +261,101 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
                "alternatives": list(zip([int(i) for i in alt_ids], [round(p, 4) for p in alt_probs])),
                "ms": (time.perf_counter() - t0) * 1000}
         ids.append(token)
+
+
+def _last_hidden(model, idx):
+    """The final hidden state (after ln_f) at every position, and the logits: (hidden (T, C), logits (T, V))."""
+    out = {}
+    h = model.transformer.ln_f.register_forward_hook(lambda m, i, o: out.__setitem__("h", o))
+    try:
+        logits, _ = model(idx, all_logits=True)
+    finally:
+        h.remove()
+    return out["h"][0], logits[0]
+
+
+@torch.no_grad()
+def contrastive_search(model, prompt_ids, device, max_new_tokens=100, k=4, alpha=0.6, stop_token=None):
+    """Contrastive search (Su et al. 2022): deterministic, like greedy, but without its loops.
+
+    At each step take the k most likely tokens and pick the one with the best
+        (1 − alpha) · p(token) − alpha · (highest cosine similarity of its hidden state to any earlier token's),
+    so a token that's likely but would take the text somewhere it has already been loses to a slightly less
+    likely one that says something new. alpha = 0 is greedy. Each step runs the k candidates through the model
+    (here without a KV cache: k full passes over the context, so it's slow; fine for a comparison).
+    """
+    block = model.config.block_size
+    ids = list(prompt_ids)
+    out = []
+    for _ in range(max_new_tokens):
+        ctx = ids[-(block - 1):]
+        hid, logits = _last_hidden(model, torch.tensor([ctx], device=device))
+        probs = F.softmax(logits[-1].float(), dim=-1)
+        top_p, top_i = torch.topk(probs, k)
+        # each candidate appended to the context, all k in one batch; its hidden state is the last position's
+        cand = torch.tensor([ctx + [int(t)] for t in top_i.tolist()], device=device)
+        store = {}
+        hook = model.transformer.ln_f.register_forward_hook(lambda m, i, o: store.__setitem__("h", o))
+        try:
+            model(cand, all_logits=True)
+        finally:
+            hook.remove()
+        cand_h = F.normalize(store["h"][:, -1].float(), dim=-1)            # (k, C)
+        prev_h = F.normalize(hid.float(), dim=-1)                          # (T, C)
+        degeneration = (cand_h @ prev_h.T).max(dim=-1).values              # (k,)
+        score = (1 - alpha) * top_p - alpha * degeneration
+        token = int(top_i[int(score.argmax())])
+        if stop_token is not None and token == stop_token:
+            break
+        ids.append(token); out.append(token)
+    return out
+
+
+@torch.no_grad()
+def beam_search(model, prompt_ids, device, max_new_tokens=100, beams=4, length_penalty=1.0, no_repeat_ngram=0,
+                stop_token=None):
+    """Beam search: keep the `beams` most probable continuations so far and extend each by every token, keeping
+    the best `beams` again. Finds a more probable text than greedy; famous for making repetitive text worse, which
+    no_repeat_ngram (never repeat an n-gram, as in many summarization systems) counters. Score: total log
+    probability / length^length_penalty. No KV cache here (each step reruns the context for every beam)."""
+    block = model.config.block_size
+    beams_ = [(0.0, [])]                         # (sum of log probs, new tokens)
+    done = []
+    for _ in range(max_new_tokens):
+        ctxs = [(list(prompt_ids) + toks)[-block:] for _, toks in beams_]
+        width = max(len(c) for c in ctxs)
+        if any(len(c) != width for c in ctxs):   # beams are always the same length here; keep it simple
+            raise RuntimeError("beams of different lengths")
+        logits, _ = model(torch.tensor(ctxs, device=device))
+        logp = F.log_softmax(logits[:, -1].float(), dim=-1)            # (B, V)
+        if no_repeat_ngram > 0:
+            n = no_repeat_ngram
+            for b, (_, toks) in enumerate(beams_):
+                seq = list(prompt_ids) + toks
+                if len(seq) >= n - 1:
+                    prefix = tuple(seq[len(seq) - (n - 1):]) if n > 1 else ()
+                    banned = [seq[i + n - 1] for i in range(len(seq) - n + 1) if tuple(seq[i:i + n - 1]) == prefix]
+                    if banned:
+                        logp[b, banned] = float("-inf")
+        total = torch.tensor([sc for sc, _ in beams_], device=logp.device)[:, None] + logp
+        top_v, top_i = torch.topk(total.view(-1), beams)
+        V = logp.size(-1)
+        nxt = []
+        for v, i in zip(top_v.tolist(), top_i.tolist()):
+            b, t = divmod(i, V)
+            toks = beams_[b][1] + [t]
+            if stop_token is not None and t == stop_token:
+                done.append((v, beams_[b][1]))
+            else:
+                nxt.append((v, toks))
+        if not nxt:
+            break
+        beams_ = nxt
+        if len(done) >= beams:
+            break
+    cands = done + beams_
+    best = max(cands, key=lambda c: c[0] / max(1, len(c[1])) ** length_penalty)
+    return best[1]
 
 
 @torch.no_grad()

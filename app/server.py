@@ -339,6 +339,8 @@ class SamplingReq(BaseModel):
     repetition_penalty: float = 1.15  # 1 = off
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
+    typical_p: float = 1.0            # 1 = off
+    dry_multiplier: float = 0.0       # 0 = off; DRY: penalize continuing a sequence already in the text
 
     def clean(self):
         """(temperature, top_k, extras for generate_stream), each clamped to a sensible range."""
@@ -346,7 +348,9 @@ class SamplingReq(BaseModel):
         extras = {"top_p": max(0.01, min(self.top_p, 1.0)), "min_p": max(0.0, min(self.min_p, 1.0)),
                   "repetition_penalty": max(1.0, min(self.repetition_penalty, 3.0)),
                   "frequency_penalty": max(0.0, min(self.frequency_penalty, 2.0)),
-                  "presence_penalty": max(0.0, min(self.presence_penalty, 2.0))}
+                  "presence_penalty": max(0.0, min(self.presence_penalty, 2.0)),
+                  "typical_p": max(0.05, min(self.typical_p, 1.0)),
+                  "dry_multiplier": max(0.0, min(self.dry_multiplier, 3.0))}
         return t, (self.top_k if self.top_k > 0 else None), extras
 
 
@@ -873,7 +877,8 @@ def generate_distribution(req: DistributionReq):
     ent = lambda p: float(-(p[p > 0] * p[p > 0].log()).sum())  # noqa: E731
     rows = []
     for i in order:
-        cut = ("greedy" if st["greedy"] else "top-k") if st["cut_k"][i] else "top-p" if st["cut_p"][i] else "min-p" if st["cut_min"][i] else None
+        cut = (("greedy" if st["greedy"] else "top-k") if st["cut_k"][i] else "top-p" if st["cut_p"][i] else
+               "min-p" if st["cut_min"][i] else "typical-p" if st["cut_typ"][i] else None)
         rows.append({"id": i, "text": S.enc.decode([i]), "raw": round(float(st["raw"][i]), 5),
                      "penalized": round(float(st["penalized"][i]), 5), "scaled": round(float(st["scaled"][i]), 5),
                      "final": round(float(st["final"][i]), 5), "cut": cut, "seen": int(st["counts"][i])})

@@ -999,6 +999,7 @@ function renderGenerateCard(s) {
 // ---------- sampling settings ----------
 const SAMPLING_PRESETS = {
   greedy: { label: "Greedy (temperature 0)", temperature: 0, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
+  greedydry: { label: "Greedy + DRY 0.8: deterministic, without loops", temperature: 0, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0, dry_multiplier: 0.8 },
   balanced: { label: "Balanced: T 0.8, top-p 0.9, repetition 1.15", temperature: 0.8, top_k: 0, top_p: 0.9, min_p: 0, repetition_penalty: 1.15, frequency_penalty: 0, presence_penalty: 0 },
   creative: { label: "Creative: T 1.1, min-p 0.05", temperature: 1.1, top_k: 0, top_p: 1, min_p: 0.05, repetition_penalty: 1.05, frequency_penalty: 0, presence_penalty: 0 },
   reset: { label: "Old default: T 0.8, top-k 50, no penalty", temperature: 0.8, top_k: 50, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
@@ -1007,10 +1008,12 @@ const SAMPLING_PRESETS = {
   wild: { label: "Wild: temperature 1.6, no filters", temperature: 1.6, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
 };
 const SAMPLING_FIELDS = [["temperature", "#g-temp"], ["top_k", "#g-topk"], ["top_p", "#g-topp"], ["min_p", "#g-minp"],
-  ["repetition_penalty", "#g-rep"], ["frequency_penalty", "#g-freq"], ["presence_penalty", "#g-pres"]];
+  ["repetition_penalty", "#g-rep"], ["frequency_penalty", "#g-freq"], ["presence_penalty", "#g-pres"],
+  ["typical_p", "#g-typ"], ["dry_multiplier", "#g-dry"]];
+const SAMPLING_OFF = { typical_p: 1, dry_multiplier: 0 };  // presets that don't mention these leave them off
 const samplingBody = () => Object.fromEntries(SAMPLING_FIELDS.map(([k, sel]) => [k, +$(sel).value]));
 function setSampling(p) {
-  SAMPLING_FIELDS.forEach(([k, sel]) => { $(sel).value = p[k]; });
+  SAMPLING_FIELDS.forEach(([k, sel]) => { $(sel).value = p[k] ?? SAMPLING_OFF[k]; });
   syncSliders();
   refreshDist();
 }
@@ -1023,6 +1026,8 @@ function syncSliders() {
   $("#g-rep-v").textContent = +$("#g-rep").value === 1 ? "off" : Number($("#g-rep").value).toFixed(2);
   $("#g-freq-v").textContent = +$("#g-freq").value === 0 ? "off" : Number($("#g-freq").value).toFixed(1);
   $("#g-pres-v").textContent = +$("#g-pres").value === 0 ? "off" : Number($("#g-pres").value).toFixed(1);
+  $("#g-typ-v").textContent = +$("#g-typ").value >= 1 ? "off" : Number($("#g-typ").value).toFixed(2);
+  $("#g-dry-v").textContent = +$("#g-dry").value === 0 ? "off" : Number($("#g-dry").value).toFixed(1);
   $("#g-topk-v").textContent = $("#g-topk").value === "0" ? "off" : $("#g-topk").value;
   $("#g-len-v").textContent = `${$("#g-len").value} tokens`;
 }
@@ -1533,7 +1538,7 @@ $("#t-resume-run").addEventListener("click", (e) => action(e.target, async () =>
   await poll();
 }));
 
-$$("#g-temp, #g-topk, #g-len, #g-topp, #g-minp, #g-rep, #g-freq, #g-pres").forEach((i) => i.addEventListener("input", () => { syncSliders(); if (i.id !== "g-len") refreshDist(); }));
+$$("#g-temp, #g-topk, #g-len, #g-topp, #g-minp, #g-rep, #g-freq, #g-pres, #g-typ, #g-dry").forEach((i) => i.addEventListener("input", () => { syncSliders(); if (i.id !== "g-len") refreshDist(); }));
 $("#g-prompt").addEventListener("input", refreshDist);
 $("#cmp-run").addEventListener("click", (e) => action(e.target, runCompare));
 $("#lib-scan").addEventListener("click", (e) => action(e.target, () => libAction(async () => {

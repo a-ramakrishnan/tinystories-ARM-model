@@ -438,8 +438,12 @@
           <div class="fields three sliders">
             <label>Frequency penalty <output id="g-freq-v"></output><input id="g-freq" type="range" min="0" max="2" step="0.1" value="0"></label>
             <label>Presence penalty <output id="g-pres-v"></output><input id="g-pres" type="range" min="0" max="2" step="0.1" value="0"></label>
+            <label>Typical-p <output id="g-typ-v"></output><input id="g-typ" type="range" min="0.2" max="1" step="0.05" value="1"></label>
+          </div>
+          <div class="fields three sliders">
+            <label>DRY (repeated sequences) <output id="g-dry-v"></output><input id="g-dry" type="range" min="0" max="2" step="0.1" value="0"></label>
             <div class="preset-chips"><span class="muted small">Presets (Balanced is the default)</span>
-              <button class="chip-btn" data-spreset="greedy">Greedy</button><button class="chip-btn" data-spreset="balanced">Balanced</button><button class="chip-btn" data-spreset="creative">Creative</button><button class="chip-btn" data-spreset="reset" title="Temperature 0.8, top-k 50, no penalty: the default before Balanced">Old default</button>
+              <button class="chip-btn" data-spreset="greedy">Greedy</button><button class="chip-btn" data-spreset="greedydry" title="Greedy with the DRY penalty: the same text every time, without loops">Greedy + DRY</button><button class="chip-btn" data-spreset="balanced">Balanced</button><button class="chip-btn" data-spreset="creative">Creative</button><button class="chip-btn" data-spreset="reset" title="Temperature 0.8, top-k 50, no penalty: the default before Balanced">Old default</button>
             </div>
           </div>
           <details class="hint sampling-help"><summary>What do these do?</summary>
@@ -449,6 +453,8 @@
               <li><b>Top-p</b> (nucleus sampling) keeps the smallest set of tokens whose probabilities add up to p. When the model is sure, that's a few tokens; when it's unsure, many (1 = off).</li>
               <li><b>Min-p</b> drops tokens less likely than min-p × the top token's probability, so the cut-off follows the model's confidence (0 = off).</li>
               <li><b>Repetition penalty</b> makes every token already in the context less likely (divides its score by the penalty). <b>Frequency penalty</b> grows with how many times a token has appeared; <b>presence penalty</b> is a flat cost for appearing at all. They're applied first, then temperature, top-k, top-p and min-p.</li>
+              <li><b>Typical-p</b> (locally typical sampling) keeps the tokens whose surprise is closest to the model's average surprise at this point, up to p of the probability: it drops the blandest choices as well as the unlikely ones (1 = off).</li>
+              <li><b>DRY</b> ("don't repeat yourself") penalizes only tokens that would continue a sequence already in the text, more the longer the repeat would get; single words can come back freely. It stops greedy decoding from looping without making it random (0 = off).</li>
             </ul>
           </details>
           <div class="actions">
