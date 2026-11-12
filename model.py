@@ -111,7 +111,7 @@ class CausalSelfAttention(nn.Module):
                 shape = (B, self.n_kv_head, size, hd)  # only the shared key/value heads are cached
                 kv_cache["kbuf"] = torch.empty(shape, dtype=k.dtype, device=k.device)
                 kv_cache["vbuf"] = torch.empty(shape, dtype=v.dtype, device=v.device)
-            assert written == 0 or T == 1, "with a filled cache, feed one new token at a time"
+            # several new tokens at once (speculative decoding checks a draft in one pass) only while they fit
             assert written + T <= size or (T == 1 and rope is not None), "cache full: only RoPE models can slide"
             if written + T <= size:          # still filling up, in order
                 kv_cache["kbuf"][:, :, written:written + T] = k
@@ -126,8 +126,12 @@ class CausalSelfAttention(nn.Module):
             k, v = kv_cache["kbuf"][:, :, :n], kv_cache["vbuf"][:, :, :n]
             kv_cache["k"], kv_cache["v"] = k, v  # views of the filled part (used to report the cache size)
             k, v = self._expand(k), self._expand(v)
-            # first pass (prefill): causal over the prompt; later: the single new query may see every cached key
-            y = F.scaled_dot_product_attention(q, k, v, is_causal=written == 0)
+            # first pass (prefill): causal over the prompt; one new token: it may see every cached key; several new
+            # tokens on a filled cache: each sees the cache and the new tokens up to itself
+            mask = None
+            if written > 0 and T > 1:
+                mask = torch.ones(T, n, dtype=torch.bool, device=q.device).tril(diagonal=written)
+            y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=written == 0 and T > 1)
         elif self.flash:
             k, v = self._expand(k), self._expand(v)
             y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.attn_dropout.p if self.training else 0.0, is_causal=True)
@@ -295,6 +299,16 @@ def effective_layers(config):
     return config.n_layer * max(1, getattr(config, "block_repeat", 1))
 
 
+def truncate_kv_caches(caches, n):
+    """Forget every cached token after the first n (speculative decoding drops the rejected draft). Only valid
+    before the cache has slid past its window: a slot that's been overwritten can't be brought back."""
+    for c in caches:
+        assert c.get("written", 0) <= c["max_len"], "can't roll back a cache that has slid"
+        c["written"] = c["len"] = n
+        if "kbuf" in c:
+            c["k"], c["v"] = c["kbuf"][:, :, :n], c["vbuf"][:, :, :n]
+
+
 class GPT(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -325,9 +339,10 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None, kv_caches=None, start_pos=0):
+    def forward(self, idx, targets=None, kv_caches=None, start_pos=0, all_logits=False):
         """kv_caches: optional list of one dict per layer (see CausalSelfAttention) for fast generation;
-        start_pos is then the position of the first token in idx."""
+        start_pos is then the position of the first token in idx. Without targets, only the last position's
+        logits are computed, unless all_logits (speculative decoding checks every drafted token)."""
         device = idx.device
         b, t = idx.size()
         assert t <= self.config.block_size
@@ -368,7 +383,7 @@ class GPT(nn.Module):
                 loss = loss + self.config.moe_aux_weight * torch.stack(aux).mean()
             return logits, loss
         else:
-            logits = self.lm_head(x[:, -1:, :])  # a slice, not x[:, [-1]]: a list index is copied to the GPU, which waits
+            logits = self.lm_head(x if all_logits else x[:, -1:, :])  # a slice, not x[:, [-1]]: a list index is copied to the GPU, which waits
             return logits, None
 
     def rope_tables(self, start, t, device):

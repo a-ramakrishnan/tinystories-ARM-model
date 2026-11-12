@@ -883,6 +883,26 @@ bfloat16 changed the greedy output after 11–38 tokens. **A compiled one-token 
 and a mask so `torch.compile` builds it once, works on the Mac: +25% for the dense model and +35% with experts, but
 nothing for GPT-2 style, which then attends over the whole 256-token window from the first token. Not adopted yet.
 
+**Speculative decoding (I5).** A small model guesses the next few tokens, one at a time; the large model checks
+all of them in a single pass, keeps every guess it agrees with and adds its own next token, so each pass of the large
+model yields 1 to k + 1 tokens. The output is exactly the large model's: the same greedy tokens, or, when sampling,
+the same distribution (a guess is kept with probability min(1, p/q), and a rejected one is redrawn from what's left of
+the large model's distribution). It needed a KV cache that takes several new tokens at once (each sees the cache and
+the new tokens before it) and can forget the rejected ones.
+
+| Target (drafter), greedy, 180 tokens | Target alone | Best with drafting | Guesses kept | Tokens per target pass |
+|---|---|---|---|---|
+| Medium 51M, TinyStories (Tiny 4 × 256, 2,000 updates) | 231–233 tokens/s | 0.99–1.07× (k = 2) | 59–69% | 2.2–2.4 |
+| Medium 51M, TinyStories (Small 6 × 384) | 231–233 | 0.84–0.91× | 67–78% | 2.3–2.5 |
+| Our Large 124M, FineWeb (Small 6 × 384) | 115 | 0.97× (k = 3) | 90% | 3.7 |
+| OpenAI GPT-2 124M (Small 6 × 384) | 98 | 1.33× (k = 2) | 79% | 2.6 |
+
+It works, the large model accepts most guesses, and it's still barely faster. The reason is the same as above: on the
+Mac a pass of these models costs mostly fixed overhead, not maths. A pass of the 124M model costs 8.2 ms for one token
+and 9.2 ms for four, which is what makes checking cheap, but a 6-layer drafter costs 3.5 ms per guess and a 4-layer one
+1.6 ms, so drafting eats most of the saving. It pays when the large model is many times slower per token than the
+drafter: bigger models, or slower hardware. Kept as a tool (`speculative_generate`), not the default.
+
 **Lesson.** Profile before optimizing. The biggest cost wasn't the maths or a missing compiler, but a few lines that
 made Python wait for the GPU, and one list index.
 
@@ -930,7 +950,7 @@ made Python wait for the GPU, and one list index.
 ## 27. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
-- **Inference, first:** speculative decoding with the multi-token head, then better decoding algorithms.
+- **Inference, first:** better decoding algorithms (beam, contrastive, typical sampling, DRY).
 - **Architecture:** re-test depth and layer sharing with longer runs and tuned learning rates.
 - **Inference:** quantization, batching, prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.

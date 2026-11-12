@@ -8,7 +8,7 @@ from dataclasses import asdict
 import torch
 import torch.nn.functional as F
 
-from model import GPT, GPTConfig, apply_rope, rope_cos_sin, effective_layers
+from model import GPT, GPTConfig, apply_rope, rope_cos_sin, effective_layers, truncate_kv_caches
 
 
 def save_model_config(path, config, extra=None):
@@ -213,6 +213,99 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
                "alternatives": list(zip([int(i) for i in alt_ids], [round(p, 4) for p in alt_probs])),
                "ms": (time.perf_counter() - t0) * 1000}
         ids.append(token)
+
+
+@torch.no_grad()
+def speculative_generate(target, draft, prompt_ids, device, max_new_tokens=200, k=4, temperature=0.0, top_k=None,
+                         seed=None):
+    """Speculative decoding (Leviathan et al. 2023; Chen et al. 2023): a small `draft` model guesses k tokens one
+    at a time, then the large `target` model checks all of them in a single pass. Every guess the target agrees
+    with is kept, and the target's own token replaces the first one it rejects, so each pass of the target adds
+    between 1 and k + 1 tokens. Both models must share the tokenizer.
+
+    The output is exactly what the target alone would produce: with temperature <= 0, the same greedy tokens;
+    otherwise, tokens drawn from the same distribution (a guess x is kept with probability min(1, p(x) / q(x)),
+    p the target's and q the draft's probabilities; on a rejection, the token is drawn from max(0, p − q),
+    renormalized). Generation stops at the context window (both caches would have to slide, and a slid cache
+    can't be rolled back). Returns (token ids, stats).
+    """
+    gen = torch.Generator(device="cpu")
+    if seed is not None:
+        gen.manual_seed(seed)
+    block = min(target.config.block_size, draft.config.block_size)
+    ids = list(prompt_ids)[-block:]
+    tensor = lambda toks: torch.tensor([toks], dtype=torch.long, device=device)
+    greedy = temperature <= 0
+
+    def dist(logits):  # (T, V) logits -> greedy: each row's best token id; else probabilities (CPU, float64)
+        if greedy:
+            return logits.argmax(dim=-1).tolist()   # only the ids leave the GPU
+        logits = logits.double().cpu() / temperature
+        if top_k:
+            kth = torch.topk(logits, min(int(top_k), logits.size(-1)), dim=-1).values[:, -1:]
+            logits = logits.masked_fill(logits < kth, float("-inf"))
+        return F.softmax(logits, dim=-1)
+
+    def pick(p):
+        return p if greedy else int(torch.multinomial(p, 1, generator=gen))
+
+    tc = [{"max_len": block} for _ in range(effective_layers(target.config))]
+    dc = [{"max_len": block} for _ in range(effective_layers(draft.config))]
+    # prefill both with all but the last prompt token: the caches always hold every token except the newest one
+    if len(ids) > 1:
+        target(tensor(ids[:-1]), kv_caches=tc, start_pos=0)
+        draft(tensor(ids[:-1]), kv_caches=dc, start_pos=0)
+    t_len = d_len = len(ids) - 1           # tokens in each cache
+    out, rounds, accepted, drafted = [], 0, 0, 0
+    t0 = time.perf_counter()
+    while len(out) < max_new_tokens:
+        n = len(ids)
+        kk = min(k, max_new_tokens - len(out) - 1, block - n)   # room left in the window for the checked tokens
+        if kk < 0:
+            break
+        # 1. the draft guesses kk tokens (first feeding whatever it hasn't seen yet)
+        guesses, q = [], []
+        feed = ids[d_len:]
+        for _ in range(kk):
+            lg, _ = draft(tensor(feed), kv_caches=dc, start_pos=d_len)
+            d_len += len(feed)
+            qi = dist(lg[0, -1:])[0]
+            g = pick(qi)
+            guesses.append(g); q.append(qi); feed = [g]
+        # 2. the target scores the newest token and every guess in one pass
+        lg, _ = target(tensor([ids[-1]] + guesses), kv_caches=tc, start_pos=t_len, all_logits=True)
+        p = dist(lg[0])                    # p[i]: the target's distribution for the token after guess i - 1
+        # 3. keep guesses while the target agrees, then add the target's own token
+        n_ok = 0
+        for i, g in enumerate(guesses):
+            if greedy:
+                ok = p[i] == g
+            else:
+                ok = torch.rand(1, generator=gen).item() < min(1.0, float(p[i][g] / q[i][g]))
+            if not ok:
+                break
+            n_ok += 1
+        if n_ok < len(guesses):
+            if greedy:
+                nxt = p[n_ok]
+            else:
+                resid = (p[n_ok] - q[n_ok]).clamp(min=0)
+                nxt = pick(resid / resid.sum())
+        else:
+            nxt = pick(p[len(guesses)])    # every guess kept: the target's next token comes for free
+        new = guesses[:n_ok] + [nxt]
+        ids += new; out += new
+        # roll back what was rejected: both caches keep everything up to (not including) the newest token
+        t_len = n + n_ok
+        truncate_kv_caches(tc, t_len)
+        d_len = min(d_len, t_len)
+        truncate_kv_caches(dc, d_len)
+        rounds += 1; accepted += n_ok; drafted += len(guesses)
+    secs = time.perf_counter() - t0
+    out = out[:max_new_tokens]
+    return out, {"tokens": len(out), "seconds": secs, "tok_s": len(out) / secs if secs else 0.0, "rounds": rounds,
+                 "acceptance": accepted / drafted if drafted else 0.0,
+                 "tokens_per_target_pass": len(out) / rounds if rounds else 0.0}
 
 
 def benchmark_generation(model, prompt_ids, device, n_tokens=100, seed=1234, repeats=2):

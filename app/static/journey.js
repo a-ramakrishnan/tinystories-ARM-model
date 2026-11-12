@@ -4,6 +4,13 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-12 13:00", kind: "tie", area: "Inference", title: "Speculative decoding",
+    decision: "A small model drafts a few tokens; the large model checks them all in one pass and keeps those it agrees with.",
+    why: "Each pass of the large model could then give several tokens, with exactly the large model's output.",
+    result: { label: "Greedy, identical output; best speed vs the target alone", text: "Medium 51M + Tiny drafter 0.99–1.07× · our Large 124M 0.97× · OpenAI GPT-2 1.33× (59–90% of guesses kept)" },
+    calc: ["a 124M pass costs 8.2 ms for 1 token and 9.2 ms for 4: checking is cheap",
+      "but drafting isn't: 3.5 ms per guess (6 layers), 1.6 ms (4 layers), when the target needs only 4–8 ms per token"],
+    cost: "a Tiny drafter: 2,000 updates on the Mac (~27 min)", anchor: "25-winning-back-generation-speed" },
   { when: "2026-11-12 10:15", kind: "win", area: "Inference", best: true, title: "Winning back generation speed",
     decision: "Remove the new design's overhead (cached RoPE tables, fused RMSNorm, batched experts) and every hidden wait for the GPU in the generation loop.",
     why: "The better design generated about 2× slower (66 tokens/s with experts). For small models, the time goes to overhead, not maths.",
