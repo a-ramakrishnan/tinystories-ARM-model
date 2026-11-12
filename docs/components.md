@@ -17,8 +17,9 @@ The project explains every stage of the **LLM training pipeline** in a local web
    **LayerNorm**, attention scores, the causal mask, softmax, **context vectors**, the output projection,
    **dropout**, **residual connections**, the **feed-forward network** (GELU), and the final **logits and
    softmax** that pick the next token. Each stage is labelled **encoder & decoder** or **decoder only**, and
-   heatmaps show the trained model's real attention. The **Explorer** view draws the whole model at once with
-   real numbers, plus a **logit lens**.
+   heatmaps show the trained model's real attention. The **Explorer** draws the whole model at once with
+   real numbers, as a **Flow** of ribbons or a **Diagram**, with a **logit lens**, a per-token trace through
+   every block, and **▶ Play the data flow**, which follows one token through a block step by step.
 6. **Pre-training**: **AdamW**, warmup and **cosine learning-rate decay**, gradient accumulation and clipping,
    with live **loss curves**, optimizer updates, parameter updates and tokens processed.
 7. **Inference**: streamed **text generation** with **temperature, top-k, top-p, min-p, greedy and

@@ -66,9 +66,20 @@ It opens http://127.0.0.1:8000 in your browser. The sidebar walks through seven 
    input and output token counts, and how every parameter adds up.
 5. **Inside the transformer**: compare encoder-only, decoder-only and encoder–decoder models, then walk a
    prompt through a whole transformer block and out to the next token in 13 stages, and explore your
-   model's real attention heatmaps by layer and head. The **Explorer** draws your model's real numbers for
-   the whole model at once: embeddings, Q/K/V, attention scores, mask and softmax, the feed-forward layer or
-   experts, every block, the next-token probabilities and a logit lens.
+   model's real attention heatmaps by layer and head. The **Explorer** (switch at the top of the step) draws
+   your model's real numbers for the whole model at once, in two looks:
+   - **Flow** (the default): ribbons carry every token from the embedding into each head's Q, K and V, through
+     the chosen head's attention, down into the feed-forward layer and back, past the other blocks, and out to
+     the next-token probabilities. **▶ Play the data flow** follows one token through a block in 11 steps,
+     lighting only the parts that act on it, moving particles along its ribbons and explaining each step with
+     the real numbers; pause with space, step with ← →, or pick the token to follow.
+   - **Diagram**: the numbers themselves, in two bands (attention, then feed-forward): embedding, query, key
+     and value strips, the attention matrix as scores, mask or softmax (click a cell for its calculation), the
+     feed-forward activations or the experts' router.
+
+   Both have head and block controls, sampling sliders for the next-token probabilities, an explanation for
+   every part, **Full screen** (Esc to leave), a **logit lens** table (what the model would predict after each
+   block), and, when you click a token's name, a table that follows it through every block.
 6. **Train**: see what one training step does, how loss relates to probability, and the learning-rate
    schedule; then train and watch loss, speed, optimizer updates, parameters updated and tokens processed.
    Every run is kept in a history table.

@@ -6,8 +6,9 @@
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/a-ramakrishnan/tinystories-ARM-model/blob/main/train_step_by_step.ipynb)
 
 **Built for Apple Silicon.** Build a small GPT-style language model from scratch in PyTorch and train it on
-your Mac's own GPU, step by step, in a local web app. See inside the transformer as it works: attention
-weights, context vectors and next-token probabilities. No cloud, no Nvidia card.
+your Mac's own GPU, step by step, in a local web app. See inside the transformer as it works: watch one
+token flow through a block, step by step, with your model's real attention weights, feed-forward layer and
+next-token probabilities. No cloud, no Nvidia card.
 
 ![Training a language model on an Apple M5 in the TinyStories LM Studio web app](docs/screenshots/train.png)
 

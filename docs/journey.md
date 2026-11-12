@@ -37,8 +37,9 @@ that are easy to get wrong and rarely explained.
 26. [Better decoding algorithms](#26-better-decoding-algorithms)
 27. [8-bit and 4-bit weights](#27-8-bit-and-4-bit-weights)
 28. [Batched generation and prefix caching](#28-batched-generation-and-prefix-caching)
-29. [Lessons](#29-lessons)
-30. [What's next](#30-whats-next)
+29. [Seeing the model work: the Explorer](#29-seeing-the-model-work-the-explorer)
+30. [Lessons](#30-lessons)
+31. [What's next](#31-whats-next)
 
 ---
 
@@ -95,7 +96,7 @@ through the pipeline one step at a time, with real numbers from your own data an
   are cut from the token stream.
 - **Model**: an architecture diagram and a line-by-line parameter count that matches PyTorch's exactly.
 - **Inside the transformer**: 13 stages from token IDs to the next-token prediction, with the trained
-  model's real attention weights.
+  model's real attention weights (and, later, the Explorer: see [section 29](#29-seeing-the-model-work-the-explorer)).
 - **Train**, **Generate** and later **Models**: live loss curves, streamed generation, and model comparison.
 
 **Lesson.** You learn a model by looking inside it. Every number the app shows is computed, not illustrated.
@@ -1013,7 +1014,43 @@ Two side findings:
 **Lesson.** The same property can sink one idea and float another. Fixed overhead per pass made a drafter
 nearly as expensive as the model it was helping, and made 64 samples cost little more than a few.
 
-## 29. Lessons
+## 29. Seeing the model work: the Explorer
+
+The walkthrough in *Inside the transformer* uses made-up 4-number vectors so every value can be checked by
+hand. That explains the maths but hides what a real model does. The **Explorer** shows the real thing: one prompt
+through the model you've chosen, every number its own. Its layout takes the idea of
+[Transformer Explainer](https://poloclub.github.io/transformer-explainer/) (Georgia Tech's Polo Club, built
+around GPT-2), redrawn for this project's designs (RoPE, QK-norm, SwiGLU, experts) and with more to inspect.
+
+- `explain.py` replays the forward pass block by block and records each stage: embeddings, every head's
+  attention before and after the mask and softmax, one layer's queries, keys and values, the feed-forward
+  activations or the router's choices, and each token's vector size. Its final logits match the model's own
+  (within 0.0004), so what's drawn is what the model computes.
+- **Flow** draws it as ribbons: tokens fan into every head's Q, K and V; the chosen head's keys drop into the
+  attention dots, queries run into their rows, values flow to Out; each token dips into the feed-forward
+  layer's wider hidden layer and comes back beside the residual; the last token fans out into the
+  probabilities. **Diagram** shows the numbers.
+- **▶ Play the data flow** follows one token through a block in 11 steps, lighting only what acts on it and
+  explaining each step with its real numbers. For "cat" in "The little cat sat on the mat" (our Small model,
+  block 1, head 1): scores 1.1, 2.3, 1.1 against "The", "little", "cat"; after softmax 20%, 62%, 19%; the
+  feed-forward layer has 3.5% of its 1,024 hidden values strongly active; the vector's size grows from 15.5 to
+  40.7 in that block.
+- The **logit lens** applies the final norm and output layer after every block. For OpenAI's GPT-2 and
+  "…the capital of Germany is", the guess is "not" for seven blocks, "Paris" after block 8 (the earlier answer in
+  the prompt) and "Berlin" (80%) from block 9: you can see where in the network the answer appears.
+- Clicking a token's name follows it through every block: what it attends to, its vector size and its
+  prediction. "cat" attends to itself in block 1, then to "The"; its vector grows from 41 to 144.
+
+Two things had to be fixed to make it readable. Each vector is coloured by its own typical size, because
+GPT-2's vectors have one or two huge dimensions that otherwise wash everything else out. And the long single
+row of stages was split into two bands (attention, then feed-forward), at 40-pixel rows, with a full-screen
+mode.
+
+**Lesson.** Show the real numbers. Made-up examples teach the mechanics; the real model's numbers show things
+the mechanics don't predict: a head that only looks at the previous word, an answer that appears halfway up the
+network, outlier dimensions in GPT-2.
+
+## 30. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1059,8 +1096,10 @@ nearly as expensive as the model it was helping, and made 64 samples cost little
     GPT-2 until its outlier-heavy embedding was kept at 8 bits.
 26. **The same property can sink one idea and float another.** Fixed overhead per pass made speculative
     decoding barely pay, and made 64 samples at once 28–31× the throughput of one.
+27. **Show the real numbers.** Made-up examples teach the mechanics; a real model's numbers show what they
+    don't predict: heads with habits, an answer that appears halfway up the network, outlier dimensions.
 
-## 30. What's next
+## 31. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
 - **Inference:** re-measure generation speed on a quiet machine; expose contrastive search and batched samples in the app.
