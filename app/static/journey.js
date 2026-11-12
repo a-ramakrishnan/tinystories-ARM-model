@@ -5,7 +5,7 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
   { when: "2026-11-12 16:30", kind: "tool", area: "Tooling", title: "The Explorer: watch the real model work",
-    decision: "A second view in Inside the transformer: one prompt through the whole model with its real numbers, as a Flow of ribbons or a Diagram, with a logit lens, a per-token trace and ▶ Play the data flow (one token through a block in 11 steps).",
+    decision: "A second view in Inside the transformer: one prompt through the whole model with its real numbers, as a Flow of ribbons or a Diagram, with a logit lens, a per-token trace and ▶ Play the data flow (one token through every block, step by step).",
     why: "The walkthrough uses made-up 4-dimensional numbers to be checkable by hand; this shows what the real model actually does.",
     result: { label: "Logit lens, OpenAI GPT-2, '…the capital of Germany is'", text: "blocks 1–7: 'not' / 'now' → block 8: 'Paris' (15%) → block 9: 'Berlin' (80%) → final 'Berlin' 67.5%" },
     calc: ["explain.py replays the forward pass block by block; its final logits match the model's own (within 0.0004)",

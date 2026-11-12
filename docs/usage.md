@@ -70,9 +70,11 @@ It opens http://127.0.0.1:8000 in your browser. The sidebar walks through seven 
    your model's real numbers for the whole model at once, in two looks:
    - **Flow** (the default): ribbons carry every token from the embedding into each head's Q, K and V, through
      the chosen head's attention, down into the feed-forward layer and back, past the other blocks, and out to
-     the next-token probabilities. **▶ Play the data flow** follows one token through a block in 11 steps,
-     lighting only the parts that act on it, moving particles along its ribbons and explaining each step with
-     the real numbers; pause with space, step with ← →, or pick the token to follow.
+     the next-token probabilities. **▶ Play the data flow** follows one token through the whole model: block 1
+     step by step, then each later block's attention and feed-forward, with the diagram moving to each block
+     as the token reaches it, and finally the prediction. It lights only the parts that act on the token,
+     moves particles along its ribbons and explains each step with the real numbers; pause with space, step
+     with ← →, jump to a block with the block arrows, or pick the token to follow.
    - **Diagram**: the numbers themselves, in two bands (attention, then feed-forward): embedding, query, key
      and value strips, the attention matrix as scores, mask or softmax (click a cell for its calculation), the
      feed-forward activations or the experts' router.

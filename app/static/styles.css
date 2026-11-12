@@ -960,3 +960,6 @@ body.ex-noscroll { overflow: hidden; }
 .fl-ovnum { font-size: 12px; font-weight: 700; fill: var(--accent); paint-order: stroke; stroke: var(--panel); stroke-width: 4px; }
 .fl-ovnum.masked { fill: var(--muted); }
 .fl-particle { filter: drop-shadow(0 0 4px rgba(122,92,240,.8)); pointer-events: none; }
+
+.fl-dots { flex-wrap: wrap; max-width: 560px; row-gap: 4px; }
+.fl-dot-sep { display: inline-block; width: 1px; height: 12px; background: var(--border); margin: 0 3px; }

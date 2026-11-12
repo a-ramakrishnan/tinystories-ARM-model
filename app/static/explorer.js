@@ -68,6 +68,7 @@ function exRender() {
   }
   if (typeof fpStop === "function" && fp.on) fpStop();          // the player belongs to the Flow view
   $("#fl-player")?.classList.add("hidden");
+  if (!det) { exRun(); return; }       // this block's details weren't loaded (the Flow moved here): fetch them
   const R = EX_ROW, pad = 7, sh = R - 2 * pad;     // row height; strips leave a gap above and below
   // Two bands, one per half of a transformer block, so each fits the width at full size:
   //   band A (attention): tokens | embedding | query | key | value | attention matrix
@@ -281,7 +282,7 @@ async function exSetLayer(n) {
   if (!d) return;
   const passes = d.config.passes;
   ex.layer = (n + passes) % passes;
-  if (!d.layers[ex.layer].detail) await exRun(); else { $("#ex-layer-label").textContent = `Block ${ex.layer + 1} of ${passes}`; exRender(); }
+  if (!d.layers[ex.layer].detail && ex.view !== "flow") await exRun(); else { $("#ex-layer-label").textContent = `Block ${ex.layer + 1} of ${passes}`; exRender(); }
 }
 
 function exInit() {

@@ -72,7 +72,8 @@ def explain_forward(model, ids, device, layer=0, top_n=60, lens_k=3):
             attn_out = a.c_proj(y)
             x = x + attn_out
             m_in = block.ln2(x)
-            rec = {"block": b, "attention": r(att[0]), "resid_norm_mid": r(x[0].norm(dim=-1), 2)}
+            rec = {"block": b, "attention": r(att[0]), "scores": r(scores[0], 2),   # every layer: the player crosses blocks
+                   "resid_norm_mid": r(x[0].norm(dim=-1), 2)}
             mlp = block.mlp
             if isinstance(mlp, MoE):
                 logits_r = mlp.router(m_in)[0].float()
