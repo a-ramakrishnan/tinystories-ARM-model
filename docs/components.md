@@ -147,15 +147,24 @@ can be picked. The Generate step has all the common ones, applied in this order:
 | Min-p | Drops tokens less likely than min-p × the top token's probability | 0 |
 | Typical-p | Keeps the tokens whose surprise is closest to the average surprise (the entropy), up to p of the probability: drops the blandest choices as well as the unlikely ones | 1 |
 
-Presets set them in one click: **Greedy**, **Greedy + DRY** (deterministic, without loops), **Balanced** (temperature 0.8, top-p 0.9, repetition penalty
-1.15), **Creative** (temperature 1.1, min-p 0.05) and **Old default** (temperature 0.8, top-k 50, no
+Presets set them in one click: **Greedy**, **Greedy + DRY** (deterministic, without loops), **Balanced** (temperature 0.8, top-p 0.9, DRY 0.8), **Creative** (temperature 1.1, min-p 0.05) and **Old default** (temperature 0.8, top-k 50, no
 penalty). **Balanced is the default**: with the old default, the FineWeb model often fell into loops,
 repeating one sentence over and over (73% of 4-token runs repeated with greedy decoding, 0% with Balanced).
+Balanced first used a repetition penalty of 1.15; it now uses DRY instead, which was as good at stopping repeats
+and more fluent, because it doesn't push down every word already used ([the comparison](journey.md#26-better-decoding-algorithms)).
+The evaluation suite keeps the original setting (repetition penalty 1.15), so every model is measured the same way.
 
-Two deterministic alternatives to greedy are in `inference.py` (not in the app yet): **contrastive search**
-(`contrastive_search`: of the k most likely tokens, prefer the one whose hidden state is least like anything
-already written) and **beam search** (`beam_search`, optionally never repeating an n-gram). How all of them
-compare is in [Analysis](analysis.md) (step 23).
+**Other ways to generate**, a card below the sliders, offers three more:
+- **Contrastive search** (`contrastive_search`): deterministic like greedy, but of the k most likely tokens it
+  prefers the one whose hidden state is least like anything already written, so it doesn't loop. It's slow
+  (~13 tokens/s for the Small model): each candidate reruns the context without the KV cache.
+- **Beam search** (`beam_search`): keeps the most probable few continuations, optionally never repeating an
+  n-gram.
+- **Several samples at once** (`generate_batch`): n continuations in one batch with the temperature, top-k and
+  top-p above (no penalties). 8 samples of 120 tokens take about as long as two single ones (567 tokens/s in
+  total for the Small model).
+
+How all of them compare is in [Analysis](analysis.md) (steps 23 and 25).
 
 **How the next token is picked** shows the model's top candidates for the token after your prompt and updates
 as you move the sliders: the model's own probability, the probability after the settings, which tokens a

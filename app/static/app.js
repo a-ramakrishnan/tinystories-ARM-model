@@ -1000,7 +1000,8 @@ function renderGenerateCard(s) {
 const SAMPLING_PRESETS = {
   greedy: { label: "Greedy (temperature 0)", temperature: 0, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
   greedydry: { label: "Greedy + DRY 0.8: deterministic, without loops", temperature: 0, top_k: 0, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0, dry_multiplier: 0.8 },
-  balanced: { label: "Balanced: T 0.8, top-p 0.9, repetition 1.15", temperature: 0.8, top_k: 0, top_p: 0.9, min_p: 0, repetition_penalty: 1.15, frequency_penalty: 0, presence_penalty: 0 },
+  balanced: { label: "Balanced: T 0.8, top-p 0.9, DRY 0.8", temperature: 0.8, top_k: 0, top_p: 0.9, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0, dry_multiplier: 0.8 },
+  balancedrep: { label: "Old Balanced: T 0.8, top-p 0.9, repetition 1.15 (the evaluation suite's setting)", temperature: 0.8, top_k: 0, top_p: 0.9, min_p: 0, repetition_penalty: 1.15, frequency_penalty: 0, presence_penalty: 0 },
   creative: { label: "Creative: T 1.1, min-p 0.05", temperature: 1.1, top_k: 0, top_p: 1, min_p: 0.05, repetition_penalty: 1.05, frequency_penalty: 0, presence_penalty: 0 },
   reset: { label: "Old default: T 0.8, top-k 50, no penalty", temperature: 0.8, top_k: 50, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
   topk: { label: "Top-k 10, T 1.0", temperature: 1.0, top_k: 10, top_p: 1, min_p: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 },
@@ -1187,6 +1188,41 @@ async function runCompare() {
         </div>
       </div>`).join("");
   } finally { $("#cmp-busy").classList.add("hidden"); }
+}
+
+// ---------- other ways to generate: contrastive search, beam search, several samples at once ----------
+function showDecodeOpts() {
+  const m = $("#dec-method").value;
+  $$(".dec-opt").forEach((e) => e.classList.toggle("hidden", e.dataset.m !== m));
+}
+
+async function runDecode() {
+  $("#dec-busy").classList.remove("hidden");
+  $("#dec-run").disabled = true;
+  try {
+    const sb = samplingBody();
+    const method = $("#dec-method").value;
+    const r = await api("/api/generate/decode", {
+      prompt: $("#g-prompt").value, method, max_new_tokens: +$("#dec-tokens").value,
+      k: +$("#dec-k").value, alpha: +$("#dec-alpha").value, beams: +$("#dec-beams").value,
+      no_repeat_ngram: +$("#dec-norep").value, n: +$("#dec-n").value,
+      temperature: sb.temperature, top_k: sb.top_k, top_p: sb.top_p,
+    });
+    const what = method === "batch" ? `${r.results.length} samples` : method === "beam" ? "Beam search" : "Contrastive search";
+    $("#dec-summary").innerHTML = `${esc(what)}: <b>${fmt(r.tokens)}</b> tokens in ${r.seconds} s · <b>${fmt(r.tokens_per_sec)}</b> tokens/s in total`;
+    $("#dec-out").innerHTML = r.results.map((x, i) => `
+      <div class="cmp-col">
+        <div class="cmp-name">${method === "batch" ? `Sample ${i + 1}` : esc(what)}</div>
+        <div class="doc cmp-text"><span class="prompt">${esc(r.prompt)}</span>${esc(x.text)}</div>
+        <div class="cmp-stats">
+          <span><b>${x.distinct_2 != null ? Math.round(x.distinct_2 * 100) + "%" : "–"}</b> distinct pairs</span>
+          <span><b>${x.repeated_4grams != null ? Math.round(x.repeated_4grams * 100) + "%" : "–"}</b> repeated 4-grams</span>
+          <span><b>${fmt(x.tokens)}</b> tokens</span>
+        </div>
+      </div>`).join("");
+  } catch (e) {
+    $("#dec-summary").textContent = e.message || String(e);
+  } finally { $("#dec-busy").classList.add("hidden"); $("#dec-run").disabled = false; }
 }
 
 // ---------- KV cache: interactive diagram ----------
@@ -1581,6 +1617,8 @@ document.addEventListener("click", (e) => {
   }
 });
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-spreset]"); if (b) setSampling(SAMPLING_PRESETS[b.dataset.spreset]); });
+$("#dec-method").addEventListener("change", showDecodeOpts);
+$("#dec-run").addEventListener("click", runDecode);
 $("#g-color").addEventListener("change", (e) => $("#g-text").classList.toggle("plain", !e.target.checked));
 $("#g-run").addEventListener("click", (e) => action(e.target, generate));
 $("#g-bench").addEventListener("click", (e) => action(e.target, runBenchmark));

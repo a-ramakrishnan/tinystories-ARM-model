@@ -33,9 +33,9 @@ from pydantic import BaseModel  # noqa: E402
 from catalog import DATASET_CATALOG  # noqa: E402
 from data import (DEFAULT_CONFIG, DEFAULT_DATASET, BatchLoader, SubsetNeeded, dataset_paths, dataset_slug, get_dataset,  # noqa: E402
                   inspect_source, mix_paths, resolve_source, token_count)
-from inference import (attention_maps, benchmark_generation, device_memory, generate_stream,  # noqa: E402
-                       kv_bytes_per_token, load_model, load_model_config, next_token_probs, sampling_distribution,
-                       save_model_config)
+from inference import (attention_maps, beam_search, benchmark_generation, contrastive_search,  # noqa: E402
+                       device_memory, generate_batch, generate_stream, kv_bytes_per_token, load_model,
+                       load_model_config, next_token_probs, sampling_distribution, save_model_config)
 from model import GPT, GPTConfig, param_breakdown  # noqa: E402
 import evaluate  # noqa: E402
 import registry  # noqa: E402
@@ -334,13 +334,13 @@ class InspectReq(BaseModel):
 class SamplingReq(BaseModel):
     temperature: float = 0.8          # 0 = greedy (always the most likely token)
     top_k: int = 0                    # 0 = off
-    top_p: float = 0.9                # 1 = off   (defaults: the Balanced preset)
+    top_p: float = 0.9                # 1 = off   (defaults: the Balanced preset: T 0.8, top-p 0.9, DRY 0.8)
     min_p: float = 0.0                # 0 = off
-    repetition_penalty: float = 1.15  # 1 = off
+    repetition_penalty: float = 1.0   # 1 = off
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
     typical_p: float = 1.0            # 1 = off
-    dry_multiplier: float = 0.0       # 0 = off; DRY: penalize continuing a sequence already in the text
+    dry_multiplier: float = 0.8       # 0 = off; DRY: penalize continuing a sequence already in the text
 
     def clean(self):
         """(temperature, top_k, extras for generate_stream), each clamped to a sensible range."""
@@ -370,6 +370,21 @@ class CompareReq(BaseModel):
     max_new_tokens: int = 120
     seed: int = 1234
     settings: List[SamplingReq]
+
+
+class DecodeReq(BaseModel):
+    prompt: str = "The water cycle is the process by which"
+    method: str = "contrastive"       # "contrastive", "beam" or "batch"
+    max_new_tokens: int = 120
+    k: int = 4                        # contrastive search: candidates per step
+    alpha: float = 0.6                # contrastive search: weight of the "don't repeat yourself" term
+    beams: int = 4                    # beam search
+    no_repeat_ngram: int = 3          # beam search: never repeat an n-gram (0 = off)
+    n: int = 8                        # samples at once
+    temperature: float = 0.8
+    top_k: int = 0
+    top_p: float = 0.9
+    seed: int = 1234
 
 
 class BenchmarkReq(BaseModel):
@@ -885,6 +900,41 @@ def generate_distribution(req: DistributionReq):
     return {"rows": rows, "n_kept": st["n_kept"], "vocab": int(st["raw"].numel()), "kept_mass": round(st["kept_mass"], 4),
             "entropy_raw": round(ent(st["raw"]), 3), "entropy_final": round(ent(st["final"]), 3),
             "prompt_tokens": len(ids), "greedy": st["greedy"]}
+
+
+@app.post("/api/generate/decode")
+def generate_decode(req: DecodeReq):
+    """Other ways to generate: contrastive search, beam search, or several samples of one prompt at once."""
+    require_model()
+    if training_running():
+        raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
+    model, _ = inference_model()
+    ids = S.enc.encode_ordinary(req.prompt[:2000])[-(model.config.block_size - 1):]
+    if not ids:
+        raise HTTPException(400, "Type a prompt first.")
+    n_new = max(10, min(req.max_new_tokens, 200))
+    eot, dev = S.enc.eot_token, S.dev.device
+    t0 = time.time()
+    if req.method == "contrastive":
+        outs = [contrastive_search(model, ids, dev, n_new, k=max(2, min(req.k, 10)), alpha=max(0.0, min(req.alpha, 1.0)),
+                                   stop_token=eot)]
+    elif req.method == "beam":
+        outs = [beam_search(model, ids, dev, n_new, beams=max(1, min(req.beams, 8)),
+                            no_repeat_ngram=max(0, min(req.no_repeat_ngram, 6)), stop_token=eot)]
+    elif req.method == "batch":
+        t = 0.0 if req.temperature <= 0.001 else max(0.05, min(req.temperature, 3.0))
+        outs = generate_batch(model, ids, dev, n=max(1, min(req.n, 64)), max_new_tokens=n_new, temperature=t,
+                              top_k=req.top_k if req.top_k > 0 else None, top_p=max(0.01, min(req.top_p, 1.0)),
+                              seed=req.seed, stop_token=eot)
+    else:
+        raise HTTPException(400, f"Unknown method: {req.method}")
+    if dev == "mps":
+        torch.mps.synchronize()
+    secs = time.time() - t0
+    total = sum(len(o) for o in outs)
+    return {"prompt": req.prompt, "method": req.method, "seconds": round(secs, 2), "tokens": total,
+            "tokens_per_sec": round(total / secs) if secs else None,
+            "results": [{"text": S.enc.decode(o), "tokens": len(o), **repetition_stats(o)} for o in outs]}
 
 
 @app.post("/api/generate/compare")

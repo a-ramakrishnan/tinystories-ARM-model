@@ -946,8 +946,10 @@ Lower is more fluent, but looping text is easy to predict too, so it only compar
   3-grams stops the exact repeats, but the text circles the same idea ("the first woman… the second woman…").
 - **Typical sampling** turned into word salad: a 30M model's "typical" tokens are often nonsense.
 
-DRY and typical-p are sliders in the Generate step, with a **Greedy + DRY** preset; contrastive and beam search
-are functions in `inference.py` for now. Six prompts is a small sample, and these are 30M models.
+DRY and typical-p are sliders in the Generate step, with a **Greedy + DRY** preset, and **Balanced** now uses
+DRY 0.8 instead of the repetition penalty (the evaluation suite keeps the old setting, so every model is measured
+the same way). Contrastive search, beam search and several samples at once are in the Generate step's **Other ways
+to generate** card. Six prompts is a small sample, and these are 30M models.
 
 **Lesson.** Penalize what you actually don't want. A repetition penalty punishes words; the problem was
 repeated *sequences*. DRY targets exactly that and costs greedy decoding nothing on the stories it was fluent on.

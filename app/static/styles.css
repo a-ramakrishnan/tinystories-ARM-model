@@ -784,3 +784,8 @@ label.inline.grow input[type="range"] { flex: 1; }
 .lab-zips { display: flex; flex-direction: column; }
 .lab-zip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .lab-zip .lab-mname { flex: 1; min-width: 200px; }
+
+/* Other ways to generate */
+.dec-opt { display: inline-flex; gap: 10px; }
+.dec-opt input[type="number"] { width: 64px; }
+#dec-summary { margin: 6px 0 2px; }

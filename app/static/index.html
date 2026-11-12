@@ -433,7 +433,7 @@
           <div class="fields three sliders">
             <label>Top-p <output id="g-topp-v"></output><input id="g-topp" type="range" min="0.05" max="1" step="0.05" value="0.9"></label>
             <label>Min-p <output id="g-minp-v"></output><input id="g-minp" type="range" min="0" max="0.3" step="0.01" value="0"></label>
-            <label>Repetition penalty <output id="g-rep-v"></output><input id="g-rep" type="range" min="1" max="2" step="0.05" value="1.15"></label>
+            <label>Repetition penalty <output id="g-rep-v"></output><input id="g-rep" type="range" min="1" max="2" step="0.05" value="1"></label>
           </div>
           <div class="fields three sliders">
             <label>Frequency penalty <output id="g-freq-v"></output><input id="g-freq" type="range" min="0" max="2" step="0.1" value="0"></label>
@@ -441,7 +441,7 @@
             <label>Typical-p <output id="g-typ-v"></output><input id="g-typ" type="range" min="0.2" max="1" step="0.05" value="1"></label>
           </div>
           <div class="fields three sliders">
-            <label>DRY (repeated sequences) <output id="g-dry-v"></output><input id="g-dry" type="range" min="0" max="2" step="0.1" value="0"></label>
+            <label>DRY (repeated sequences) <output id="g-dry-v"></output><input id="g-dry" type="range" min="0" max="2" step="0.1" value="0.8"></label>
             <div class="preset-chips"><span class="muted small">Presets (Balanced is the default)</span>
               <button class="chip-btn" data-spreset="greedy">Greedy</button><button class="chip-btn" data-spreset="greedydry" title="Greedy with the DRY penalty: the same text every time, without loops">Greedy + DRY</button><button class="chip-btn" data-spreset="balanced">Balanced</button><button class="chip-btn" data-spreset="creative">Creative</button><button class="chip-btn" data-spreset="reset" title="Temperature 0.8, top-k 50, no penalty: the default before Balanced">Old default</button>
             </div>
@@ -507,6 +507,22 @@
             <span id="cmp-busy" class="muted small hidden"><span class="spinner"></span> Generating…</span>
           </div>
           <div id="cmp-out" class="cmp-out"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Other ways to generate</h3><span class="kind decoder">Decoder inference</span></div>
+          <p class="muted small"><b>Contrastive search</b> is deterministic like greedy but doesn't loop: of the k most likely tokens it prefers the one least like anything already written. <b>Beam search</b> keeps the most probable few continuations at every step (optionally never repeating a 3-token sequence). <b>Several samples at once</b> draws many continuations in one batch, almost as fast as one, using the temperature, top-k and top-p above (penalties aren't applied).</p>
+          <div class="actions tight">
+            <label class="inline">Method <select id="dec-method" class="select"><option value="contrastive">Contrastive search</option><option value="beam">Beam search</option><option value="batch">Several samples at once</option></select></label>
+            <span class="dec-opt" data-m="contrastive"><label class="inline">Candidates <input id="dec-k" type="number" min="2" max="10" value="4"></label> <label class="inline">Alpha <input id="dec-alpha" type="number" min="0" max="1" step="0.1" value="0.6"></label></span>
+            <span class="dec-opt hidden" data-m="beam"><label class="inline">Beams <input id="dec-beams" type="number" min="1" max="8" value="4"></label> <label class="inline">No repeated n-gram <input id="dec-norep" type="number" min="0" max="6" value="3"></label></span>
+            <span class="dec-opt hidden" data-m="batch"><label class="inline">Samples <select id="dec-n" class="select"><option>4</option><option selected>8</option><option>16</option><option>32</option></select></label></span>
+            <label class="inline">Tokens <select id="dec-tokens" class="select"><option>60</option><option selected>120</option><option>200</option></select></label>
+            <button id="dec-run" class="btn">Generate</button>
+            <span id="dec-busy" class="muted small hidden"><span class="spinner"></span> Generating…</span>
+          </div>
+          <div id="dec-summary" class="muted small"></div>
+          <div id="dec-out" class="cmp-out"></div>
         </div>
 
         <div class="card">
