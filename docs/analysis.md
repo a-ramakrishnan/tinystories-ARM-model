@@ -216,8 +216,23 @@ Identical to the published numbers except ARC-Easy's length-normalized accuracy 
 the standard one and other models' numbers can be compared with published results. Chance is 25% for HellaSwag
 and ARC-Easy, 50% for PIQA and Winogrande. All five took 9.3 minutes for GPT-2 on an M5 (HellaSwag 7.2).
 
-Our Large 124M model with the best design is next (run it from the Benchmarks page, or
-`python3 benchmarks.py mini-fineweb-edu-202611121109-80c7d0`).
+Then our Large 124M model with the best design (30,000 steps, 246M tokens of Mini FineWeb-Edu):
+
+| ★ metric (the one usually quoted) | Chance | Our 124M, best design | OpenAI GPT-2 small |
+|---|---|---|---|
+| HellaSwag (acc_norm) | 25% | 27.9% ± 0.4 | **31.1%** |
+| LAMBADA (acc; perplexity of the right word) | ≈0% | 9.6% (7,309) | **32.6%** (40) |
+| ARC-Easy (acc) | ~25% | 42.1% ± 1.0 | **43.8%** |
+| PIQA (acc) | 50% | 58.4% ± 1.2 | **62.9%** |
+| Winogrande (acc) | 50% | 50.6% ± 1.4 | 51.6% |
+| Average | 30% | 37.7% | **44.4%** |
+
+The gaps follow the data. **ARC-Easy** (school science) is within 1.7 points of GPT-2: that's what educational
+web pages teach. **HellaSwag** and **PIQA** (everyday situations and how-to common sense) trail by 3–5 points: above
+chance, but those situations are rare in educational pages. **LAMBADA** is the big gap: its passages are from
+novels, and FineWeb-Edu filters fiction out, so the model has hardly read narrative prose (perplexity 7,309 on
+the right word, against GPT-2's 40). **Winogrande** is at chance for both: too hard at this size. GPT-2 read about
+40× more text, and of every kind. Measured in 18.5 minutes on an M5 (with a 256-token context).
 
 ## Measured on a Colab T4
 

@@ -1084,6 +1084,11 @@ A short check picked the learning rate first: 1,000 updates each at 6e-4, 1.2e-3
   data: GPT-2 read billions of tokens, these models a quarter of a billion.
 - **Text:** fluent and on topic, but it still loops on ideas ("a solid, solid, and solid form"): a 124M model
   that has read 246M tokens.
+- **Standard benchmarks** (zero-shot, scored like EleutherAI's harness; GPT-2 reproduces its published scores
+  exactly): ARC-Easy 42.1% (GPT-2 43.8%), HellaSwag 27.9% (31.1%), PIQA 58.4% (62.9%), Winogrande 50.6% (51.6%,
+  both at chance), LAMBADA 9.6% (32.6%). Close on school science, which is what the data teaches; far behind on
+  LAMBADA's novels, because educational web pages contain almost no fiction. The benchmarks show *what kind* of
+  data is missing, not just how much.
 
 It took 3 h 38 min (18,759 tokens/s, 12.9 GB peak memory), 35% slower per step than the GPT-2-style model:
 SwiGLU's three matrices and QK-norm cost time on the GPU even at the same parameter count.

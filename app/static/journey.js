@@ -4,6 +4,13 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-12 19:00", kind: "tool", area: "Tooling", title: "Standard benchmarks",
+    decision: "Score HellaSwag, LAMBADA, ARC-Easy, PIQA and Winogrande zero-shot, the way EleutherAI's lm-evaluation-harness does; check on GPT-2 first.",
+    why: "Our own evaluation suite compares our models with each other; published benchmarks compare them with everyone else's.",
+    result: { label: "★ metrics: our 124M best design vs OpenAI GPT-2 small", text: "ARC-Easy 42.1% vs 43.8% · HellaSwag 27.9% vs 31.1% · PIQA 58.4% vs 62.9% · Winogrande 50.6% vs 51.6% · LAMBADA 9.6% vs 32.6%" },
+    calc: ["GPT-2 measured here = published: HellaSwag 28.92 / 31.14, LAMBADA 32.56 (ppl 40.06), PIQA 62.89, Winogrande 51.62",
+      "close on school science (what educational pages teach); far behind on LAMBADA's novels (no fiction in FineWeb-Edu)"],
+    cost: "no training: 9 minutes for GPT-2 and 18 for ours on an M5", anchor: "30-the-best-design-at-gpt-2-size" },
   { when: "2026-11-12 16:45", kind: "win", area: "Architecture", best: true, title: "The best design at GPT-2 size",
     decision: "Train the Large model (124M) again with RoPE, SwiGLU, no biases and QK-norm, learning rate 1.2e-3, 30,000 steps on Mini FineWeb-Edu.",
     why: "Every architecture win was measured on a 30M model over short runs. Does it hold at GPT-2's size over a full run?",
