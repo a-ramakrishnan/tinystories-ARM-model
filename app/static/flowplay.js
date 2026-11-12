@@ -82,8 +82,13 @@ function fpSteps(t) {
     steps.push({ layer: N - 1, name: "Next token", lit: [".fl-pband", '[data-p="pline"]', ".fl-probs", ".fl-last", row('[data-p="blockline"]'), 'text[data-focus="probs"]'], paths: [row('[data-p="blockline"]'), '[data-p="pline"]'],
       text: `After the last block: a final ${norm} and the output layer (the embedding table again) score all ${fmt(c.vocab_size)} tokens, and softmax turns the scores into probabilities: ${ps.slice(0, 4).map((p) => `<code>${esc(p.text)}</code> ${fpPct(p.p)}`).join(" · ")}. With temperature ${ex.temp}, top-k ${ex.topk || "off"} and top-p ${ex.topp >= 1 ? "off" : ex.topp}, the next token is drawn from ${kept} candidate${kept === 1 ? "" : "s"}.` });
   } else {
-    steps.push({ layer: N - 1, name: "Its prediction", lit: [row(".fl-mlprow"), row('[data-p="blockline"]'), row(".fl-blk")], paths: [row('[data-p="blockline"]')],
-      text: `After all ${N} blocks, the model's prediction for the token after ${fpTok(t)} is <code>${esc(last.text)}</code> (${fpPct(last.p)}). The real next token is ${fpTok(t + 1)}. In training, the loss measures how surprised the model is by the real one; when generating, only the last token's prediction is used.` });
+    const real = exRealNext(t);
+    steps.push({ layer: N - 1, name: "Its prediction", lit: [row(".fl-mlprow"), row('[data-p="blockline"]'), row(".fl-blk"), ".fl-pband", '[data-p="pline"]', ".fl-probs", ".fl-last", 'text[data-focus="probs"]', ".fl-realtxt", ".fl-realbg"],
+      paths: [row('[data-p="blockline"]'), '[data-p="pline"]'],
+      text: `After all ${N} blocks, the final ${norm} and output layer turn ${fpTok(t)}'s vector into a prediction for the token after it (on the right): <code>${esc(last.text)}</code> is its top guess, ${fpPct(last.p)} as the model computes it` +
+        ` (${fpPct(exProbs(t)[0].p)} on the right, after temperature ${ex.temp}${ex.topk ? `, top-k ${ex.topk}` : ""}${ex.topp < 1 ? ` and top-p ${ex.topp}` : ""}). ` +
+        (real ? `The real next token is ${fpTok(t + 1)}: the model gave it ${(real.p * 100).toFixed(real.p < 0.01 ? 2 : 1)}%, its choice no. ${real.rank}${real.rank === 1 ? " (a correct guess)" : ""}. ` : "") +
+        `In training, the loss is how surprised the model is by the real token (−log of that probability: ${real ? (-Math.log(Math.max(real.p, 1e-9))).toFixed(2) : "–"}); when generating, only the last token's prediction is used.` });
   }
   return steps;
 }
@@ -225,7 +230,7 @@ $("#fl-play").addEventListener("click", () => {
 });
 $("#fl-prev").addEventListener("click", () => fpGo(-1));
 $("#fl-next").addEventListener("click", () => fpGo(1));
-$("#fl-stop").addEventListener("click", fpStop);
+$("#fl-stop").addEventListener("click", () => { fpStop(); exRender(); });   // back to the clicked / last token's prediction
 $("#fl-tok").addEventListener("change", () => { if (fp.on) fpStart(0); });
 $("#fl-dots").addEventListener("click", (e) => {
   const b = e.target.closest("[data-fstep]");

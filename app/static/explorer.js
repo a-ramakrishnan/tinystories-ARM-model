@@ -203,16 +203,26 @@ function exTokenPanel() {
   $$("#ex-token tr[data-block]").forEach((tr) => tr.addEventListener("click", () => action(null, () => exSetLayer(+tr.dataset.block))));
 }
 
-function exProbBox() {
-  const d = ex.data, last = d.tokens[d.tokens.length - 1].text;
-  const probs = exProbs().slice(0, 12);
-  const kept = exProbs().filter((p) => !p.cut).length;
-  $("#ex-probs").innerHTML = `<div class="ex-ptitle" data-focus="probs">Next token after <code>${esc(last)}</code> <span class="muted small">${kept} of the top ${d.logits.length} kept</span></div>` +
-    probs.map((p) => `<div class="ex-prow${p.cut ? " cut" : ""}"><code>${esc(p.text.replace(/\n/g, "↵")) || "␠"}</code><span class="ex-pb"><i style="width:${(p.p * 100).toFixed(1)}%"></i></span><span class="muted small">${p.cut ? "cut" : (p.p * 100).toFixed(1) + "%"}</span></div>`).join("");
+// the token whose prediction is shown: the one the player follows, else the clicked one, else the last
+function exProbTok() {
+  const T = ex.data.tokens.length;
+  if (typeof fp !== "undefined" && fp.on && fp.t != null) return Math.min(fp.t, T - 1);
+  return ex.tok != null && ex.tok < T ? ex.tok : T - 1;
 }
 
-function exProbs() {
-  const lg = ex.data.logits;
+// the real next token after position t (none for the last token): {id, text, p, rank}
+const exRealNext = (t) => ex.data.pos_logits?.[t]?.next || null;
+
+function exProbBox() {
+  const d = ex.data, t = exProbTok(), real = exRealNext(t);
+  const all = exProbs(t), probs = all.slice(0, 12), kept = all.filter((p) => !p.cut).length;
+  $("#ex-probs").innerHTML = `<div class="ex-ptitle" data-focus="probs">Next token after <code>${esc(d.tokens[t].text)}</code> <span class="muted small">${kept} of the top ${all.length} kept</span></div>` +
+    probs.map((p) => `<div class="ex-prow${p.cut ? " cut" : ""}${real && p.id === real.id ? " real" : ""}"><code>${real && p.id === real.id ? "✓ " : ""}${esc(p.text.replace(/\n/g, "↵")) || "␠"}</code><span class="ex-pb"><i style="width:${(p.p * 100).toFixed(1)}%"></i></span><span class="muted small">${p.cut ? "cut" : (p.p * 100).toFixed(1) + "%"}</span></div>`).join("") +
+    (real ? `<div class="muted small ex-realnext">The real next token is <code>${esc(real.text)}</code>: the model gave it ${(real.p * 100).toFixed(real.p < 0.01 ? 2 : 1)}% (its choice no. ${real.rank}).</div>` : "");
+}
+
+function exProbs(pos) {
+  const lg = (pos != null && ex.data.pos_logits?.[pos]?.top) || ex.data.logits;
   const t = Math.max(0.05, ex.temp);
   const m = Math.max(...lg.map((x) => x.logit / t));
   let ps = lg.map((x) => ({ ...x, p: Math.exp(x.logit / t - m) }));

@@ -41,8 +41,9 @@ function exRenderFlow(d, c, T, L, H) {
   const xh = xm + 180, yH0 = yM(0), yH1 = Math.min(yM(T - 1) + T * MR * (ratio - 1) + 40, y0 + span + 260);
   const ybot = (i) => yM(T - 1) + 24 + (yH1 - yM(T - 1) - 24) * (i + 1) / T;
   const xRes2 = xh + 180, xBlk = xRes2 + 36, xLast = xBlk + 96, xProb = xLast + 110;
-  const probs = exProbs().slice(0, 18), PR = 26;
-  const W = xProb + 300, Hh = Math.max(TOP + span, yH1, y0 + probs.length * PR) + 60;
+  const pt = exProbTok(), real = exRealNext(pt);              // whose prediction the column shows
+  const probs = exProbs(pt).slice(0, 18), PR = 26;
+  const W = xProb + 300, Hh = Math.max(TOP + span, yH1, y0 + probs.length * PR + 60) + 60;
   let s = "";
 
   // ---------- titles ----------
@@ -52,7 +53,7 @@ function exRenderFlow(d, c, T, L, H) {
   s += flText(xm + 100, 26, c.n_experts > 1 ? "Experts" : "Feed-forward (MLP)", "ex-h", "start", 'data-focus="mlp"') +
     flText(xm + 100, 44, c.n_experts > 1 ? `each token to ${c.moe_top_k} of ${c.n_experts} experts` : `${c.n_embd} → ${L.mlp.width} → ${c.n_embd} numbers per token`, "ex-sub");
   s += flText(xBlk - 6, 26, `×${c.passes} blocks`, "ex-h", "start", 'data-focus="blocks"');
-  s += flText(xProb, 26, "Probabilities", "ex-h", "start", 'data-focus="probs"') + flText(xProb, 44, `next token after "${esc(d.tokens[T - 1].text.trim())}"`, "ex-sub");
+  s += flText(xProb, 26, "Probabilities", "ex-h", "start", 'data-focus="probs"') + flText(xProb, 44, `next token after "${esc(d.tokens[pt].text.trim())}"`, "ex-sub");
 
   // ---------- tokens and the fan into every head's Q/K/V ----------
   const tabY = (h, k) => TOP + h * (groupH + groupGap) + k * (tab + tabGap);
@@ -170,18 +171,24 @@ function exRenderFlow(d, c, T, L, H) {
   }
   s += flText(xBlk + 28, yM(T - 1) + bw / 2 + 20, `${c.passes - 1 - ex.layer} more`, "ex-sub", "middle");
   s += `</g><g data-focus="probs">`;
-  const yl = yM(T - 1);
+  const yl = yM(pt);
   s += `<path class="fl-pband" d="${flBand(xBlk + 60, yl - bw / 2, yl + bw / 2, xProb + 10, y0 + 6, y0 + probs.length * PR, 0.5)}"/>`;
   s += `<path class="fl-pline" data-p="pline" d="${flCurve(xBlk + 60, yl, xProb + 60, y0 + 20, 0.5)}"/>`;
-  s += flText(xLast + 10, yl + 5, flTok(d.tokens[T - 1].text), "ex-tok fl-last", "middle");
+  s += flText(xLast + 10, yl + 5, flTok(d.tokens[pt].text), "ex-tok fl-last", "middle");
   const top = probs.reduce((a, b) => (b.p > a.p ? b : a), probs[0]);
   s += `<g class="fl-probs">`;
   probs.forEach((p, k) => {
-    const y = y0 + 20 + k * PR, on = p === top;
-    s += flText(xProb + 120, y + 5, flTok(p.text), `fl-ptok${p.cut ? " cut" : ""}${on ? " top" : ""}`, "end");
+    const y = y0 + 20 + k * PR, on = p === top, isReal = real && p.id === real.id;
+    if (isReal) s += `<rect x="${xProb - 6}" y="${y - 12}" width="290" height="22" rx="6" class="fl-realbg"/>`;
+    s += flText(xProb + 120, y + 5, (isReal ? "✓ " : "") + flTok(p.text), `fl-ptok${p.cut ? " cut" : ""}${on ? " top" : ""}${isReal ? " real" : ""}`, "end");
     s += `<rect x="${xProb + 130}" y="${y - 2}" width="${Math.max(2, p.p * 110)}" height="${on ? 5 : 4}" rx="2" class="fl-pbar${p.cut ? " cut" : ""}${on ? " top" : ""}"/>`;
     s += flText(xProb + 136 + Math.max(2, p.p * 110), y + 5, p.cut ? "0%" : `${(p.p * 100).toFixed(2)}%`, `fl-ppct${on ? " top" : ""}`);
   });
+  if (real) {
+    const y = y0 + 20 + probs.length * PR + 10, inList = probs.some((p) => p.id === real.id);
+    s += flText(xProb + 10, y + 5, `real next: "${esc(real.text.trim())}"`, "fl-realtxt") +
+      flText(xProb + 10, y + 23, `${(real.p * 100).toFixed(real.p < 0.01 ? 2 : 1)}% · the model's choice no. ${real.rank}${inList ? "" : " (not in this list)"}`, "ex-sub");
+  }
   s += `</g>`;
   s += `</g>`;
 

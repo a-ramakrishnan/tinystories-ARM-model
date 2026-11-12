@@ -103,9 +103,21 @@ def explain_forward(model, ids, device, layer=0, top_n=60, lens_k=3):
                 }
             out["layers"].append(rec)
             n_pass += 1
-    final = model.lm_head(model.transformer.ln_f(x))[0, -1].float()
+    final_all = model.lm_head(model.transformer.ln_f(x))[0].float()            # (T, V): a prediction per position
+    final = final_all[-1]
     tv, ti = torch.topk(final, top_n)
     out["logits"] = [{"id": int(i), "logit": round(float(v), 3)} for v, i in zip(tv, ti)]
+    # every position's prediction (what comes after that token), and how the real next token fared
+    logp = F.log_softmax(final_all, dim=-1)
+    pv, pi = torch.topk(final_all, top_n, dim=-1)
+    out["pos_logits"] = []
+    for t in range(T):
+        item = {"top": [{"id": int(i), "logit": round(float(v), 3)} for v, i in zip(pv[t], pi[t])]}
+        if t + 1 < T:
+            nid = ids[t + 1]
+            item["next"] = {"id": int(nid), "p": round(float(logp[t, nid].exp()), 4),
+                            "rank": int((final_all[t] > final_all[t, nid]).sum()) + 1}
+        out["pos_logits"].append(item)
     out["config"] = {"n_layer": cfg.n_layer, "passes": n_pass, "n_head": cfg.n_head, "n_kv_head": cfg.n_kv_head or cfg.n_head,
                      "n_embd": cfg.n_embd, "head_dim": hd, "pos_encoding": cfg.pos_encoding, "norm": cfg.norm,
                      "mlp": cfg.mlp, "qk_norm": cfg.qk_norm, "n_experts": cfg.n_experts, "moe_top_k": cfg.moe_top_k,

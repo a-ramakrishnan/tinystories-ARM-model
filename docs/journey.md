@@ -1034,7 +1034,9 @@ around GPT-2), redrawn for this project's designs (RoPE, QK-norm, SwiGLU, expert
   on it and explaining each step with its real numbers; the diagram moves to each block as the token reaches it.
   For "cat" in "The little cat sat on the mat" (our Small model, head 1): in block 1, scores 1.1, 2.3, 1.1 against
   "The", "little", "cat", after softmax 20%, 62%, 19%, 3.5% of the 1,024 hidden values strongly active, and the
-  vector grows from 15.5 to 40.7. By block 3 its attention has moved to "The" (61%; head 6 puts 96% there).
+  vector grows from 15.5 to 40.7. By block 3 its attention has moved to "The" (61%; head 6 puts 96% there). At
+  the end, its own prediction: "was" (33%), while the real next word, "sat", is only the model's 42nd choice
+  (0.28%, a loss of 5.88 for that token). After "sat", it does guess "on" first (35%).
 - The **logit lens** applies the final norm and output layer after every block. For OpenAI's GPT-2 and
   "…the capital of Germany is", the guess is "not" for seven blocks, "Paris" after block 8 (the earlier answer in
   the prompt) and "Berlin" (80%) from block 9: you can see where in the network the answer appears.

@@ -963,3 +963,9 @@ body.ex-noscroll { overflow: hidden; }
 
 .fl-dots { flex-wrap: wrap; max-width: 560px; row-gap: 4px; }
 .fl-dot-sep { display: inline-block; width: 1px; height: 12px; background: var(--border); margin: 0 3px; }
+
+.fl-realbg { fill: var(--good-soft); stroke: var(--good); stroke-width: 1; }
+.fl-ptok.real { fill: var(--good); font-weight: 700; }
+.fl-realtxt { font-size: 14px; font-weight: 600; fill: var(--good); }
+.ex-prow.real code { color: var(--good); font-weight: 700; }
+.ex-realnext { margin-top: 6px; }

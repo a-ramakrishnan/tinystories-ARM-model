@@ -99,7 +99,9 @@ the mask; softmax; the weighted values flowing to Out; the residual addition; th
 experts' router). Every later block then takes two steps with that block's own numbers: **attention** (the
 token's weights in the chosen head, the sharpest of all heads, the values it mixes in) and **feed-forward** (how
 much of the hidden layer is active, and what the model would predict if it stopped after that block). The last
-step is the next-token probabilities, or, for an earlier token, its own prediction against the real next token:
+step is the next-token probabilities, or, for an earlier token, its own prediction against the real next token
+(the probabilities column switches to that token, the real next token is marked ✓, and its probability, rank and
+loss are given):
 20 steps for a 6-block model, 32 for GPT-2's 12 blocks. Each step lights only the parts that work on the token,
 sends particles along its ribbons and explains the step with real numbers (scores and weights, the values it
 mixes, how much of the hidden layer is active, how its vector grows). It plays on its own (about 4 s a step);

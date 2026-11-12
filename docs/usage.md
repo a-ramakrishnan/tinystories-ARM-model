@@ -79,7 +79,9 @@ It opens http://127.0.0.1:8000 in your browser. The sidebar walks through seven 
      and value strips, the attention matrix as scores, mask or softmax (click a cell for its calculation), the
      feed-forward activations or the experts' router.
 
-   Both have head and block controls, sampling sliders for the next-token probabilities, an explanation for
+   The next-token probabilities are for the token you follow or click (the last one otherwise); for an earlier
+   token, the real next token is marked ✓ with the probability and rank the model gave it. Both views have head
+   and block controls, sampling sliders for those probabilities, an explanation for
    every part, **Full screen** (Esc to leave), a **logit lens** table (what the model would predict after each
    block), and, when you click a token's name, a table that follows it through every block.
 6. **Train**: see what one training step does, how loss relates to probability, and the learning-rate

@@ -686,6 +686,11 @@ def explain_endpoint(req: ExplainReq):
                 c["text"] = dec(c["id"])
     for c in out["logits"]:
         c["text"] = dec(c["id"])
+    for item in out["pos_logits"]:
+        for c in item["top"]:
+            c["text"] = dec(c["id"])
+        if "next" in item:
+            item["next"]["text"] = dec(item["next"]["id"])
     return {"tokens": tokens_of(ids), "source": source, **out}
 
 
