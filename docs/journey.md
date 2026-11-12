@@ -36,8 +36,9 @@ that are easy to get wrong and rarely explained.
 25. [Winning back generation speed](#25-winning-back-generation-speed)
 26. [Better decoding algorithms](#26-better-decoding-algorithms)
 27. [8-bit and 4-bit weights](#27-8-bit-and-4-bit-weights)
-28. [Lessons](#28-lessons)
-29. [What's next](#29-whats-next)
+28. [Batched generation and prefix caching](#28-batched-generation-and-prefix-caching)
+29. [Lessons](#29-lessons)
+30. [What's next](#30-whats-next)
 
 ---
 
@@ -982,7 +983,32 @@ only the storage shrinks.
 **Lesson.** Quantization error depends on the weights, not just the bit count: the same 4 bits that cost our
 model 0.015 broke GPT-2 until one outlier-heavy matrix was kept at 8 bits. Measure per layer.
 
-## 28. Lessons
+## 28. Batched generation and prefix caching
+
+The same fact that made speculative decoding disappointing makes batching powerful: a pass of these models costs
+mostly fixed overhead. `generate_batch` reads a prompt once, copies its KV cache to n rows and runs all n samples'
+next tokens through the model in one batched pass per step.
+
+| Tokens/s in total (T 0.8, top-p 0.9, 150 tokens) | 1 stream (the app) | 4 samples | 16 | 64 |
+|---|---|---|---|---|
+| Small, best dense (TinyStories) | 92 | 340 | 1,083 | **2,864** (31×) |
+| Large 124M (FineWeb) | 60 | 216 | 852 | **1,682** (28×) |
+
+Each sample runs at about half the single-stream speed, but 64 of them together give 28–31× the throughput. With
+greedy decoding every row is identical to `generate_stream`'s output. It's the way to make many samples: best-of-n,
+comparing settings, building a dataset.
+
+Two side findings:
+- **Prefix caching isn't worth it at this size.** It saves re-reading a prompt that was seen before, and reading
+  a 250-token prompt takes 17 ms (Small) to 25 ms (124M). With a 256-token window there's at most ~16 ms to save.
+- **Top-p sampling is expensive here.** It sorts all 50,257 probabilities every token, which halves the app's
+  single-stream speed (Balanced: 60–92 tokens/s, against 110–230 greedy). A faster exact top-p (sort only the top
+  few hundred tokens when they already hold p of the probability) is a possible next fix.
+
+**Lesson.** The same property can sink one idea and float another. Fixed overhead per pass made a drafter
+nearly as expensive as the model it was helping, and made 64 samples cost little more than a few.
+
+## 29. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1026,11 +1052,13 @@ model 0.015 broke GPT-2 until one outlier-heavy matrix was kept at 8 bits. Measu
     greedy's loops on stories without making the text less fluent, where a repetition penalty punishes every word.
 25. **Quantization error depends on the weights, not just the bits.** 4 bits cost our 124M model 0.015 and broke
     GPT-2 until its outlier-heavy embedding was kept at 8 bits.
+26. **The same property can sink one idea and float another.** Fixed overhead per pass made speculative
+    decoding barely pay, and made 64 samples at once 28–31× the throughput of one.
 
-## 29. What's next
+## 30. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
-- **Inference, first:** prefix caching and batched generation.
+- **Inference:** a faster exact top-p (the app's default sampling halves generation speed).
 - **Architecture:** re-test depth and layer sharing with longer runs and tuned learning rates.
 - **Inference:** quantization, batching, prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.

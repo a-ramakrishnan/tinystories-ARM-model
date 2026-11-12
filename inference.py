@@ -263,6 +263,55 @@ def generate_stream(model, prompt_ids, device, max_new_tokens=200, temperature=1
         ids.append(token)
 
 
+@torch.no_grad()
+def generate_batch(model, prompt_ids, device, n=8, max_new_tokens=100, temperature=0.8, top_k=None, top_p=1.0,
+                   seed=None, stop_token=None):
+    """n samples from one prompt at once (roadmap I6): the prompt is read once, its KV cache copied to n rows,
+    then every step runs all n new tokens through the model in one batch. For a small model a pass costs mostly
+    fixed overhead, so n samples cost little more than one. Sampling: temperature, top-k, top-p (no penalties).
+    Returns n lists of token ids (each cut at stop_token). Stops at the context window."""
+    if seed is not None:
+        torch.manual_seed(seed)
+    block = model.config.block_size
+    ids = list(prompt_ids)[-block:]
+    caches = [{"max_len": block} for _ in range(effective_layers(model.config))]
+    logits, _ = model(torch.tensor([ids], device=device), kv_caches=caches, start_pos=0)
+    for c in caches:                            # the prompt's keys and values, once per sample
+        c["kbuf"] = c["kbuf"].expand(n, -1, -1, -1).contiguous()
+        c["vbuf"] = c["vbuf"].expand(n, -1, -1, -1).contiguous()
+    logits = logits[:, -1].expand(n, -1)
+    pos, out, done = len(ids), [[] for _ in range(n)], [False] * n
+    for _ in range(min(max_new_tokens, block - len(ids) + 1)):
+        lg = logits.float()
+        if temperature <= 0:
+            nxt = lg.argmax(dim=-1)
+        else:
+            lg = lg / temperature
+            if top_k:
+                kth = torch.topk(lg, min(int(top_k), lg.size(-1)), dim=-1).values[:, -1:]
+                lg = lg.masked_fill(lg < kth, float("-inf"))
+            p = F.softmax(lg, dim=-1)
+            if top_p < 1.0:
+                sp, si = torch.sort(p, dim=-1, descending=True)
+                drop = (torch.cumsum(sp, -1) - sp) >= top_p
+                p = p.scatter(-1, si, sp.masked_fill(drop, 0))
+                p = p / p.sum(-1, keepdim=True)
+            nxt = torch.multinomial(p, 1)[:, 0]   # on the GPU: copying the probabilities out would wait
+        toks = nxt.tolist()
+        for i, t in enumerate(toks):
+            if not done[i]:
+                if stop_token is not None and t == stop_token:
+                    done[i] = True
+                else:
+                    out[i].append(t)
+        if all(done) or pos >= block:
+            break
+        logits, _ = model(nxt.view(n, 1), kv_caches=caches, start_pos=pos)
+        logits = logits[:, -1]
+        pos += 1
+    return out
+
+
 def _last_hidden(model, idx):
     """The final hidden state (after ln_f) at every position, and the logits: (hidden (T, C), logits (T, V))."""
     out = {}

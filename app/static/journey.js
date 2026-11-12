@@ -4,6 +4,13 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-12 15:40", kind: "win", area: "Inference", title: "Batched generation",
+    decision: "Generate n samples of one prompt at once: read the prompt once, copy its KV cache to n rows, one batched pass per step.",
+    why: "A pass of these models costs mostly fixed overhead, so many tokens per pass should come almost free.",
+    result: { label: "Tokens/s in total, 64 samples vs one stream", text: "Small 92 → 2,864 (31×) · Large 124M 60 → 1,682 (28×); greedy rows identical" },
+    calc: ["prefix caching skipped: a 250-token prompt takes 17–25 ms to read, at most ~16 ms to save",
+      "top-p sorts 50,257 probabilities per token: it halves the app's single-stream speed"],
+    cost: "no training: benchmarks on the Mac", anchor: "28-batched-generation-and-prefix-caching" },
   { when: "2026-11-12 15:10", kind: "tie", area: "Inference", title: "8-bit and 4-bit weights",
     decision: "Store each weight matrix as small integers and scales (quantize.py); keep the shared embedding at 8 bits.",
     why: "A 124M model takes 495 MB in 32-bit floats; most of that precision isn't needed to run it.",
