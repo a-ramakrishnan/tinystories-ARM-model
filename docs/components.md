@@ -83,7 +83,13 @@ replays the forward pass block by block and records each stage; its final logits
   guess is "not" for seven blocks, "Paris" after block 8 (the earlier answer in the prompt) and "Berlin"
   (80%) from block 9.
 
-The block is drawn as two bands, one per half of a transformer block: **1 · Attention** (tokens share
+It has two looks, switched in its toolbar. **Flow** (the default) draws the prompt as ribbons: every token
+fans into every head's Q, K and V tabs; the chosen head's card (the other heads stacked behind it, pick one with
+a tab or ‹ ›) lists the keys, queries and values, with key lines dropping into the attention dots, query lines
+running into their rows and the values flowing to Out; each token's ribbon then dips into the feed-forward
+layer's wider hidden layer (2.7× for SwiGLU, 4× for GELU) and comes back up beside the residual connection,
+passes the other blocks, and the last token fans out into the next-token probabilities. **Diagram** shows the
+numbers themselves. In the Diagram, the block is drawn as two bands, one per half of a transformer block: **1 · Attention** (tokens share
 information: embedding → query, key, value → the attention matrix) and **2 · Feed-forward** (each token on its
 own: out + residual → feed-forward or experts → the other blocks). The step widens to use the window, and
 **Full screen** (Esc to leave) gives the diagram the whole screen, up to 1.35× larger.

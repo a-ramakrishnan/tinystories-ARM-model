@@ -1,7 +1,7 @@
 // Explorer: one prompt flowing through the real model, drawn as a diagram (Inside the transformer → Explorer).
 // Data comes from /api/explain (explain.py). Uses $, $$, esc, fmt, api, action and toast from app.js.
 
-const ex = { data: null, layer: 0, head: 0, stage: "softmax", hover: null, cell: null, focus: "overview", tok: null,
+const ex = { data: null, layer: 0, head: 0, stage: "softmax", hover: null, cell: null, focus: "overview", tok: null, view: "flow",
   temp: 0.8, topk: 0, topp: 0.9 };
 
 const EX_ROW = 40;           // height of one token row; attention cells are square, so rows line up everywhere
@@ -60,6 +60,12 @@ function exRender() {
   const det = L.detail;
   const H = c.n_head;
   ex.head = Math.min(ex.head, H - 1);
+  $$("#ex-viewsel .seg-btn").forEach((b) => b.classList.toggle("on", b.dataset.exview === ex.view));
+  if (ex.view === "flow" && typeof exRenderFlow === "function") {
+    exRenderFlow(d, c, T, L, H);
+    exTokenPanel(); exProbBox(); exFocusClass(); exPanel(); exLens();
+    return;
+  }
   const R = EX_ROW, pad = 7, sh = R - 2 * pad;     // row height; strips leave a gap above and below
   // Two bands, one per half of a transformer block, so each fits the width at full size:
   //   band A (attention): tokens | embedding | query | key | value | attention matrix
@@ -301,6 +307,12 @@ function exInit() {
   $$("#ex-stage .seg-btn").forEach((b) => b.addEventListener("click", () => {
     ex.stage = b.dataset.stage; ex.focus = "attention";
     $$("#ex-stage .seg-btn").forEach((x) => x.classList.toggle("on", x === b));
+    exRender();
+  }));
+  try { ex.view = localStorage.getItem("lmstudio.exview") || "flow"; } catch (e) { /* ignore */ }
+  $$("#ex-viewsel .seg-btn").forEach((b) => b.addEventListener("click", () => {
+    ex.view = b.dataset.exview;
+    try { localStorage.setItem("lmstudio.exview", ex.view); } catch (e) { /* ignore */ }
     exRender();
   }));
   $("#ex-full").addEventListener("click", () => exFull(!$("#ex-card").classList.contains("ex-fullscreen")));
