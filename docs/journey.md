@@ -35,8 +35,9 @@ that are easy to get wrong and rarely explained.
 24. [A yardstick: OpenAI's GPT-2](#24-a-yardstick-openais-gpt-2)
 25. [Winning back generation speed](#25-winning-back-generation-speed)
 26. [Better decoding algorithms](#26-better-decoding-algorithms)
-27. [Lessons](#27-lessons)
-28. [What's next](#28-whats-next)
+27. [8-bit and 4-bit weights](#27-8-bit-and-4-bit-weights)
+28. [Lessons](#28-lessons)
+29. [What's next](#29-whats-next)
 
 ---
 
@@ -950,7 +951,38 @@ are functions in `inference.py` for now. Six prompts is a small sample, and thes
 **Lesson.** Penalize what you actually don't want. A repetition penalty punishes words; the problem was
 repeated *sequences*. DRY targets exactly that and costs greedy decoding nothing on the stories it was fluent on.
 
-## 27. Lessons
+## 27. 8-bit and 4-bit weights
+
+A 124M model in 32-bit floats takes 495 MB. `quantize.py` stores each weight matrix as small integers and a few
+scales, symmetric around zero: at 8 bits one scale per row (w ≈ q × scale, q in −127…127), at 4 bits one per group
+of 64 weights (q in −7…7). A layer turns its integers back into floats when it runs, so the maths is unchanged and
+only the storage shrinks.
+
+| Held-out loss · weights | 32-bit | 8-bit | 4-bit (embedding 8-bit) |
+|---|---|---|---|
+| Our Large 124M, GPT-2 style (FineWeb) | 3.7345 · 495 MB | 3.7353 · **125 MB** | 3.7490 · **88 MB** |
+| Small, best dense (TinyStories) | 1.7544 · 120 MB | 1.7545 · 30 MB | 1.7636 · 26 MB |
+| Small, best + experts (TinyStories) | 1.6996 · 205 MB | 1.7000 · 52 MB | 1.7029 · 37 MB |
+| OpenAI GPT-2 small | 3.4014 · 498 MB | 3.4607 · 128 MB | 3.5616 · 90 MB |
+
+- **8 bits is almost free** for our models (+0.001 or less): a quarter of the memory. Greedy text sometimes takes
+  a different turn after 30 tokens, but it's as good.
+- **4 bits** costs our models 0.003–0.015, for a fifth to a seventh of the memory.
+- **OpenAI's GPT-2 is harder to quantize.** At 4 bits it first broke completely (3.40 → 6.98), and one matrix
+  did it: the shared embedding / output layer (3.40 → 7.03 on its own; every other layer 0.01–0.05). Its rows hold
+  a few large values (up to 1.8 against a typical 0.09), so with 15 levels the many small weights all round to
+  the same few values. Keeping that matrix at 8 bits, as llama.cpp does, brings it to 3.56. Even at 8 bits GPT-2
+  loses 0.06, against 0.001 for our GPT-2-style model of the same size: its weights have larger outliers.
+- **It's slower here**: 1.3–3.5× (124M: 111 → 32 tokens/s), because PyTorch on the Mac has no fast integer matrix
+  multiply, so every layer rebuilds its float weights on every token. Quantization pays where memory is the limit
+  or the hardware multiplies integers directly.
+- **The 8-bit KV cache** wasn't worth building at this size: for 256 tokens the 124M model's cache is 19 MB,
+  against 495 MB of weights.
+
+**Lesson.** Quantization error depends on the weights, not just the bit count: the same 4 bits that cost our
+model 0.015 broke GPT-2 until one outlier-heavy matrix was kept at 8 bits. Measure per layer.
+
+## 28. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -992,11 +1024,13 @@ repeated *sequences*. DRY targets exactly that and costs greedy decoding nothing
     for it, and a list index can hide one. Removing them doubled generation speed with identical output.
 24. **Penalize what you actually don't want.** Loops are repeated sequences, not repeated words: DRY stopped
     greedy's loops on stories without making the text less fluent, where a repetition penalty punishes every word.
+25. **Quantization error depends on the weights, not just the bits.** 4 bits cost our 124M model 0.015 and broke
+    GPT-2 until its outlier-heavy embedding was kept at 8 bits.
 
-## 28. What's next
+## 29. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
-- **Inference, first:** 8-bit weights and KV cache, prefix caching, batched generation.
+- **Inference, first:** prefix caching and batched generation.
 - **Architecture:** re-test depth and layer sharing with longer runs and tuned learning rates.
 - **Inference:** quantization, batching, prefix caching, compiled generation.
 - **Later:** data ideas, instruction tuning and a masked diffusion model.

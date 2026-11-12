@@ -247,7 +247,9 @@ model.py                   GPT architecture (with an optional KV cache), param_b
 train_config.py            TrainConfig hyperparameters and setup_device() (MPS / CUDA / CPU)
 pretrain.py                Training loop: AdamW, warmup + cosine LR schedule, gradient accumulation
 plots.py                   Loss curves
-inference.py               Checkpoints, streamed generation, KV cache benchmark, GPU memory, attention maps
+inference.py               Checkpoints, streamed generation, speculative decoding, contrastive and beam search,
+                           KV cache benchmark, GPU memory, attention maps
+quantize.py                8-bit and 4-bit weights for inference
 train_step_by_step.ipynb   Notebook for training on Google Colab or Kaggle
 import_run.py              Brings a model trained on Colab or Kaggle into data/ (from the notebook's results zip)
 registry.py                Model library: every trained or imported model saved under models/<id>/

@@ -4,6 +4,13 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-12 15:10", kind: "tie", area: "Inference", title: "8-bit and 4-bit weights",
+    decision: "Store each weight matrix as small integers and scales (quantize.py); keep the shared embedding at 8 bits.",
+    why: "A 124M model takes 495 MB in 32-bit floats; most of that precision isn't needed to run it.",
+    result: { label: "Our Large 124M: held-out loss · weight memory", text: "32-bit 3.7345 · 495 MB → 8-bit 3.7353 · 125 MB → 4-bit 3.7490 · 88 MB; but 1.3–3.5× slower on the Mac" },
+    calc: ["OpenAI GPT-2 at 4 bits: 3.40 → 7.03 from the embedding alone (row outliers up to 1.8 vs a typical 0.09); 3.56 with it at 8 bits",
+      "the KV cache at 256 tokens is 19 MB next to 495 MB of weights: not worth quantizing here"],
+    cost: "no training: evaluations on the Mac", anchor: "27-8-bit-and-4-bit-weights" },
   { when: "2026-11-12 14:30", kind: "win", area: "Inference", title: "Better decoding: DRY, contrastive and beam search",
     decision: "Add DRY (penalize only continuing a repeated sequence) and typical-p to Generate, plus contrastive and beam search; compare all on the suite's prompts.",
     why: "Greedy loops (27.5% of 4-token runs on stories, 76% on web text); the repetition penalty fixes that by punishing every word already used.",
