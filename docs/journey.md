@@ -38,8 +38,9 @@ that are easy to get wrong and rarely explained.
 27. [8-bit and 4-bit weights](#27-8-bit-and-4-bit-weights)
 28. [Batched generation and prefix caching](#28-batched-generation-and-prefix-caching)
 29. [Seeing the model work: the Explorer](#29-seeing-the-model-work-the-explorer)
-30. [Lessons](#30-lessons)
-31. [What's next](#31-whats-next)
+30. [The best design at GPT-2 size](#30-the-best-design-at-gpt-2-size)
+31. [Lessons](#31-lessons)
+32. [What's next](#32-whats-next)
 
 ---
 
@@ -1052,7 +1053,45 @@ mode.
 the mechanics don't predict: a head that only looks at the previous word, an answer that appears halfway up the
 network, outlier dimensions in GPT-2.
 
-## 30. Lessons
+## 30. The best design at GPT-2 size
+
+Every architecture win so far was measured on a 30M model over 1,000–5,000 updates. Would it hold at GPT-2's size
+over a full run? The Large model (12 layers × 768, 123.6M parameters) was trained again with the best dense
+design (RoPE, SwiGLU, no biases, QK-norm), on the same data (Mini FineWeb-Edu *small*), for the same 30,000 steps of
+32 × 256 tokens, on a Colab L4, and compared with our first Large model (GPT-2 style, learning rate 6e-4) and
+OpenAI's GPT-2.
+
+A short check picked the learning rate first: 1,000 updates each at 6e-4, 1.2e-3 and 1.8e-3 gave 5.125, 5.103 and
+5.105. 1.2e-3 and 1.8e-3 tie; 1.2e-3 is the safer choice for a long run at this size.
+
+| Validation loss at step | 1,000 | 2,000 | 5,000 | 10,000 | 15,000 | 20,000 | 25,000 | final (30,000) |
+|---|---|---|---|---|---|---|---|---|
+| GPT-2 style, lr 6e-4 | 5.428 | 4.870 | 4.287 | 4.006 | 3.847 | 3.734 | 3.628 | 3.603 |
+| Best design, lr 1.2e-3 | **5.173** | **4.636** | **4.227** | 4.023 | 3.859 | **3.713** | **3.621** | **3.563** |
+
+| Held-out loss, same 256-token windows | Mini FineWeb-Edu | TinyStories | WikiText-2 | Tiny Shakespeare |
+|---|---|---|---|---|
+| Our Large, GPT-2 style | 3.735 | 3.872 | **5.582** | 5.823 |
+| **Our Large, best design** | **3.691** | **3.856** | 5.605 | **5.753** |
+| OpenAI GPT-2 small | 3.401 | 2.553 | 4.180 | 4.807 |
+
+- **It's better, but by much less than on the small model.** 0.04 on held-out web text, against 0.29–0.35 for the
+  Small model at 5,000 updates. The new design led early (0.25 at step 1,000), fell level in the middle (its
+  higher learning rate slowed it while the rate was high), and pulled ahead again as the rate decayed.
+- **The design mostly buys speed of learning.** At a short budget that's worth a lot; with 30,000 updates there's
+  less left to win. The gain was also measured with a different learning rate, so it isn't the design alone.
+- **GPT-2 is still 0.29 ahead** on web text (it was 0.33), and far ahead on Wikipedia and stories. That gap is the
+  data: GPT-2 read billions of tokens, these models a quarter of a billion.
+- **Text:** fluent and on topic, but it still loops on ideas ("a solid, solid, and solid form"): a 124M model
+  that has read 246M tokens.
+
+It took 3 h 38 min (18,759 tokens/s, 12.9 GB peak memory), 35% slower per step than the GPT-2-style model:
+SwiGLU's three matrices and QK-norm cost time on the GPU even at the same parameter count.
+
+**Lesson.** Check a small-scale win at the scale you care about. The design still won at 124M, but the size of a
+gain measured on a short run at 30M didn't carry over; what remains is the data.
+
+## 31. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1100,8 +1139,10 @@ network, outlier dimensions in GPT-2.
     decoding barely pay, and made 64 samples at once 28–31× the throughput of one.
 27. **Show the real numbers.** Made-up examples teach the mechanics; a real model's numbers show what they
     don't predict: heads with habits, an answer that appears halfway up the network, outlier dimensions.
+28. **Check a small-scale win at the scale you care about.** The best design still won at 124M, but by 0.04, not
+    the 0.3 it gained at 30M over a short run: it mostly buys speed of learning. The rest of the gap is data.
 
-## 31. What's next
+## 32. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
 - **Inference:** re-measure generation speed on a quiet machine; expose contrastive search and batched samples in the app.

@@ -4,6 +4,15 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-12 16:45", kind: "win", area: "Architecture", best: true, title: "The best design at GPT-2 size",
+    decision: "Train the Large model (124M) again with RoPE, SwiGLU, no biases and QK-norm, learning rate 1.2e-3, 30,000 steps on Mini FineWeb-Edu.",
+    why: "Every architecture win was measured on a 30M model over short runs. Does it hold at GPT-2's size over a full run?",
+    result: { label: "Held-out Mini FineWeb-Edu, same windows", steps: [["OpenAI GPT-2 small", 3.401], ["our Large, best design", 3.691], ["our Large, GPT-2 style", 3.735]],
+      extra: "better by 0.04 (validation 3.603 → 3.563), much less than the 0.3 on the Small model; the gap to GPT-2 shrinks 0.333 → 0.290" },
+    calc: ["learning-rate check, 1,000 updates: 6e-4 5.125 · 1.2e-3 5.103 · 1.8e-3 5.105",
+      "led by 0.25 at step 1,000, level at 10,000, ahead again as the learning rate decayed",
+      "WikiText-2 5.582 → 5.605: slightly worse there"],
+    cost: "3 h 38 min on a Colab L4 (18,759 tokens/s), plus a 25-minute learning-rate check", anchor: "30-the-best-design-at-gpt-2-size" },
   { when: "2026-11-12 16:30", kind: "tool", area: "Tooling", title: "The Explorer: watch the real model work",
     decision: "A second view in Inside the transformer: one prompt through the whole model with its real numbers, as a Flow of ribbons or a Diagram, with a logit lens, a per-token trace and ▶ Play the data flow (one token through every block, step by step).",
     why: "The walkthrough uses made-up 4-dimensional numbers to be checkable by hand; this shows what the real model actually does.",
