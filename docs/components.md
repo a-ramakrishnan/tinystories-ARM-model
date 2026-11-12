@@ -17,7 +17,8 @@ The project explains every stage of the **LLM training pipeline** in a local web
    **LayerNorm**, attention scores, the causal mask, softmax, **context vectors**, the output projection,
    **dropout**, **residual connections**, the **feed-forward network** (GELU), and the final **logits and
    softmax** that pick the next token. Each stage is labelled **encoder & decoder** or **decoder only**, and
-   heatmaps show the trained model's real attention.
+   heatmaps show the trained model's real attention. The **Explorer** view draws the whole model at once with
+   real numbers, plus a **logit lens**.
 6. **Pre-training**: **AdamW**, warmup and **cosine learning-rate decay**, gradient accumulation and clipping,
    with live **loss curves**, optimizer updates, parameter updates and tokens processed.
 7. **Inference**: streamed **text generation** with **temperature, top-k, top-p, min-p, greedy and
@@ -61,6 +62,31 @@ LayerNorm and dropout.
 
 Below the walkthrough, a heatmap shows your trained model's **real attention weights** for the same
 prompt, for any layer and head (or averaged over heads).
+
+### The Explorer
+
+The **Explorer** (a switch at the top of the step) draws one prompt (up to 16 tokens) flowing through the
+whole model at once, with the model you've chosen's real numbers, from `/api/explain` (`explain.py`, which
+replays the forward pass block by block and records each stage; its final logits match the model's own):
+
+- **Embedding**: each token's vector (48 of its 384 or 768 numbers, orange positive, blue negative), with the
+  position vector added (GPT-2 style) or a note that RoPE rotates queries and keys inside attention instead.
+- **Q · K · V**: one head's query, key and value for every token.
+- **Attention**: that head's matrix in three stages: raw scores (`q·k / √d`), the causal mask (`−∞`) and
+  softmax. Click a cell to see its calculation with the real numbers.
+- **Out + residual** and the **feed-forward** layer's hidden activations (GELU or SwiGLU, with the share
+  strongly active), or, in a model with experts, the router's probabilities and the experts it picked.
+- **Blocks**: step through every block and head with ← → and the head buttons.
+- **Next token**: the probabilities with their own temperature, top-k and top-p sliders.
+- **Logit lens**: the final norm and output layer applied after every block, as if the model stopped there:
+  the top guess for each position, block by block. For OpenAI's GPT-2 and "…the capital of Germany is", the
+  guess is "not" for seven blocks, "Paris" after block 8 (the earlier answer in the prompt) and "Berlin"
+  (80%) from block 9.
+
+Every part has an explanation that uses the model's own sizes; hovering a token highlights its path, and the
+rows line up across the diagram so one token can be followed from embedding to prediction. The layout follows
+the idea of [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) (Georgia Tech's Polo
+Club), with the app's own models and designs (RoPE, QK-norm, SwiGLU, experts) and the logit lens added.
 
 ## How many parameters?
 
@@ -266,6 +292,7 @@ evaluate.py                Evaluation suite: the same held-out loss and generati
 ab_test.py                 A/B tests: train named variants the same way, evaluate each, compare; runs Lab run specs
 lab_run.ipynb              Notebook that runs a Lab run spec on Google Colab or Kaggle
 reference_gpt2.py          Loads OpenAI's GPT-2 small into the model library as a reference
+explain.py                 The model's internals for one prompt, for the Explorer in Inside the transformer
 docs/                      This documentation: usage.md, components.md, analysis.md, journey.md
 docs/screenshots/          Screenshots used in the documentation
 ```

@@ -4,6 +4,13 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-12 16:30", kind: "tool", area: "Tooling", title: "The Explorer: the whole model, real numbers",
+    decision: "A second view in Inside the transformer: one prompt drawn through the whole model with the chosen model's real numbers, plus a logit lens.",
+    why: "The walkthrough uses made-up 4-dimensional numbers to be checkable by hand; this shows what the real model actually does.",
+    result: { label: "Logit lens, OpenAI GPT-2, '…the capital of Germany is'", text: "blocks 1–7: 'not' / 'now' → block 8: 'Paris' (15%) → block 9: 'Berlin' (80%) → final 'Berlin' 67.5%" },
+    calc: ["explain.py replays the forward pass block by block; its final logits match the model's own (within 0.0004)",
+      "attention in three stages: q·k/√d, the causal mask, softmax; click a cell for its calculation"],
+    cost: "no training", anchor: "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main/docs/components.md#the-explorer" },
   { when: "2026-11-12 15:40", kind: "win", area: "Inference", title: "Batched generation",
     decision: "Generate n samples of one prompt at once: read the prompt once, copy its KV cache to n rows, one batched pass per step.",
     why: "A pass of these models costs mostly fixed overhead, so many tokens per pass should come almost free.",
@@ -254,7 +261,7 @@ function renderJourney() {
           ${jResult(j.result)}
         </div>
         <div class="j-calc">${j.calc.map((c) => `<code>${esc(c)}</code>`).join("")}</div>
-        <div class="j-foot"><span><b>Cost</b> ${esc(j.cost)}</span><a href="${J_DOC}#${j.anchor}" target="_blank" rel="noopener">Read the full story →</a></div>
+        <div class="j-foot"><span><b>Cost</b> ${esc(j.cost)}</span><a href="${j.anchor.startsWith("http") ? j.anchor : `${J_DOC}#${j.anchor}`}" target="_blank" rel="noopener">Read the full story →</a></div>
       </div></article>`;
   }).join("");
   $("#journey").innerHTML = `

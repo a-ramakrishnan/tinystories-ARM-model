@@ -1550,8 +1550,9 @@ $("#m-run").addEventListener("click", (e) => action(e.target, async () => {
   await poll();
 }));
 
-$("#a-run").addEventListener("click", (e) => action(e.target, runWalk));
-$("#a-prompt").addEventListener("keydown", (e) => { if (e.key === "Enter") action($("#a-run"), runWalk); });
+const runInside = () => (typeof exActive === "function" && exActive() ? exRun() : runWalk());
+$("#a-run").addEventListener("click", (e) => action(e.target, runInside));
+$("#a-prompt").addEventListener("keydown", (e) => { if (e.key === "Enter") action($("#a-run"), runInside); });
 $("#a-prev").addEventListener("click", () => { if (ui.walk && ui.walk.stage > 0) { ui.walk.stage--; renderWalk(); } });
 $("#a-next").addEventListener("click", () => { if (ui.walk && ui.walk.stage < STAGES.length - 1) { ui.walk.stage++; renderWalk(); } });
 $("#a-layer").addEventListener("change", () => action(null, async () => {

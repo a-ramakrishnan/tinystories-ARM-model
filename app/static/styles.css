@@ -789,3 +789,65 @@ label.inline.grow input[type="range"] { flex: 1; }
 .dec-opt { display: inline-flex; gap: 10px; }
 .dec-opt input[type="number"] { width: 64px; }
 #dec-summary { margin: 6px 0 2px; }
+
+/* ---------- Explorer (Inside the transformer) ---------- */
+.a-views { margin-top: 12px; }
+.ex-head { flex-wrap: wrap; gap: 10px; }
+.ex-head .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#ex-heads .seg-btn { min-width: 26px; padding: 3px 6px; }
+.ex-svg { overflow-x: auto; padding: 4px 0 8px; }
+.ex-svgel { display: block; font-family: var(--font); }
+.ex-h { font-size: 13px; font-weight: 600; fill: var(--text); cursor: pointer; }
+.ex-sub { font-size: 11px; fill: var(--muted); }
+.ex-tok { font-size: 13px; fill: var(--text); font-family: var(--mono); }
+.ex-key { font-size: 11px; fill: var(--muted); font-family: var(--mono); }
+.ex-num { font-size: 11px; fill: var(--muted); }
+.ex-anum { font-size: 10px; fill: var(--text); pointer-events: none; }
+.ex-anum.inv { fill: #fff; }
+.ex-block { fill: var(--panel-2); stroke: var(--border); }
+.ex-rib { stroke-opacity: .28; transition: stroke-opacity .15s; }
+.ex-rib.ex-faint { stroke-opacity: .05; }
+.ex-row.ex-hl .ex-tok { font-weight: 700; fill: var(--accent); }
+.ex-row.ex-hl .ex-rib { stroke-opacity: .7; }
+.ex-acell { stroke: var(--panel); cursor: pointer; }
+.ex-masked { fill: var(--border); }
+.ex-sel { fill: none; stroke: var(--text); stroke-width: 2; }
+.ex-router { fill: var(--accent-2); fill-opacity: .35; }
+.ex-router.on { fill-opacity: .9; stroke: var(--accent); stroke-width: 1.5; }
+.ex-stack { fill: var(--panel-2); stroke: var(--border); }
+.ex-stack.front { fill: var(--accent-soft); stroke: var(--accent); }
+.ex-stacktxt { font-size: 18px; font-weight: 700; fill: var(--accent); }
+.ex-ptok { font-size: 12px; fill: var(--text); font-family: var(--mono); }
+.ex-ptok.cut { fill: var(--muted); text-decoration: line-through; }
+.ex-pbar { fill: var(--accent); }
+.ex-pbar.cut { fill: var(--border); }
+.ex-dim { opacity: .28; transition: opacity .15s; }
+[data-focus] { cursor: pointer; }
+.ex-controls { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
+.ex-controls label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.ex-controls input[type=range] { width: 120px; }
+.ex-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.ex-tab { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.ex-tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ex-explain { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 14px; line-height: 1.55; }
+.ex-calc { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); font-family: var(--mono); font-size: 12.5px; line-height: 1.7; }
+.ex-lens { overflow-x: auto; }
+.ex-lenstab { border-collapse: separate; border-spacing: 2px; font-size: 12px; }
+.ex-lenstab th { font-family: var(--mono); font-weight: 600; padding: 2px 6px; white-space: nowrap; color: var(--muted); }
+.ex-lenstab td { font-family: var(--mono); padding: 3px 6px; white-space: nowrap; border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) calc(var(--p, 0) * 70%), transparent); }
+.ex-lenstab td span { margin-left: 5px; color: var(--muted); font-size: 10px; }
+.ex-lenstab td.last { outline: 1px solid var(--accent); }
+.ex-lenstab tr.on td:first-child { color: var(--accent); font-weight: 700; }
+
+.ex-bottom { display: grid; grid-template-columns: minmax(250px, 320px) 1fr; gap: 18px; margin-top: 6px; }
+@media (max-width: 860px) { .ex-bottom { grid-template-columns: 1fr; } }
+.ex-probbox { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--panel-2); }
+.ex-ptitle { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.ex-prow { display: grid; grid-template-columns: 92px 1fr 48px; gap: 8px; align-items: center; font-size: 12.5px; margin: 2px 0; }
+.ex-prow code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.ex-pb { height: 11px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.ex-pb i { display: block; height: 100%; background: var(--accent); }
+.ex-prow.cut code { color: var(--muted); text-decoration: line-through; }
+.ex-probbox .ex-controls { flex-direction: column; align-items: stretch; gap: 6px; margin: 10px 0 4px; }
+.ex-probbox .ex-controls label { justify-content: space-between; }

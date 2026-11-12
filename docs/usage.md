@@ -66,7 +66,9 @@ It opens http://127.0.0.1:8000 in your browser. The sidebar walks through seven 
    input and output token counts, and how every parameter adds up.
 5. **Inside the transformer**: compare encoder-only, decoder-only and encoder–decoder models, then walk a
    prompt through a whole transformer block and out to the next token in 13 stages, and explore your
-   model's real attention heatmaps by layer and head.
+   model's real attention heatmaps by layer and head. The **Explorer** draws your model's real numbers for
+   the whole model at once: embeddings, Q/K/V, attention scores, mask and softmax, the feed-forward layer or
+   experts, every block, the next-token probabilities and a logit lens.
 6. **Train**: see what one training step does, how loss relates to probability, and the learning-rate
    schedule; then train and watch loss, speed, optimizer updates, parameters updated and tokens processed.
    Every run is kept in a history table.

@@ -37,6 +37,7 @@ from inference import (attention_maps, beam_search, benchmark_generation, contra
                        device_memory, generate_batch, generate_stream, kv_bytes_per_token, load_model,
                        load_model_config, next_token_probs, sampling_distribution, save_model_config)
 from model import GPT, GPTConfig, param_breakdown  # noqa: E402
+from explain import explain_forward  # noqa: E402
 import evaluate  # noqa: E402
 import registry  # noqa: E402
 from pretrain import pretrain, read_state_meta  # noqa: E402
@@ -653,6 +654,39 @@ def inspect_endpoint(req: InspectReq):
     return {"tokens": tokens_of(ids), "source": source, "layer": layer, "n_layer": model.config.n_layer,
             "n_head": model.config.n_head, "attention": [[[round(v, 3) for v in row] for row in h] for h in att.tolist()],
             "next": [{"id": i, "text": S.enc.decode([i]), "prob": round(p, 4)} for i, p in top]}
+
+
+class ExplainReq(BaseModel):
+    prompt: str = "The little cat sat on the"
+    layer: int = 0
+
+
+@app.post("/api/explain")
+def explain_endpoint(req: ExplainReq):
+    """Everything the Explorer draws for a prompt (up to 16 tokens): embeddings, every layer's attention, one
+    layer in detail (queries, keys, values, scores, feed-forward), the logit lens and the next-token logits."""
+    if training_running():
+        raise HTTPException(409, "Training is running. Try again when it finishes.")
+    ids = S.enc.encode_ordinary(req.prompt)[:16]
+    if not ids:
+        raise HTTPException(400, "Type a prompt first.")
+    model, source = inference_model(allow_untrained=True)
+    was_training = model.training
+    model.eval()
+    try:
+        passes = model.config.n_layer * max(1, model.config.block_repeat)
+        out = explain_forward(model, ids, S.dev.device, layer=max(0, min(req.layer, passes - 1)))
+    finally:
+        if was_training:
+            model.train()
+    dec = lambda i: S.enc.decode([i])  # noqa: E731
+    for rec in out["layers"]:
+        for row in rec["lens"]:
+            for c in row:
+                c["text"] = dec(c["id"])
+    for c in out["logits"]:
+        c["text"] = dec(c["id"])
+    return {"tokens": tokens_of(ids), "source": source, **out}
 
 
 # ---------- training ----------
