@@ -27,7 +27,10 @@ class RMSNorm(nn.Module):
         self.eps = eps
 
     def forward(self, x):
-        xf = x.float()  # the mean of squares in float32, so half precision doesn't overflow
+        # in float32, so half precision doesn't overflow; PyTorch's fused kernel when it has one (2.4+)
+        if hasattr(F, "rms_norm"):
+            return F.rms_norm(x.float(), self.weight.shape, eps=self.eps).to(x.dtype) * self.weight
+        xf = x.float()
         return (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + self.eps)).to(x.dtype) * self.weight
 
 
@@ -187,6 +190,36 @@ class MoE(nn.Module):
         self.aux_loss = None     # load-balancing loss of the last forward pass
         self.usage = None        # share of tokens each expert got in the last forward pass
 
+    def train(self, mode=True):
+        self._stacked = None  # the stacked expert weights are rebuilt after any training
+        return super().train(mode)
+
+    def _stack(self):
+        """Every expert's weights as one tensor per matrix (E, out, in), for the batched inference path."""
+        if getattr(self, "_stacked", None) is None:
+            ex = self.experts
+            bias = ex[0].c_fc.bias is not None
+            self._stacked = (torch.stack([e.c_fc.weight for e in ex]), torch.stack([e.c_proj.weight for e in ex]),
+                             torch.stack([e.c_fc.bias for e in ex]) if bias else None,
+                             torch.stack([e.c_proj.bias for e in ex]) if bias else None)
+        return self._stacked
+
+    def _dense(self, flat, top_p, top_i):
+        """Inference: run every expert on every token in one batched step, with the unchosen ones weighted 0.
+        The same result as the sparse loop, but no per-expert work and no stalls while the GPU reports which
+        tokens went where; that matters when generating one token at a time."""
+        w1, w2, b1, b2 = self._stack()
+        h = torch.einsum("nd,efd->nef", flat, w1) + (b1 if b1 is not None else 0)     # (tokens, experts, hidden)
+        if isinstance(self.experts[0], SwiGLU):
+            gate, up = h.chunk(2, dim=-1)
+            h = F.silu(gate) * up
+        else:
+            h = self.experts[0].gelu(h)
+        y = torch.einsum("neh,edh->ned", h, w2) + (b2 if b2 is not None else 0)       # (tokens, experts, d)
+        weights = torch.zeros(top_p.shape[0], len(self.experts), device=flat.device, dtype=top_p.dtype)
+        weights.scatter_(1, top_i, top_p)
+        return (y.float() * weights.unsqueeze(-1)).sum(1)
+
     def forward(self, x):
         B, T, C = x.shape
         flat = x.reshape(-1, C)
@@ -194,6 +227,11 @@ class MoE(nn.Module):
         probs = self.router(flat).float().softmax(-1)               # (tokens, experts)
         top_p, top_i = probs.topk(self.top_k, dim=-1)
         top_p = top_p / top_p.sum(-1, keepdim=True)                 # weights over the chosen experts
+        if not self.training:
+            out = self._dense(flat, top_p, top_i)
+            if flat.shape[0] > 1:  # keep the usage statistics for evaluation; skipped while generating token by token
+                self.usage = (F.one_hot(top_i, E).float().sum(1).mean(0) / self.top_k).detach()
+            return out.to(x.dtype).view(B, T, C)
         out = torch.zeros(flat.shape, dtype=torch.float32, device=flat.device)
         for e, expert in enumerate(self.experts):
             chosen = top_i == e                                       # (tokens, top_k)
@@ -300,7 +338,7 @@ class GPT(nn.Module):
         if self.config.pos_encoding == "rope":
             # positions enter attention as rotations of queries and keys (no position vector is added); only
             # distances between tokens matter, so start_pos may run past block_size while the cache slides
-            rope = rope_cos_sin(pos, self.config.n_embd // self.config.n_head, self.config.rope_theta)
+            rope = self.rope_tables(start_pos, t, device)
         else:
             assert start_pos + t <= self.config.block_size, "learned positions stop at block_size"
             x = x + self.transformer.wpe(pos)
@@ -332,6 +370,17 @@ class GPT(nn.Module):
         else:
             logits = self.lm_head(x[:, [-1], :])
             return logits, None
+
+    def rope_tables(self, start, t, device):
+        """RoPE's cos and sin for positions start … start + t − 1, from a table computed once (and doubled when a
+        sliding cache runs past it), instead of recomputing the angles for every token."""
+        need = start + t
+        tab = getattr(self, "_rope_tab", None)
+        if tab is None or tab[0].shape[0] < need or tab[0].device.type != torch.device(device).type:
+            n = max(need * 2, 2 * self.config.block_size)
+            cos, sin = rope_cos_sin(torch.arange(n, device=device), self.config.n_embd // self.config.n_head, self.config.rope_theta)
+            self._rope_tab = tab = (cos, sin)
+        return tab[0][start:need], tab[1][start:need]
 
     @torch.no_grad()
     def mtp_logits(self, idx):
