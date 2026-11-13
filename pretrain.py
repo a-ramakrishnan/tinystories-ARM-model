@@ -89,8 +89,16 @@ def pretrain(model, loader, cfg, dev, callback=None, resume=False, save_state=Tr
       {"type": "step", "step", "loss", "lr"} after each training step
     If it returns False, training stops early (and the state is saved, so it can be resumed).
     """
+    cuda = dev.device == "cuda"
+    if cuda and getattr(cfg, "tf32", True):
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    fused = cuda and getattr(cfg, "fused_adamw", True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, betas=cfg.betas,
-                                  weight_decay=cfg.weight_decay, eps=cfg.eps)
+                                  weight_decay=cfg.weight_decay, eps=cfg.eps, **({"fused": True} if fused else {}))
+    # torch.compile on an Nvidia GPU: the compiled module runs the steps; `model` itself (same weights) is what's
+    # saved, so checkpoints keep their usual names
+    run = torch.compile(model) if cuda and getattr(cfg, "compile", False) else model
     # https://stackoverflow.com/questions/72534859/is-gradscaler-necessary-with-mixed-precision-training-with-pytorch
     scaler = torch.amp.GradScaler("cuda", enabled=(dev.dtype == "float16"))
 
@@ -124,7 +132,7 @@ def pretrain(model, loader, cfg, dev, callback=None, resume=False, save_state=Tr
 
     def evaluate(at_step):
         nonlocal best_val_loss
-        losses = estimate_loss(model, loader, cfg.eval_iters, dev.ctx)
+        losses = estimate_loss(run, loader, cfg.eval_iters, dev.ctx)
         print(f"Step {at_step}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         print(f"The current learning rate: {lr:.5f}")
         train_losses.append(losses["train"])
@@ -150,7 +158,7 @@ def pretrain(model, loader, cfg, dev, callback=None, resume=False, save_state=Tr
         X, y = loader.get_batch("train")
 
         with dev.ctx:
-            logits, loss = model(X, y)
+            logits, loss = run(X, y)
             loss = loss / cfg.gradient_accumulation_steps
             scaler.scale(loss).backward()
 

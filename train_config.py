@@ -22,6 +22,10 @@ class TrainConfig:
     grad_clip: float = 1.0
     best_model_path: str = "best_model_params.pt"
     seed: int = 42
+    # speed (Nvidia GPUs; ignored on the Mac): none of these change the maths, only how fast it runs
+    compile: bool = False                   # torch.compile the model: fuses small GPU operations (slow first steps)
+    fused_adamw: bool = True                # AdamW's update as one GPU kernel instead of one per parameter
+    tf32: bool = True                       # TensorFloat-32 for the float32 matrix multiplies left outside autocast
 
 
 @dataclass
