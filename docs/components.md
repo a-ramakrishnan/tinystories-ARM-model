@@ -329,6 +329,7 @@ explain.py                 The model's internals for one prompt, for the Explore
 benchmarks.py              Standard zero-shot benchmarks: HellaSwag, LAMBADA, ARC-Easy, PIQA, Winogrande
 textgen.py                 Writing text step by step: fixed held-out prompts, a per-step generation trace, loss on the real continuation
 speedtest.py               Training speed test (tokens/s, memory) for the 124M model; speed_test.ipynb runs it on Colab
+diffusion_models/          The masked diffusion language model: v1_original.py (first version) and its modules; diffusion_colab.ipynb trains it on Colab
 docs/                      This documentation: usage.md, components.md, analysis.md, journey.md
 docs/screenshots/          Screenshots used in the documentation
 ```

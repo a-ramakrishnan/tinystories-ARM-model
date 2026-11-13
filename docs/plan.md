@@ -37,10 +37,12 @@ earlier TinyStories and WikiText models are kept as the history of how we got he
 | E2 | Stage 2: a long, resumable run on FineWeb-Edu *full* + Cosmopedia (~2.5B tokens) | Colab, the author's go-ahead | open |
 | E3 | L2 (low-memory tokenizing on the Mac), L4 (quality filter) | Claude | as needed |
 | **F** | **A masked diffusion language model** | | in progress |
-| F1 | The diffusion model (L8), written and first trained on TinyStories | the author | **in progress** (about halfway) |
-| F2 | Train the same diffusion model on Mini FineWeb-Edu (small) on Colab | Claude | after F1 |
+| F1 | The diffusion model (L8), written and first trained on TinyStories | the author | ✅ first version generates text (`diffusion_models/v1_original.py`) |
+| F1b | Make it modular in `diffusion_models/` (GPT-2 tokenizer, the project's token files, plain text, a likelihood bound to compare with), plus a Colab notebook; the `colab` run mode matches the 51M autoregressive TinyStories model (164M tokens) | Claude | ✅ |
+| F1c | Train it on TinyStories on Colab and check it generates: first a short learning-rate check (`quick` mode, 6e-4 vs 2e-3; a 2,000-update local test at 6e-4 was still only learning word frequencies, while a copy test confirmed the model and loss are correct), then the `colab` run | Colab, the author's go-ahead | next |
+| F2 | Train the same diffusion model on Mini FineWeb-Edu (small) on Colab | Claude | after F1c |
 | F3 | Integrate it into the app (Lab, Generate, Explorer) | Claude | with F2 |
-| F4 | Compare on both datasets: the TinyStories diffusion model against an autoregressive model trained on TinyStories at a similar size (to confirm which), and the FineWeb-Edu one against the base model; on the prompt set's TinyStories and FineWeb-Edu prompts: the outputs, loss (the diffusion loss is an upper bound, ours is exact), steps and speed | Claude | after F2 |
+| F4 | Compare on both datasets: the TinyStories diffusion model against the autoregressive *Medium 51M · TinyStories · 20k steps* (the same size, tokens and schedule as the `colab` run mode), and the FineWeb-Edu one against the base model; on the prompt set's TinyStories and FineWeb-Edu prompts: the outputs, loss (the diffusion loss is an upper bound, ours is exact), steps and speed | Claude | after F2 |
 | **G** | **Publish on GitHub Pages** | | |
 | G1 | The documentation as a website | Claude | open |
 | G2 | Browser-only versions of the Journey timeline, the Benchmarks results, the model comparison, and the Explorer replaying the base model's real numbers for a few saved prompts | Claude | open |
