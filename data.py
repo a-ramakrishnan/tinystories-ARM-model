@@ -67,8 +67,9 @@ def resolve_source(name):
     return {"kind": "hub", "name": s}
 
 
-def dataset_slug(name, config_name=None):
-    """Folder-safe name for a dataset, e.g. 'roneneldan/TinyStories' -> 'roneneldan__tinystories'."""
+def dataset_slug(name, config_name=None, max_rows=None):
+    """Folder-safe name for a dataset, e.g. 'roneneldan/TinyStories' -> 'roneneldan__tinystories'.
+    With max_rows (only the first rows are used), the count is part of the name: '...-first800000'."""
     src = resolve_source(name)
     if src["kind"] == "url":
         u = urlparse(src["name"])
@@ -76,6 +77,8 @@ def dataset_slug(name, config_name=None):
         full = f"url-{u.netloc}-{base}-{hashlib.sha1(src['name'].encode()).hexdigest()[:8]}"
     else:
         full = f"{src['name']}-{config_name}" if config_name else src["name"]
+    if max_rows:
+        full += f"-first{int(max_rows)}"
     return re.sub(r"[^A-Za-z0-9._-]+", "__", full).lower()
 
 
@@ -105,8 +108,8 @@ class DatasetPaths:
         return os.path.join(self.root, "model_config.json")
 
 
-def dataset_paths(name=DEFAULT_DATASET, config_name=None, data_root="data"):
-    return DatasetPaths(os.path.join(data_root, dataset_slug(name, config_name)))
+def dataset_paths(name=DEFAULT_DATASET, config_name=None, data_root="data", max_rows=None):
+    return DatasetPaths(os.path.join(data_root, dataset_slug(name, config_name, max_rows)))
 
 
 def _normalize_splits(raw, text_column, val_fraction, seed):
@@ -224,7 +227,8 @@ def inspect_source(name, config_name=None, text_column="text"):
     }
 
 
-def get_dataset(local_dir, name=DEFAULT_DATASET, config_name=None, text_column="text", val_fraction=0.005, seed=42):
+def get_dataset(local_dir, name=DEFAULT_DATASET, config_name=None, text_column="text", val_fraction=0.005, seed=42,
+                max_rows=None):
     """Return the dataset as {'train', 'validation'} splits with a 'text' column, downloading it only once.
 
     `name` is a Hugging Face dataset name, a Hugging Face dataset link, or a link to a text data file.
@@ -232,6 +236,8 @@ def get_dataset(local_dir, name=DEFAULT_DATASET, config_name=None, text_column="
     copy without touching the network. `config_name` is the dataset's subset, if it has one
     (e.g. 'wikitext-2-raw-v1'). `text_column` is renamed to 'text'. If there is no validation split,
     `val_fraction` of train is held out. Plain .txt files are split into documents at blank lines.
+    max_rows: use only the first rows of the train split, streamed, so a large dataset isn't downloaded in full
+    (e.g. 800,000 of Cosmopedia's 5 million stories).
     """
     if os.path.isdir(local_dir):
         print(f"Loading dataset from local copy: {local_dir}")
@@ -244,6 +250,15 @@ def get_dataset(local_dir, name=DEFAULT_DATASET, config_name=None, text_column="
     if src["kind"] == "url":
         kwargs = {"sample_by": "paragraph"} if src["builder"] == "text" else {}
         raw = load_dataset(src["builder"], data_files=src["name"], **kwargs)
+    elif max_rows:
+        stream = load_dataset(src["name"], config_name, split="train", streaming=True).select_columns([text_column])
+
+        def first_rows():
+            for i, row in enumerate(stream):
+                if i >= max_rows:
+                    return
+                yield row
+        raw = Dataset.from_generator(first_rows)
     else:
         raw = load_dataset(src["name"], config_name)
     ds = _normalize_splits(raw, text_column, val_fraction, seed)
