@@ -40,8 +40,9 @@ that are easy to get wrong and rarely explained.
 29. [Seeing the model work: the Explorer](#29-seeing-the-model-work-the-explorer)
 30. [The best design at GPT-2 size](#30-the-best-design-at-gpt-2-size)
 31. [Faster training](#31-faster-training)
-32. [Lessons](#32-lessons)
-33. [What's next](#33-whats-next)
+32. [More kinds of data](#32-more-kinds-of-data)
+33. [Lessons](#33-lessons)
+34. [What's next](#34-whats-next)
 
 ---
 
@@ -1126,7 +1127,54 @@ The benchmarks said the next gains are in data, and data costs GPU hours: the 12
 **Lesson.** Measure each speed-up on its own, on the hardware you'll use. One change gave 1.7×; the others gave
 6% and nothing, and an estimate made from other people's GPUs was too optimistic for this one.
 
-## 32. Lessons
+## 32. More kinds of data
+
+The benchmarks on the first base model (section 30) pointed at the data: close to GPT-2 on school science, behind on
+everyday common sense, far behind on LAMBADA's novels, because educational web pages are almost all explanation and no
+stories. So the next run kept the design and the number of updates, and changed what the model reads:
+
+| Dataset | Training tokens | Share | Chosen for |
+|---|---|---|---|
+| Mini FineWeb-Edu (small) | 650M | 55% | general educational text, as before |
+| Cosmopedia stories (first 300K) | 162M | 14% | narrative prose (LAMBADA) |
+| Cosmopedia wikihow | 166M | 14% | everyday how-to (PIQA, HellaSwag) |
+| Cosmopedia openstax | 99M | 8% | textbooks (ARC) |
+| Cosmopedia stanford (first 100K) | ~95M | ~8% | university lessons (ARC) |
+| Cosmopedia khanacademy | ~20M | 2% | lessons |
+
+Cosmopedia is synthetic: textbooks, stories and how-to articles written by an LLM from seed topics, the idea behind
+TinyStories applied to general knowledge. Two code changes made the run possible: the training notebook can now mix
+datasets (batches drawn in proportion to size), and a large dataset can be streamed for just its first N rows (300K of
+5 million stories, without the 12 GB download). The context grew to 512 tokens, which with `torch.compile` costs only
+3% in speed. 30,500 updates of 32 × 512 tokens: 500M tokens, about the same amount of FineWeb-Edu as before plus 255M
+of Cosmopedia, in 4 h 20 min on a Colab L4.
+
+| | First base (FineWeb-Edu, 256 ctx) | **New base (+ Cosmopedia, 512 ctx)** | OpenAI GPT-2 small |
+|---|---|---|---|
+| Held-out Mini FineWeb-Edu | 3.691 | **3.549** | 3.401 |
+| Held-out TinyStories | 3.856 | **2.790** | 2.553 |
+| Held-out WikiText-2 | 5.605 | **5.370** | 4.180 |
+| Greedy repetition | 75% | **25%** | 66% |
+| HellaSwag | 27.9% | **29.7%** | 31.1% |
+| LAMBADA | 9.6% | **15.7%** | 32.6% |
+| ARC-Easy | 42.1% | **44.0%** | 43.8% |
+| PIQA | 58.4% | **62.6%** | 62.9% |
+| Winogrande | 50.6% | 50.0% | 51.6% |
+
+- **Every gap the data was chosen for narrowed.** ARC-Easy now matches GPT-2 and PIQA is within 0.3; HellaSwag closed
+  more than half its gap; LAMBADA rose by 6 points, still far behind (synthetic stories aren't novels).
+- **It got better at web text too:** held-out FineWeb-Edu improved by 0.14, halving the gap to GPT-2, though the model
+  read about the same amount of FineWeb-Edu as before. Varied text helps on the original data, not just on new tasks.
+- **Narrative text improved most** (TinyStories 3.856 → 2.790, near GPT-2), and greedy loops fell from 75% to 25%.
+- The held-out test uses 256-token windows, so none of this comes from the longer context yet.
+
+It became the new base model. A run of the same length on a different mix gained more than the whole architecture
+track did at this size (0.14 against 0.04 on held-out web text).
+
+**Lesson.** Let the evaluation tell you what to train on. The benchmarks showed which kinds of text were missing; adding
+exactly those closed the gaps they pointed at, and helped everywhere else too.
+
+## 33. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1178,14 +1226,18 @@ The benchmarks said the next gains are in data, and data costs GPU hours: the 12
     the 0.3 it gained at 30M over a short run: it mostly buys speed of learning. The rest of the gap is data.
 29. **Measure each speed-up on its own, on your hardware.** `torch.compile` gave 1.7×; fused AdamW 6%; bigger batches
     nothing, because the compiled L4 was already compute-bound.
+30. **Let the evaluation tell you what to train on.** The benchmarks showed which kinds of text were missing;
+    adding them closed those gaps and improved the original data too (0.14, against 0.04 from the architecture at 124M).
 
-## 33. What's next
+## 34. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
-- **Inference:** re-measure generation speed on a quiet machine; expose contrastive search and batched samples in the app.
-- **Architecture:** re-test depth and layer sharing with longer runs and tuned learning rates.
-- **Inference:** quantization, batching, prefix caching, compiled generation.
-- **Later:** data ideas, instruction tuning and a masked diffusion model.
+- **Quantization with GPTQ** (llm-compressor's `oneshot`) on the new base model, compared with the simple
+  round-to-nearest 8- and 4-bit weights of section 27.
+- **Post-training:** instruction tuning (a Chat mode), preference optimization (DPO) against repetition, and
+  reinforcement learning with checkable rewards (GRPO).
+- **More data:** a long, resumable run on FineWeb-Edu *full* plus Cosmopedia, ideally on an A100.
+- **Later:** a masked diffusion language model; re-testing depth and layer sharing with longer runs.
 
 Every step will be added here with what it measured.
 

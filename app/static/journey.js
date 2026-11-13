@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-13 13:15", kind: "win", area: "Data", best: true, title: "More kinds of data: the new base model",
+    decision: "Same 124M best design and number of updates, but Mini FineWeb-Edu (55%) + Cosmopedia stories, wikihow, openstax, stanford and khanacademy (45%), 512-token context, 500M tokens.",
+    why: "The benchmarks showed what was missing: everyday how-to and stories, which educational web pages barely contain.",
+    result: { label: "First base → new base (GPT-2 small)", text: "held-out FineWeb-Edu 3.691 → 3.549 (3.401) · ARC-Easy 42.1% → 44.0% (43.8%) · PIQA 58.4% → 62.6% (62.9%) · HellaSwag 27.9% → 29.7% (31.1%) · LAMBADA 9.6% → 15.7% (32.6%)" },
+    calc: ["about the same FineWeb-Edu as before plus 255M tokens of Cosmopedia; 30,500 updates of 32 × 512 tokens",
+      "greedy repetition 75% → 25%; held-out TinyStories 3.856 → 2.790",
+      "the data gained 0.14 on held-out web text, against 0.04 for the whole architecture track at this size"],
+    cost: "4 h 20 min on a Colab L4 (32,000 tokens/s with torch.compile)", anchor: "32-more-kinds-of-data" },
   { when: "2026-11-13 08:00", kind: "win", area: "Training", title: "Faster training: torch.compile",
     decision: "Compile the model on Nvidia GPUs, use fused AdamW and TF32, and time each change on its own with speedtest.py on a Colab L4.",
     why: "The next gains are in data, and data costs GPU hours: the 124M run read 246M tokens in 3 h 38 min.",

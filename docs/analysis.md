@@ -147,6 +147,7 @@ The steps taken so far to improve the model, and the ones planned next, in order
 | 25 | **Batched generation** (I6) and **prefix caching** (I7) | `generate_batch` in inference.py: one prompt, n samples at once (the prompt's KV cache copied to n rows, every step one batched pass, sampling on the GPU) ([details](journey.md#28-batched-generation-and-prefix-caching)) | **28–31× the throughput** of one stream with 64 samples (Small: 2,864 tokens/s; Large 124M: 1,682), each sample at about half the single-stream speed; greedy rows identical to `generate_stream`. Prefix caching not built: reading even a 250-token prompt takes 17–25 ms, so it could save at most ~16 ms. Sampling (Balanced) costs 10–25% of the single-stream speed against greedy, measured side by side |
 | 26 | **The best design at 124M** | Large (12 × 768) with RoPE, SwiGLU, no biases, QK-norm, learning rate 1.2e-3 (picked from 6e-4 / 1.2e-3 / 1.8e-3 at 1,000 updates: 5.125 / 5.103 / 5.105), 30,000 steps on Mini FineWeb-Edu small, Colab L4, 3 h 38 min ([details](journey.md#30-the-best-design-at-gpt-2-size)) | Validation **3.603 → 3.563**; held-out FineWeb-Edu **3.735 → 3.691**, Tiny Shakespeare 5.823 → 5.753, TinyStories 3.872 → 3.856, WikiText-2 5.582 → 5.605 (slightly worse). The gap to OpenAI's GPT-2 (3.401) shrinks from 0.333 to 0.290. A much smaller gain than on the Small model (0.29–0.35 at 5,000 updates): the design mostly buys speed of learning, and 30,000 updates at 124M leave less to buy. Data is the remaining gap |
 | 27 | **Faster training** (L1) | `torch.compile` on Nvidia GPUs (TrainConfig.compile, on by default in the notebook), fused AdamW, TF32; `speedtest.py` / `speed_test.ipynb` time real steps of the 124M best design ([details](journey.md#31-faster-training)) | On a Colab L4: **20,869 → 35,344 tokens/s (1.69×)** at 256 tokens of context, 20,182 → 34,381 (1.70×) at 512, and 7.5 GB of memory instead of 11.2. Fused AdamW + TF32 alone: 1.06×. Bigger batches gave nothing (the compiled L4 is already compute-bound; batch 128 ran out of memory). Same maths: identical losses on the Mac, compiled gradients within 4e-8. No A100 was available to compare |
+| 28 | **More kinds of data, longer context** (L3, L5, L6): the new base model | The best design at 124M trained on Mini FineWeb-Edu (55%) + Cosmopedia (stories, wikihow, openstax, stanford, khanacademy: 45%), 512-token context, 500M tokens (30,500 × 32 × 512), `torch.compile` on a Colab L4, 4 h 20 min ([details](journey.md#32-more-kinds-of-data)) | Held-out FineWeb-Edu **3.691 → 3.549** (GPT-2 3.401: the gap halves), TinyStories 3.856 → **2.790**, WikiText-2 5.605 → **5.370**; greedy repetition 75% → **25%**. Benchmarks: ARC-Easy **44.0%** (GPT-2 43.8%), PIQA **62.6%** (62.9%), HellaSwag 27.9% → **29.7%**, LAMBADA 9.6% → **15.7%**, Winogrande at chance; average 37.7% → **40.4%** (GPT-2 44.4%). **The new base model** |
 
 ### Next: the architecture
 
@@ -195,10 +196,10 @@ python3 ab_test.py --title "A5 QK-norm" --variant "baseline: rope swiglu no-bias
 |---|---|---|
 | ~~L1~~ | ~~**Faster training**~~ | Done: step 27 above (1.7× on an L4 with `torch.compile`) |
 | L2 | **Tokenize large datasets in little memory** | Stream the tokenizer over the dataset in chunks, so Mini FineWeb-Edu fits on a 16 GB Mac and joins the held-out tests |
-| L3 | **Longer context (512 tokens)** | Educational pages average ~800 tokens; at 256 the model never sees a whole page (easier with A1) |
+| ~~L3~~ | ~~**Longer context (512 tokens)**~~ | Done: step 28 above |
 | L4 | **Filter the data by quality** | Keep only Mini FineWeb-Edu pages with an educational score of 3 or more |
-| L5 | **Mix in synthetic textbooks** | Cosmopedia: clean, explanatory text, the idea behind TinyStories applied to general knowledge |
-| L6 | **One combined cloud run** | Everything that won above, with ~1 billion tokens (about 10× the current run) |
+| ~~L5~~ | ~~**Mix in synthetic textbooks**~~ | Done: step 28 above (Cosmopedia, 45% of the mix) |
+| ~~L6~~ | ~~**One combined cloud run**~~ | Done: step 28 above (500M tokens; a longer run is stage 2) |
 | L7 | **Instruction fine-tuning** | Question-and-answer pairs so the model answers questions; a Chat mode in Generate |
 | L8 | **A masked diffusion language model** | Generate a whole block at once and refine it; reuses A1–A4 and the whole pipeline |
 
@@ -217,23 +218,25 @@ Identical to the published numbers except ARC-Easy's length-normalized accuracy 
 the standard one and other models' numbers can be compared with published results. Chance is 25% for HellaSwag
 and ARC-Easy, 50% for PIQA and Winogrande. All five took 9.3 minutes for GPT-2 on an M5 (HellaSwag 7.2).
 
-Then our Large 124M model with the best design (30,000 steps, 246M tokens of Mini FineWeb-Edu):
+Then our two 124M models with the best design: the first base model (30,000 steps, 246M tokens of Mini FineWeb-Edu,
+256-token context) and the current base, trained on Mini FineWeb-Edu + Cosmopedia (500M tokens, 512-token context):
 
-| ★ metric (the one usually quoted) | Chance | Our 124M, best design | OpenAI GPT-2 small |
-|---|---|---|---|
-| HellaSwag (acc_norm) | 25% | 27.9% ± 0.4 | **31.1%** |
-| LAMBADA (acc; perplexity of the right word) | ≈0% | 9.6% (7,309) | **32.6%** (40) |
-| ARC-Easy (acc) | ~25% | 42.1% ± 1.0 | **43.8%** |
-| PIQA (acc) | 50% | 58.4% ± 1.2 | **62.9%** |
-| Winogrande (acc) | 50% | 50.6% ± 1.4 | 51.6% |
-| Average | 30% | 37.7% | **44.4%** |
+| ★ metric (the one usually quoted) | Chance | First base (FineWeb-Edu) | **Base: + Cosmopedia, 512 ctx** | OpenAI GPT-2 small |
+|---|---|---|---|---|
+| HellaSwag (acc_norm) | 25% | 27.9% ± 0.4 | **29.7%** ± 0.5 | 31.1% |
+| LAMBADA (acc; perplexity of the right word) | ≈0% | 9.6% (7,309) | **15.7%** (1,123) | 32.6% (40) |
+| ARC-Easy (acc) | ~25% | 42.1% ± 1.0 | **44.0%** ± 1.0 | 43.8% |
+| PIQA (acc) | 50% | 58.4% ± 1.2 | **62.6%** ± 1.1 | 62.9% |
+| Winogrande (acc) | 50% | 50.6% ± 1.4 | 50.0% ± 1.4 | 51.6% |
+| Average | 30% | 37.7% | **40.4%** | 44.4% |
 
-The gaps follow the data. **ARC-Easy** (school science) is within 1.7 points of GPT-2: that's what educational
-web pages teach. **HellaSwag** and **PIQA** (everyday situations and how-to common sense) trail by 3–5 points: above
-chance, but those situations are rare in educational pages. **LAMBADA** is the big gap: its passages are from
-novels, and FineWeb-Edu filters fiction out, so the model has hardly read narrative prose (perplexity 7,309 on
-the right word, against GPT-2's 40). **Winogrande** is at chance for both: too hard at this size. GPT-2 read about
-40× more text, and of every kind. Measured in 18.5 minutes on an M5 (with a 256-token context).
+The gaps followed the data, and the added data closed the ones it was chosen for. With FineWeb-Edu alone, **ARC-Easy**
+(school science) was within 1.7 points of GPT-2, **HellaSwag** and **PIQA** (everyday situations and how-to) trailed by
+3–5 points, and **LAMBADA** (passages from novels, a kind of text FineWeb-Edu filters out) was far behind. Adding
+Cosmopedia's textbooks (openstax, stanford, khanacademy), how-to (wikihow) and stories brought ARC-Easy level with GPT-2,
+PIQA within 0.3, HellaSwag up 1.8 and LAMBADA up 6 points (the right word 6.5× less surprising). LAMBADA is still far
+behind: synthetic stories aren't novels. **Winogrande** stays at chance for all three: too hard at this size. Each 124M
+model took about 18 minutes on an M5 (scored with a 256- or 512-token context).
 
 ## Measured on a Colab T4
 

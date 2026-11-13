@@ -46,8 +46,9 @@ Mac Studio**.
 | Modern architecture changes, one at a time (RoPE, SwiGLU, no biases, QK-norm, learning rate, experts) | 2.631 → **2.200** (Small model, 1,000 updates) |
 | All of them over a longer run, on TinyStories / on Mini FineWeb-Edu | 1.903 → **1.732** / 4.495 → **4.143** (5,000 updates) |
 | Winning back generation speed (no hidden waits for the GPU, batched experts) | **1.8–3.5×** faster generation, identical output |
-| Standard benchmarks vs OpenAI's GPT-2 small (zero-shot) | ARC-Easy 42.1% vs 43.8%, HellaSwag 27.9% vs 31.1%, LAMBADA 9.6% vs 32.6% ([details](docs/analysis.md#standard-benchmarks)) |
-| A yardstick: OpenAI's GPT-2 small (124M) on held-out web text | **3.401**, against **3.691** for our same-size model with the best design (3.735 GPT-2 style), both trained on 246M tokens |
+| Adding more kinds of data (Cosmopedia stories, how-to, textbooks) and a 512-token context | held-out web text 3.691 → **3.549**, greedy repetition 75% → **25%** |
+| Standard benchmarks vs OpenAI's GPT-2 small (zero-shot) | ARC-Easy **44.0%** vs 43.8%, PIQA **62.6%** vs 62.9%, HellaSwag **29.7%** vs 31.1%, LAMBADA **15.7%** vs 32.6% ([details](docs/analysis.md#standard-benchmarks)) |
+| A yardstick: OpenAI's GPT-2 small (124M) on held-out web text | **3.401**, against **3.549** for our same-size model (500M tokens of training) |
 
 Details in [Analysis](docs/analysis.md) and [the journey](docs/journey.md).
 
