@@ -108,7 +108,7 @@ def train(cfg, ts, roots, out_dir, dev=None, resume=False, say=print, dataset_na
             tps = tokens_since / secs if secs > 0 else 0
             history["train"].append([u, round(loss.item(), 4), round(tps)])
             t_log, tokens_since = time.time(), 0
-            if u % max(50, ts.eval_interval // 4) == 0:
+            if u % max(50, ts.eval_interval // 4 // 50 * 50) == 0:   # a few lines between evaluations
                 say(f"update {u:,}/{ts.steps:,}  loss {loss.item():.4f}  lr {opt.param_groups[0]['lr']:.2e}  {tps:,.0f} tokens/s")
         if u % ts.eval_interval == 0 or u == ts.steps:
             vl, vb = evaluate(run, val_batches, cfg.diffusion_steps, cfg.mask_id, ctx)

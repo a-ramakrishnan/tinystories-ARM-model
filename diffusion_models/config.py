@@ -69,7 +69,7 @@ RUN_MODES = {
     # autoregressive "Medium 51M · TinyStories · 20k steps" (8 layers x 512, learned positions, GELU, lr 6e-4)
     "colab": (_model(8, 512, 8), TrainSettings(steps=20000, batch_size=32, warmup_steps=1000, eval_interval=1000,
                                                eval_batches=40, sample_interval=5000),
-              "51M parameters, 164M tokens: matches our 51M autoregressive TinyStories model; about 30-45 min on an L4"),
+              "51M parameters, 164M tokens: matches our 51M autoregressive TinyStories model; about 70 min on an L4 (42,000 tokens/s)"),
 }
 
 
