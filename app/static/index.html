@@ -713,6 +713,64 @@
         </div>
       </section>
 
+      <!-- ============ Writing text ============ -->
+      <section class="panel" data-step="textgen">
+        <header class="panel-head">
+          <span class="eyebrow">Explore</span>
+          <h1>Writing text, step by step</h1>
+          <p>How the model produces a continuation: <b>one token per step, left to right</b>. Each step is one pass through the model, reading everything written so far and choosing the next token. The prompts are the openings of real held-out documents (FineWeb-Edu and TinyStories), so there is always a true continuation to measure against, and every run uses the same prompts, tokenizer and length.</p>
+        </header>
+
+        <div class="card">
+          <div class="card-head"><h3>Watch it write</h3><span id="tg-model-note" class="muted small"></span></div>
+          <div class="fields four">
+            <label>Model <select id="tg-model" class="select"></select></label>
+            <label>Prompt <select id="tg-prompt" class="select"></select></label>
+            <label>Tokens <select id="tg-tokens" class="select"><option value="32">32</option><option value="64" selected>64</option><option value="128">128</option></select></label>
+            <label>Choosing <select id="tg-decode" class="select"><option value="0">greedy (most likely)</option><option value="0.8">sampled (temperature 0.8)</option></select></label>
+          </div>
+          <label id="tg-own-wrap" class="block hidden">Your prompt <textarea id="tg-own" rows="2" spellcheck="false">The water cycle is the process by which</textarea></label>
+          <div class="actions tight"><button id="tg-run" class="btn primary">Generate</button>
+            <span id="tg-busy" class="muted small hidden"><span class="spinner"></span> Generating…</span></div>
+          <div id="tg-out" class="hidden">
+            <div class="tg-player">
+              <button id="tg-first" class="icon-btn" title="Back to the start">⏮</button>
+              <button id="tg-play" class="icon-btn" title="Play">▶</button>
+              <button id="tg-next" class="icon-btn" title="One step">⏭</button>
+              <input id="tg-step" type="range" min="0" max="1" value="0">
+              <span id="tg-step-label" class="muted small mono"></span>
+              <select id="tg-speed" class="select"><option value="250">slow</option><option value="90" selected>medium</option><option value="0">real time</option></select>
+            </div>
+            <div id="tg-text" class="tg-text"></div>
+            <div class="tg-cols">
+              <div id="tg-stepcard" class="tg-stepcard"></div>
+              <div>
+                <div class="card-head"><h4>Which position each step writes</h4><span class="muted small">rows: steps · columns: positions</span></div>
+                <div id="tg-grid" class="chart"></div>
+              </div>
+            </div>
+            <div id="tg-metrics" class="stats"></div>
+            <div class="two-col">
+              <div><div class="card-head"><h4>Confidence at each step</h4><span class="muted small">the model's probability for the token it chose</span></div><div id="tg-prob" class="chart"></div></div>
+              <div><div class="card-head"><h4>Time for each step</h4><span class="muted small">ms; step 1 also reads the prompt</span></div><div id="tg-ms" class="chart"></div></div>
+            </div>
+            <div id="tg-ref"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>The fixed prompt set</h3><span class="muted small">greedy, 64 tokens after each of the prompts below; saved with the model</span></div>
+          <div id="tg-summary"></div>
+          <div class="actions tight"><button id="tg-runset" class="btn">Run the prompt set</button>
+            <span class="muted small">About 10 seconds for a 124M model on this Mac.</span></div>
+          <div data-job="textgen"></div>
+          <div id="tg-prompts"></div>
+          <details class="hint"><summary>What the numbers mean</summary>
+            <p><b>Steps</b> and <b>model passes</b>: how many times the model runs to write the text. Writing left to right, that's one per token. <b>Loss on the real continuation</b>: the model reads the true next 64 tokens one at a time and we average how surprised it was by each (in nats; perplexity is e to that power); lower is better, and it doesn't depend on how the text is chosen. <b>Top-1 on the real text</b>: how often the true next token was the model's first choice. <b>Confidence</b>: the model's average probability for the tokens it wrote. <b>Distinct pairs</b> and <b>repeated 4-token runs</b>: how varied the writing is (greedy text tends to loop).</p>
+          </details>
+        </div>
+      </section>
+
       <!-- ============ Lab ============ -->
       <section class="panel" data-step="lab">
         <header class="panel-head">
@@ -825,6 +883,7 @@
   <script src="/static/lab.js"></script>
   <script src="/static/journey.js"></script>
   <script src="/static/bench.js"></script>
+  <script src="/static/textgen.js"></script>
   <script src="/static/explorer.js"></script>
   <script src="/static/flow.js"></script>
   <script src="/static/flowplay.js"></script>

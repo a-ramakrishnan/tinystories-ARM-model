@@ -40,6 +40,7 @@ from model import GPT, GPTConfig, param_breakdown  # noqa: E402
 from explain import explain_forward  # noqa: E402
 import evaluate  # noqa: E402
 import benchmarks  # noqa: E402
+import textgen  # noqa: E402
 import registry  # noqa: E402
 from pretrain import pretrain, read_state_meta  # noqa: E402
 from tokenization import bin_files_exist, get_tokenizer, tokenize_and_save  # noqa: E402
@@ -1185,6 +1186,82 @@ def bench_run(req: BenchReq):
         S.job["message"] = f"Benchmarked {len(ids)} model{'s' if len(ids) > 1 else ''}."
 
     return start_job("benchmarks", job)
+
+
+# ---------- writing text, step by step (textgen.py) ----------
+
+class TextgenTraceReq(BaseModel):
+    model_id: Optional[str] = None     # default: the base model, else the chosen one
+    prompt_key: Optional[str] = None   # one of the fixed held-out prompts...
+    prompt: str = ""                   # ...or your own text (no real continuation to score against)
+    tokens: int = textgen.REF_TOKENS
+    temperature: float = 0.0
+    top_k: int = 0
+    seed: int = 1234
+
+
+class TextgenRunReq(BaseModel):
+    model_id: Optional[str] = None
+
+
+def textgen_model_id(model_id=None):
+    ids = {m["id"] for m in registry.list_models()}
+    for mid in (model_id, textgen.BASE_MODEL, S.active_model):
+        if mid and mid in ids:
+            return mid
+    raise HTTPException(400, "Save a model in the library first (the Models step).")
+
+
+@app.get("/api/textgen")
+def textgen_info():
+    """The fixed prompt set, the saved models (base model first) and any saved results."""
+    models = registry.list_models()
+    models.sort(key=lambda m: m["id"] != textgen.BASE_MODEL)
+    return {"base": textgen.BASE_MODEL if any(m["id"] == textgen.BASE_MODEL for m in models) else S.active_model,
+            "prompts": [{k: p[k] for k in ("key", "source", "prompt", "reference")} for p in textgen.heldout_prompts()],
+            "models": [{k: m.get(k) for k in ("id", "name", "params", "datasets")}
+                       | {"results": textgen.load_results(m["id"])} for m in models]}
+
+
+@app.post("/api/textgen/trace")
+def textgen_trace(req: TextgenTraceReq):
+    """Generate for one prompt and return every step (token, probability, alternatives, time)."""
+    if training_running():
+        raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
+    mid = textgen_model_id(req.model_id)
+    model = _load_cached(*registry.paths_of(mid))
+    if req.prompt_key:
+        p = next((p for p in textgen.heldout_prompts() if p["key"] == req.prompt_key), None)
+        if not p:
+            raise HTTPException(400, f"Unknown prompt: {req.prompt_key}")
+    else:
+        ids = S.enc.encode_ordinary(req.prompt[:2000])[-(model.config.block_size - 200):]
+        if not ids:
+            raise HTTPException(400, "Pick a prompt or type one.")
+        p = {"key": None, "source": "your prompt", "prompt": S.enc.decode(ids), "prompt_ids": ids, "reference": None}
+    n = max(8, min(req.tokens, 160))
+    t = 0.0 if req.temperature <= 0.001 else max(0.05, min(req.temperature, 2.0))
+    textgen.warm_up(model, S.dev.device)
+    r = textgen.run_prompt(model, p, S.dev.device, n, t, req.top_k if req.top_k > 0 else None, req.seed)
+    return {"model_id": mid, "model_name": registry.get_model(mid)["name"], "device": S.dev.device,
+            "prompt": p["prompt"], "prompt_tokens": len(p["prompt_ids"]), "source": p["source"],
+            "reference": p.get("reference"), "reference_tokens": [S.enc.decode([i]) for i in p.get("ref_ids") or []], **r}
+
+
+@app.post("/api/textgen/run")
+def textgen_run(req: TextgenRunReq):
+    """Run the whole fixed prompt set on a model (greedy) and save the results with it."""
+    mid = textgen_model_id(req.model_id)
+
+    def job():
+        model = _load_cached(*registry.paths_of(mid))
+
+        def say(i, n):
+            S.job.update(message=f"Prompt {i + 1} of {n}…", progress=i / n)
+        textgen.run_set(model, mid, S.dev.device, progress=say)
+        S.job["message"] = "Saved the results with the model."
+
+    return start_job("textgen", job)
 
 
 # ---------- lab: pick an architecture and datasets, train, compare ----------

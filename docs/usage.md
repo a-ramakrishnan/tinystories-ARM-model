@@ -363,6 +363,21 @@ A 124M model takes about 10 minutes for all five on an M5 (HellaSwag is most of 
 the tests from Hugging Face. Models trained only on TinyStories score at chance: these tests need general
 knowledge. At GPT-2 size, scores sit close to chance, so compare them with the ± (one standard error) shown.
 
+### Writing text, step by step
+
+The **Writing text** page (under Explore) shows how a model produces a continuation: one token per step, left to
+right, one pass through the model each. Pick a model (the base model by default) and a prompt, then play the
+generation back: each token is shaded by the model's confidence, a card shows the top five candidates at that step,
+and a step × position grid shows which position each step wrote (for left-to-right writing, a staircase). The
+prompts are the openings of 8 held-out documents (4 FineWeb-Edu, 4 TinyStories), so the page also shows the real
+continuation, shaded by how surprised the model was by each real token.
+
+**Run the prompt set** generates 64 tokens (greedy) after each prompt and saves the averages with the model
+(`models/<id>/textgen.json`): steps, loss and top-1 accuracy on the real continuation, confidence, speed and
+repetition. The prompts, tokenizer and length are fixed, so other ways of generating text can later be compared on
+the same footing. On the base model: loss 3.481 on the real continuations (GPT-2 small 3.118), and 28% repeated
+4-token runs in greedy text (GPT-2 61%).
+
 ## Generating text from a trained model
 
 The web app's Generate step does this for you. From Python:

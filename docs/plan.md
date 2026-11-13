@@ -8,7 +8,7 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 13 November 2026.*
+*Last updated: 13 November 2026 (evening).*
 
 | # | Phase / step | Who | Status |
 |---|---|---|---|
@@ -51,7 +51,7 @@ earlier TinyStories and WikiText models are kept as the history of how we got he
 | H4 | Denoising player: start from all [MASK], step through the iterations with each position shaded by confidence, plus a steps-vs-quality slider | Claude | after F1 |
 | H5 | Masked-only loss: in the Explorer's loss view, grey out the unmasked positions | Claude | after F1 |
 | H6 | Time embedding as an extra stage in the Flow view (if the diffusion model is conditioned on t) | Claude | after F1 |
-| H7 | Generation race: the same prompt in two lanes, left to right one token per step vs all positions in parallel over k steps, with step counts and timings | Claude | after F1 |
+| H7 | Generation race: the same prompt in two lanes, left to right one token per step vs all positions in parallel over k steps, with step counts and timings | Claude | autoregressive half ✅ (the *Writing text* page: fixed held-out prompts, step player, step × position grid, loss on the real continuation, saved results); diffusion half after F1 |
 
 **Open choices**
 

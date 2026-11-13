@@ -24,6 +24,7 @@ const STEPS = [
   { id: "models", title: "Models", sub: "Save, switch, compare" },
   { id: "lab", title: "Lab", sub: "Design, train, compare", explore: true, icon: "⚗" },
   { id: "benchmarks", title: "Benchmarks", sub: "Standard tests", explore: true, icon: "◎" },
+  { id: "textgen", title: "Writing text", sub: "Step by step", explore: true, icon: "→" },
   { id: "journey", title: "Journey", sub: "How we got here", explore: true, icon: "⏱" },
 ];
 
@@ -118,6 +119,7 @@ function go(id) {
   if (id === "lab" && typeof labOpen === "function") labOpen();
   if (id === "journey" && typeof journeyOpen === "function") journeyOpen();
   if (id === "benchmarks" && typeof benchOpen === "function") benchOpen().catch((e) => toast(e.message, true));
+  if (id === "textgen" && typeof textgenOpen === "function") textgenOpen().catch((e) => toast(e.message, true));
   document.body.classList.toggle("ex-wide", id === "attention" && typeof exActive === "function" && exActive());
   render();
   if (id === "batches") renderBatchExample();
