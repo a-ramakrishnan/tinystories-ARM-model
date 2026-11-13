@@ -39,8 +39,9 @@ that are easy to get wrong and rarely explained.
 28. [Batched generation and prefix caching](#28-batched-generation-and-prefix-caching)
 29. [Seeing the model work: the Explorer](#29-seeing-the-model-work-the-explorer)
 30. [The best design at GPT-2 size](#30-the-best-design-at-gpt-2-size)
-31. [Lessons](#31-lessons)
-32. [What's next](#32-whats-next)
+31. [Faster training](#31-faster-training)
+32. [Lessons](#32-lessons)
+33. [What's next](#33-whats-next)
 
 ---
 
@@ -1096,7 +1097,36 @@ SwiGLU's three matrices and QK-norm cost time on the GPU even at the same parame
 **Lesson.** Check a small-scale win at the scale you care about. The design still won at 124M, but the size of a
 gain measured on a short run at 30M didn't carry over; what remains is the data.
 
-## 31. Lessons
+## 31. Faster training
+
+The benchmarks said the next gains are in data, and data costs GPU hours: the 124M run read 246M tokens in 3 h 38 min
+(18,759 tokens/s on an L4). Before a bigger run, the training itself had to get faster. `speedtest.py` (run from
+`speed_test.ipynb` on Colab) times real training steps of the 124M best design on real batches, one change at a time:
+
+| Colab L4, 124M best design | 256 tokens of context | 512 tokens | Peak memory |
+|---|---|---|---|
+| The recipe so far (no compile, plain AdamW) | 20,869 tokens/s | 20,182 | 11.2 GB |
+| + fused AdamW and TF32 | 22,181 (1.06×) | 21,555 (1.07×) | 11.2 GB |
+| **+ `torch.compile`** | **35,344 (1.69×)** | **34,381 (1.70×)** | **7.5 GB** |
+| + a bigger batch (64 / 32 sequences) | 34,203 | 33,920 | 13.2 GB |
+
+- **`torch.compile` is the win.** It fuses the many small GPU operations of each block (the norms, RoPE, SwiGLU's
+  gate) into fewer kernels: 1.7× faster, and a third less memory, because fused operations don't store their
+  intermediate results.
+- **Bigger batches don't help here.** Once compiled, the L4 is busy at 32 sequences; its compute is the limit, so the
+  2–3× hoped for was too optimistic for this GPU. An A100 has about 2.5× the compute and should go further, but Colab
+  had none free.
+- **512 tokens of context cost almost nothing** (3% slower per token), which helps the next run.
+- **The maths is unchanged:** on the Mac, where these options don't apply, the training losses are identical to the
+  last digit, and a compiled model's loss is identical with gradients within 4e-8.
+
+`torch.compile` is now on by default for GPU training in the notebook (`compile_model`). The data run planned next,
+500M tokens on an L4, takes about 4 hours instead of 7.
+
+**Lesson.** Measure each speed-up on its own, on the hardware you'll use. One change gave 1.7×; the others gave
+6% and nothing, and an estimate made from other people's GPUs was too optimistic for this one.
+
+## 32. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1146,8 +1176,10 @@ gain measured on a short run at 30M didn't carry over; what remains is the data.
     don't predict: heads with habits, an answer that appears halfway up the network, outlier dimensions.
 28. **Check a small-scale win at the scale you care about.** The best design still won at 124M, but by 0.04, not
     the 0.3 it gained at 30M over a short run: it mostly buys speed of learning. The rest of the gap is data.
+29. **Measure each speed-up on its own, on your hardware.** `torch.compile` gave 1.7×; fused AdamW 6%; bigger batches
+    nothing, because the compiled L4 was already compute-bound.
 
-## 32. What's next
+## 33. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
 - **Inference:** re-measure generation speed on a quiet machine; expose contrastive search and batched samples in the app.

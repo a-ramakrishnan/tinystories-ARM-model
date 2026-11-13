@@ -4,6 +4,13 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-13 08:00", kind: "win", area: "Training", title: "Faster training: torch.compile",
+    decision: "Compile the model on Nvidia GPUs, use fused AdamW and TF32, and time each change on its own with speedtest.py on a Colab L4.",
+    why: "The next gains are in data, and data costs GPU hours: the 124M run read 246M tokens in 3 h 38 min.",
+    result: { label: "Tokens/s, 124M best design, Colab L4", text: "20,869 → 35,344 with torch.compile (1.69×; 7.5 GB instead of 11.2) · fused AdamW + TF32 1.06× · bigger batches: no gain" },
+    calc: ["512 tokens of context: 34,381 tokens/s, only 3% slower per token", "same maths: identical losses on the Mac; compiled gradients within 4e-8",
+      "no A100 was free on Colab to compare"],
+    cost: "about 15 minutes of an L4", anchor: "31-faster-training" },
   { when: "2026-11-12 19:00", kind: "tool", area: "Tooling", title: "Standard benchmarks",
     decision: "Score HellaSwag, LAMBADA, ARC-Easy, PIQA and Winogrande zero-shot, the way EleutherAI's lm-evaluation-harness does; check on GPT-2 first.",
     why: "Our own evaluation suite compares our models with each other; published benchmarks compare them with everyone else's.",

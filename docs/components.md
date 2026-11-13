@@ -327,6 +327,7 @@ lab_run.ipynb              Notebook that runs a Lab run spec on Google Colab or 
 reference_gpt2.py          Loads OpenAI's GPT-2 small into the model library as a reference
 explain.py                 The model's internals for one prompt, for the Explorer in Inside the transformer
 benchmarks.py              Standard zero-shot benchmarks: HellaSwag, LAMBADA, ARC-Easy, PIQA, Winogrande
+speedtest.py               Training speed test (tokens/s, memory) for the 124M model; speed_test.ipynb runs it on Colab
 docs/                      This documentation: usage.md, components.md, analysis.md, journey.md
 docs/screenshots/          Screenshots used in the documentation
 ```
