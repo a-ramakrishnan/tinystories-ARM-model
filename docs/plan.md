@@ -39,8 +39,8 @@ earlier TinyStories and WikiText models are kept as the history of how we got he
 | **F** | **A masked diffusion language model** | | in progress |
 | F1 | The diffusion model (L8), written and first trained on TinyStories | the author | ✅ first version generates text (`diffusion_models/v1_original.py`) |
 | F1b | Make it modular in `diffusion_models/` (GPT-2 tokenizer, the project's token files, plain text, a likelihood bound to compare with), plus a Colab notebook; the `colab` run mode matches the 51M autoregressive TinyStories model (164M tokens) | Claude | ✅ |
-| F1c | Train it on TinyStories on Colab and check it generates: first a short learning-rate check (`quick` mode, 6e-4 vs 2e-3; a 2,000-update local test at 6e-4 was still only learning word frequencies, while a copy test confirmed the model and loss are correct), then the `colab` run | Colab, the author's go-ahead | next |
-| F2 | Train the same diffusion model on Mini FineWeb-Edu (small) on Colab | Claude | after F1c |
+| F1c | Train it on TinyStories on Colab and check it generates | Colab | ✅ 164M tokens, 49 min on an L4 (59,000 tokens/s): likelihood bound **2.525** nats/token (the 51M autoregressive model's loss: 1.583). It learned only word frequencies for ~2,500 updates, then used context (6e-4 beat 2e-3 in a 2,000-update check). Coherent stories once revealed tokens are kept fixed while sampling (v1's re-sampling of every position broke the final text; kept as `sampler="v1"`) |
+| F2 | Train the same diffusion model on Mini FineWeb-Edu (small) on Colab | Claude | next |
 | F3 | Integrate it into the app (Lab, Generate, Explorer) | Claude | with F2 |
 | F4 | Compare on both datasets: the TinyStories diffusion model against the autoregressive *Medium 51M · TinyStories · 20k steps* (the same size, tokens and schedule as the `colab` run mode), and the FineWeb-Edu one against the base model; on the prompt set's TinyStories and FineWeb-Edu prompts: the outputs, loss (the diffusion loss is an upper bound, ours is exact), steps and speed | Claude | after F2 |
 | **G** | **Publish on GitHub Pages** | | |

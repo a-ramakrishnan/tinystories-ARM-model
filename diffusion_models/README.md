@@ -28,3 +28,22 @@ python3 -m diffusion_models.sample diffusion_models/runs/<run> --prompt "Once up
 
 The `colab` run mode matches the autoregressive *Medium 51M · TinyStories · 20k steps* model: 51M parameters,
 164M tokens of TinyStories, the same learning-rate schedule.
+
+## First results (TinyStories, 13 November 2026)
+
+The `colab` run took 49 minutes on a Colab L4 (59,000 tokens/s). Its likelihood bound fell to **2.525** nats per
+token; the autoregressive model of the same size and data reaches a loss of 1.583 (the bound is an upper limit, so
+the gap may be smaller than it looks).
+
+- **A long plateau first.** For about 2,500 updates (20M tokens) the model only learned how common each word is
+  (5.96 nats, the loss of word frequencies alone), then it began to use the context and the loss fell quickly:
+  5.78 at update 2,000, 4.44 at 3,000, 3.34 at 5,000. Masked language models such as BERT show the same plateau.
+  A higher learning rate didn't shorten it (2e-3 was worse than 6e-4 over 2,000 updates).
+- **The sampler matters.** With v1's sampler, which re-samples every position at every step, the middle steps
+  read fluently but the final text was jumbled: the last step re-draws all the tokens at once, independently.
+  Keeping each token once it's revealed (now the default) gives coherent stories from the same model:
+
+  > Lily wanted to play with her toys. She put it in her room. She saw a new toy on the floor. It was red and
+  > shiny. Lily was very happy.
+
+  128 tokens take 64 model passes and about 0.3 s on the L4.
