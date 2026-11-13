@@ -74,6 +74,7 @@ saved models and every option, see [How to use it](docs/usage.md).
 | [Understanding the components](docs/components.md) | The pipeline, inside the transformer, parameter counts, training, inference metrics, sampling and the KV cache, project structure |
 | [Analysis](docs/analysis.md) | Measured results: getting better stories, every improvement step with its result, the roadmap, the Colab measurements |
 | [The journey](docs/journey.md) | The whole story, from the first commit to today, with the lessons learned |
+| [The plan](docs/plan.md) | The roadmap: what's done, what's next, and who does it |
 
 **Keywords:** small language model · train LLM from scratch · GPT from scratch · transformer attention
 visualization · PyTorch MPS · Apple Silicon machine learning · M1/M2/M3/M4/M5 GPU training · local LLM training
