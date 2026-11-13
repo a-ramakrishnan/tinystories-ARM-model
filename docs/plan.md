@@ -44,6 +44,14 @@ earlier TinyStories and WikiText models are kept as the history of how we got he
 | G2 | Browser-only versions of the Journey timeline, the Benchmarks results, the model comparison, and the Explorer replaying the base model's real numbers for a few saved prompts | Claude | open |
 | G3 | Optional: live generation in the browser with a small model (ONNX / transformers.js or WebGPU) | Claude | optional |
 | G4 | A GitHub Actions workflow to build and deploy the site, and links from the README | Claude | open |
+| **H** | **New visualizations** (ideas borrowed from Vizuara's diffusion explainer, built in our own style) | | |
+| H1 | Noising slider: a held-out sentence goes from clean to fully masked as t grows, with a chart of the mask schedule r(t) = t/T and a Play button | Claude | can start now |
+| H2 | Numbered stage cards in the Flow player: each stage gets a card with what happens, its formula and the example's real (4-d) numbers | Claude | can start now |
+| H3 | Attention-mask grids: causal (our model) vs bidirectional (diffusion), overlaid with real attention weights for the same prompt | Claude | causal side now; diffusion side after F1 |
+| H4 | Denoising player: start from all [MASK], step through the iterations with each position shaded by confidence, plus a steps-vs-quality slider | Claude | after F1 |
+| H5 | Masked-only loss: in the Explorer's loss view, grey out the unmasked positions | Claude | after F1 |
+| H6 | Time embedding as an extra stage in the Flow view (if the diffusion model is conditioned on t) | Claude | after F1 |
+| H7 | Generation race: the same prompt in two lanes, left to right one token per step vs all positions in parallel over k steps, with step counts and timings | Claude | after F1 |
 
 **Open choices**
 
@@ -51,6 +59,8 @@ earlier TinyStories and WikiText models are kept as the history of how we got he
   bigger GPU commitment.
 - Where GitHub Pages (G) goes: it's independent of the rest, and most worth doing once there's more to show.
 - What C3 covers depends on the author's ideas.
+- The new visualizations (H) can replay saved data, so they can also go on GitHub Pages (G2); H4–H7 come with
+  the diffusion integration (F2).
 
 **Why the order:** the benchmarks showed that the remaining gap to GPT-2 is mostly data (more of it, and more kinds),
 so data and inference come before further architecture work. Post-training changes behaviour more than knowledge, so
