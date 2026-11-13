@@ -8,7 +8,7 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 13 November 2026 (evening).*
+*Last updated: 13 November 2026 (night).*
 
 | # | Phase / step | Who | Status |
 |---|---|---|---|
@@ -41,8 +41,10 @@ earlier TinyStories and WikiText models are kept as the history of how we got he
 | F1b | Make it modular in `diffusion_models/` (GPT-2 tokenizer, the project's token files, plain text, a likelihood bound to compare with), plus a Colab notebook; the `colab` run mode matches the 51M autoregressive TinyStories model (164M tokens) | Claude | ✅ |
 | F1c | Train it on TinyStories on Colab and check it generates | Colab | ✅ 164M tokens, 49 min on an L4 (59,000 tokens/s): likelihood bound **2.525** nats/token (the 51M autoregressive model's loss: 1.583). It learned only word frequencies for ~2,500 updates, then used context (6e-4 beat 2e-3 in a 2,000-update check). Coherent stories once revealed tokens are kept fixed while sampling (v1's re-sampling of every position broke the final text; kept as `sampler="v1"`) |
 | F2 | Train the same diffusion model on Mini FineWeb-Edu (small) on Colab | Claude | ✅ 164M tokens, 50 min on an L4: likelihood bound **5.269** nats/token, still falling (the plateau lasted ~3,000 updates). Confident-first sampling collapses into one repeated word ("fish, fish, fish"); revealing in random order at temperature 0.8 (`sampler="random"`) gives varied, loosely fluent text without much coherence: 164M tokens is little for FineWeb-Edu at 51M parameters (our base AR model saw 500M tokens at 124M) |
-| F3 | Integrate it into the app (Lab, Generate, Explorer) | Claude | next (needs the two runs' weights on the Mac) |
-| F4 | Compare on both datasets: the TinyStories diffusion model against the autoregressive *Medium 51M · TinyStories · 20k steps* (the same size, tokens and schedule as the `colab` run mode), and the FineWeb-Edu one against the base model; on the prompt set's TinyStories and FineWeb-Edu prompts: the outputs, loss (the diffusion loss is an upper bound, ours is exact), steps and speed | Claude | after F2 |
+| F2b | **Fix the diffusion models' generation (first thing on 14 Nov).** The FineWeb-Edu model's text is very bad: confident-first sampling repeats one word ("animals, animals, and animals, …"), random order is loosely fluent but incoherent. To try, measured by repetition and the AR base model's loss on the output: semi-autoregressive blocks (LLaDA: fill 16–32 tokens at a time, left to right), fewer tokens per step (more steps), temperature and top-p, a repetition penalty across positions, re-masking low-confidence tokens (ReMDM); then, if the model itself is the limit, train longer (more tokens) or larger | Claude | **next** |
+| F3 | Integrate it into the app (Lab, Generate, Explorer) | Claude | after F2b (both runs' weights downloaded to the Mac) |
+| F4 | Compare on both datasets: the TinyStories diffusion model against the autoregressive *Medium 51M · TinyStories · 20k steps* (the same size, tokens and schedule as the `colab` run mode), and the FineWeb-Edu one against the base model; on the prompt set's TinyStories and FineWeb-Edu prompts: the outputs, loss (the diffusion loss is an upper bound, ours is exact), steps and speed | Claude | after F3 |
+| F5 | **Benchmark the diffusion models** like the autoregressive ones: the held-out losses (the likelihood bound on the same held-out sets), the five benchmarks (ARC-Easy, PIQA, HellaSwag, Winogrande scored by each choice's likelihood bound; LAMBADA by masking the last word), and generation quality (repetition, the AR base model's loss on the text, speed), shown on the Benchmarks page next to the AR models and GPT-2 | Claude | after F2b |
 | **G** | **Publish on GitHub Pages** | | |
 | G1 | The documentation as a website | Claude | open |
 | G2 | Browser-only versions of the Journey timeline, the Benchmarks results, the model comparison, and the Explorer replaying the base model's real numbers for a few saved prompts | Claude | open |
