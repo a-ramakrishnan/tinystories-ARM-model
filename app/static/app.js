@@ -97,7 +97,7 @@ function stepDone(id) {
 
 function stepBlocker(id) {
   const s = ui.status, sel = s?.selection;
-  if (id === "dataset" || id === "models" || id === "lab" || id === "journey") return null;
+  if (["dataset", "models", "lab", "journey", "benchmarks", "textgen"].includes(id)) return null;  // these use saved models only
   if (id === "generate" && s.active) return null;
   if (!sel) return ["Add a dataset first, or pick a saved model in the Models step.", "dataset"];
   if (id === "tokenize") return null;
@@ -121,6 +121,7 @@ function go(id) {
   if (id === "benchmarks" && typeof benchOpen === "function") benchOpen().catch((e) => toast(e.message, true));
   if (id === "textgen" && typeof textgenOpen === "function") textgenOpen().catch((e) => toast(e.message, true));
   document.body.classList.toggle("ex-wide", id === "attention" && typeof exActive === "function" && exActive());
+  document.body.classList.toggle("tg-wide", id === "textgen");
   render();
   if (id === "batches") renderBatchExample();
   if (id === "tokenize") renderTokenExamples();
