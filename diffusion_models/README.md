@@ -47,3 +47,22 @@ the gap may be smaller than it looks).
   > shiny. Lily was very happy.
 
   128 tokens take 64 model passes and about 0.3 s on the L4.
+
+## FineWeb-Edu (small), 13 November 2026
+
+The same `colab` run on Mini FineWeb-Edu (small): 50 minutes, 59,000 tokens/s, likelihood bound **5.269** nats per
+token after 164M tokens, still falling at the end. The word-frequency plateau lasted about 3,000 updates (bound
+7.6 → 7.1 at 3,000, 6.0 at 6,000, 5.66 at 10,000).
+
+- **Confident-first sampling collapses** on this model: the most confident guess at many masked positions is the
+  same frequent topic word, and they all get revealed together ("The water cycle is also fish, fish, fish, ...").
+- **Random order helps.** Revealing masked positions in random order (`sampler="random"`, MDLM's sampler) at
+  temperature 0.8 gives varied, loosely fluent text, though without much coherence:
+
+  > The water cycle is home and water, and is fed through the water system. The water-based system is generated
+  > in Water process.
+
+  At temperature 1.0 it's word salad. For comparison, our base autoregressive model saw 500M tokens at 124M
+  parameters; 164M tokens at 51M is little for text this varied.
+- Fixed: with more or fewer denoising steps than the model's T noise levels, the sampler now passes the matching
+  noise level (it passed the step number, which crashed with more than 64 steps).

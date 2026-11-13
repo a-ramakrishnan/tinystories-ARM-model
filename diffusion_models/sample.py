@@ -5,6 +5,10 @@
 # Two ways of choosing which tokens to keep (`sampler`):
 #   "keep" (default): a revealed token stays fixed; each step reveals the most confident of the still-masked
 #       positions (the usual masked-diffusion sampler, as in MDLM / LLaDA).
+#   "random": a revealed token stays fixed; each step reveals masked positions chosen at random (MDLM's
+#       ancestral sampler). On the FineWeb-Edu model, "keep" collapsed into one repeated topic word ("fish, fish,
+#       fish, ..."): the most confident guess at every masked position is the same frequent word. Random order
+#       with temperature 0.8 gives varied text there; on TinyStories "keep" reads better.
 #   "v1": v1's diffusion_generate: every generated position is re-sampled at every step, then the least
 #       confident are masked again. Tokens can change until the end, but the last step re-draws all of them
 #       independently, which breaks the text up: on the 51M TinyStories model the middle steps read fluently and
@@ -49,7 +53,10 @@ def diffusion_generate(model, prompt_text="", max_new_tokens=128, diffusion_step
     frames, trace = [], []
     t0 = time.perf_counter()
     for s in range(T, 0, -1):
-        t = torch.tensor([s], device=device, dtype=torch.long)
+        # the noise level the model was trained with: the fraction still masked, on its own scale 1..cfg.T
+        # (with as many denoising steps as noise levels this is just s)
+        level = max(1, min(cfg.diffusion_steps, round(s * cfg.diffusion_steps / T)))
+        t = torch.tensor([level], device=device, dtype=torch.long)
         logits = model(x, timesteps=t).float()
         logits[..., GPT2_VOCAB:] = float("-inf")          # never write [MASK] or the unused padding ids
         if temperature != 1.0:
@@ -73,7 +80,10 @@ def diffusion_generate(model, prompt_text="", max_new_tokens=128, diffusion_step
             cand = torch.where(x[0] == MASK_ID)[0]
             reveal = cand.numel() - target_masks
             if reveal > 0:
-                top = cand[torch.topk(conf[0, cand], k=reveal).indices]
+                if sampler == "random":
+                    top = cand[torch.randperm(cand.numel(), device=device)[:reveal]]
+                else:
+                    top = cand[torch.topk(conf[0, cand], k=reveal).indices]
                 x[0, top] = sampled[0, top]
 
         if record_steps:
@@ -105,7 +115,8 @@ def main():
     ap.add_argument("--temperature", type=float, default=1.0)
     ap.add_argument("--top-k", type=int, default=50)
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--sampler", default="keep", choices=["keep", "v1"], help="keep revealed tokens (default) or v1's re-sampling")
+    ap.add_argument("--sampler", default="keep", choices=["keep", "random", "v1"],
+                    help="keep: reveal the most confident first (default); random: reveal in random order; v1: v1's re-sampling")
     ap.add_argument("--gif", default=None, help="also save the denoising steps as a GIF")
     a = ap.parse_args()
     model = load(a.run_dir, setup_device().device)
