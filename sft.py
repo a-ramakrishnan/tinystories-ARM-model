@@ -40,6 +40,12 @@ DATASET = "HuggingFaceTB/smol-smoltalk"
 DATA_DIR = os.path.join(PROJECT_DIR, "data", "sft-smoltalk")
 CHAT_FORMAT = "smoltalk-plain-v1"
 ROLE_PREFIX = {"system": "System: ", "user": "User: ", "assistant": "Assistant: "}
+EVAL_QUESTIONS = ["What is the water cycle?", "Why is the sky blue?", "How do vaccines work?",
+                  "Give me three tips for staying focused while studying.", "Explain photosynthesis to a ten-year-old.",
+                  "What causes the seasons on Earth?", "Write a short poem about the sea.",
+                  "What is the difference between weather and climate?", "How can I save money on groceries?",
+                  "Summarize the causes of World War I in a few sentences.", "What is a prime number? Give examples.",
+                  "Suggest a name for a bakery and explain why."]
 QUESTIONS = ["What is the water cycle?", "Give me three tips for staying focused while studying.",
              "Explain photosynthesis to a ten-year-old.", "Write a short poem about the sea.",
              "What is the capital of France, and what is it known for?"]
@@ -283,6 +289,45 @@ def train(base, out_dir, steps=None, epochs=1.0, batch_size=32, lr=2e-4, min_lr=
     return extra
 
 
+def repeated_4grams(ids):
+    grams = [tuple(ids[i:i + 4]) for i in range(len(ids) - 3)]
+    return (len(grams) - len(set(grams))) / len(grams) if grams else 0.0
+
+
+def compare(models, out_path=None, data_dir=DATA_DIR, say=print):
+    """Base vs chat model(s): held-out answer loss, the same questions answered greedily (repetition without DRY,
+    and the answers with DRY), and whether each answer ends by itself."""
+    dev = setup_device()
+    enc = get_tokenizer()
+    ctx = dev.ctx if dev.device == "cuda" else nullcontext()
+    results = {}
+    loader = SFTLoader(data_dir, dev.device, 8)
+    tests = loader.test_batches(40)
+    for mid in models:
+        w, cp = resolve_base(mid)
+        config, info = load_model_config(cp)
+        model = load_model(config, w, dev.device)
+        loss = test_loss(model, tests, ctx)
+        rows, reps, ended = [], [], 0
+        for q in EVAL_QUESTIONS:
+            ids = format_prompt([{"role": "user", "content": q}], enc)
+            plain = [ev["id"] for ev in generate_stream(model, ids, dev.device, 160, 0.0, None, stop_token=enc.eot_token)]
+            ended += len(plain) < 160
+            reps.append(repeated_4grams(plain))
+            rows.append({"question": q, "greedy": enc.decode(plain).strip(),
+                         "greedy_dry": answer(model, enc, q, dev.device)})
+        results[mid] = {"chat": bool(info.get("chat")), "answer_loss": round(loss, 4),
+                        "greedy_repeated_4grams": round(sum(reps) / len(reps), 3),
+                        "ended_by_itself": f"{ended}/{len(EVAL_QUESTIONS)}", "answers": rows}
+        say(f"{mid}: held-out answer loss {loss:.4f}, greedy repetition {results[mid]['greedy_repeated_4grams']:.1%}, "
+            f"ended by itself {ended}/{len(EVAL_QUESTIONS)}")
+        del model
+    if out_path:
+        json.dump({"measured_at": time.strftime("%Y-%m-%d %H:%M"), "format": CHAT_FORMAT, "results": results},
+                  open(out_path, "w"), indent=1)
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser(description="Instruction tuning (SFT) on smol-smoltalk.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -296,6 +341,9 @@ def main():
     t.add_argument("--lr", type=float, default=2e-4)
     t.add_argument("--batch-size", type=int, default=32)
     t.add_argument("--eval-every", type=int, default=500)
+    k = sub.add_parser("compare", help="base vs chat model: answer loss, the same questions, repetition")
+    k.add_argument("models", nargs="+", help="library ids or checkpoint folders")
+    k.add_argument("--out", default=None)
     c = sub.add_parser("chat")
     c.add_argument("folder")
     c.add_argument("question")
@@ -305,6 +353,8 @@ def main():
     elif a.cmd == "train":
         out = a.out or os.path.join(PROJECT_DIR, "outputs", "sft", time.strftime("%Y%m%d-%H%M"))
         train(a.base, out, a.steps, a.epochs, a.batch_size, a.lr, a.lr / 10, eval_every=a.eval_every, base_id=a.base)
+    elif a.cmd == "compare":
+        compare(a.models, a.out)
     else:
         w, cp = resolve_base(a.folder)
         config, _ = load_model_config(cp)
