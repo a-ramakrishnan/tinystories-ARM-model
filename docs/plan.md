@@ -8,7 +8,7 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 14 November 2026, 17:30 IST.*
+*Last updated: 14 November 2026, 18:00 IST.*
 
 ## Where things stand (14 November, afternoon)
 
@@ -18,6 +18,7 @@ Three things are running or queued; nothing else needs a decision until they fin
 |---|---|---|
 | Colab L4 | **F2c** the long diffusion run on FineWeb-Edu (492M tokens) | ✅ done 14:25: likelihood bound **4.729** (short run 5.269), 145 min; downloaded to `diffusion_models/runs/fineweb-edu-small-colab-long` |
 | Colab L4 | **D1** instruction tuning | ✅ 16:10: held-out answer loss 2.437 → **1.548** in 90 min; in the library as `chat-mini-fineweb-ed-202611141041-96c673`, evaluated (see D1) |
+| Mac, now | **D2** DPO against repetition, on the chat model | writing `dpo.py`; pairs (~1.5 h of generation) and training (~30 min) on the Mac tonight |
 | Colab L4, now | **E2** stage 2: `stage2.py`, ~2.5B tokens, continued from the base | training since 16:35 (tokenizing took 25 min: FineWeb-Edu full = 3.8B tokens, all 2,974 held-out documents removed); step 30,500 → 152,600 at ~34,000 tokens/s, done about **08:50 on 15 Nov**; checkpoints on Drive (`MyDrive/tinystories-runs/stage2-fineweb-full-cosmopedia`), so a disconnect only means running the cell again |
 | Mac | **F5** benchmarks for the two diffusion models | running (slow: shares the Mac's GPU); results this afternoon → Benchmarks page, README, journey |
 
@@ -31,7 +32,8 @@ Three things are running or queued; nothing else needs a decision until they fin
    denoising player). F3's last piece, diffusion in Generate, folds into H1.
 4. **After E2**: evaluate stage 2 against the base and GPT-2; if better, it becomes the base, and D1 is re-run on it
    (~1 h).
-5. **Then D2** (DPO against repetition) on the new chat model, then **D3** (GRPO).
+5. **D2** (DPO against repetition): started on today's chat model on the Mac (the L4 is busy with E2); redone on the
+   stage 2 chat model later. Then **D3** (GRPO).
 6. **Then reasoning (I):** the eval set and longer context (I0), thinking by fine-tuning (I1), test-time compute (I2),
    RL (I3); for diffusion, instruction tuning (I4), thinking (I5), RL (I6); then compare (I7).
 7. **Any time:** C1, the author's GPTQ (Claude adapts it in C2 when it's ready); G, GitHub Pages, once there's more
@@ -57,7 +59,7 @@ Three things are running or queued; nothing else needs a decision until they fin
 | C3 | The author's other inference ideas | the author decides | after C2 |
 | **D** | **Post-training** (on the base model) | | |
 | D1 | Supervised fine-tuning on instructions (L7) on the base model: smol-smoltalk conversations in a plain `User:` / `Assistant:` format, loss on the assistant's words only, about 1 h on a Colab L4; a Chat mode in Generate | Claude | ✅ **14 Nov**: `sft.py` (prepare / train / chat / compare), `sft_colab.ipynb`, Chat mode on Generate. 409K conversations (smol-smoltalk is long for 512 tokens: ~11% dropped, over half cut to the turns that fit), 11,284 updates, 90 min on an L4. Held-out answer loss 2.437 → **1.548**; it answers in the right shape instead of writing blog posts, but facts are as weak as the base's ("the sky is blue because it is a blue color"); greedy repetition 29.4% → 27.5% (D2's target); 3 of 12 answers end by themselves within 160 tokens (answers run long); benchmarks HellaSwag 28.9, LAMBADA 10.6, ARC-Easy 38.1, PIQA 58.5, Winogrande 50.4 (base 29.7, 15.7, 44.0, 62.6, 50.0): the alignment tax. Redo on the stage 2 model (~1.5 h) |
-| D2 | DPO against repetition (greedy repetition is 25% today) | Claude | after D1 |
+| D2 | DPO against repetition (greedy repetition is 25% today; the chat model's greedy answers: 27.5%) | Claude | **in progress (14 Nov evening, on the Mac)**: `dpo.py`. Pairs from smol-smoltalk single-turn questions with a short reference answer (≤ 200 tokens): *chosen* = the reference answer (it ends), *rejected* = the chat model's own greedy answer (it loops and runs on). DPO loss (β 0.1) against the frozen chat model, plus a small likelihood term on the chosen answer so it doesn't drift down. Measured with `sft.py compare`: greedy repetition, answers that end, held-out answer loss, benchmarks. Runs on the Mac while the L4 does E2 |
 | D3 | GRPO with automatically checkable rewards | Claude | after D2 |
 | **E** | **Scaling the data** (the data run showed more data helps) | | |
 | E1 | Measure training speed on an A100 (none was free on 13 Nov) | Claude | when one is free |
