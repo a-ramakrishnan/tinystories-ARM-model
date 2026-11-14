@@ -1188,6 +1188,7 @@ autoregressive model's loss, flattering the autoregressive side.
 |---|---|---|
 | TinyStories | **2.525** | 1.583 (*Medium 51M · TinyStories · 20k steps*) |
 | Mini FineWeb-Edu (small) | **5.269**, still falling | (the 124M base model: 3.549 held out, 500M tokens) |
+| Mini FineWeb-Edu (small), 3× longer: 492M tokens, 145 min | **4.729**, still falling slowly | |
 
 - **A long plateau first.** For about 2,500 updates (20M tokens) the model only learned how common each word is, then
   started to use the context and the loss fell fast, as BERT-style models do. On FineWeb-Edu it took 3,000 updates.
@@ -1205,7 +1206,9 @@ autoregressive model's loss, flattering the autoregressive side.
   revealed (scattered clusters, where left-to-right writing draws a staircase).
 
 The TinyStories model writes stories about as coherent as the autoregressive one at the same size; the FineWeb-Edu one
-stays on topic but loosely connected. A three-times-longer FineWeb-Edu run (492M tokens) is training.
+stays on topic but loosely connected. Three times the training (492M tokens) brought the bound from 5.27 to 4.73 and
+made every sampler's text easier for the base model to predict (judge loss 3.62 → 3.01 with the default sampler), but
+a few prompts still lock onto one word.
 
 **Lesson.** With a diffusion model, the sampler is half the model: the same weights produced jumbled text, a loop of one
 word, or readable stories depending only on which positions are revealed when.

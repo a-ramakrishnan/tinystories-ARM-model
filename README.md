@@ -57,6 +57,7 @@ step by step.
 | Standard benchmarks vs OpenAI's GPT-2 small (zero-shot) | ARC-Easy **44.0%** vs 43.8%, PIQA **62.6%** vs 62.9%, HellaSwag **29.7%** vs 31.1%, LAMBADA **15.7%** vs 32.6% ([details](docs/analysis.md#standard-benchmarks)) |
 | A masked diffusion model (51M, 164M tokens of TinyStories), against the autoregressive model of the same size | likelihood bound **2.525** vs loss 1.583; coherent stories once the sampler keeps revealed tokens |
 | Diffusion text without loops: a repetition penalty while denoising | repeated 4-token runs on FineWeb-Edu 43% → **4%** (real text 0%) |
+| The FineWeb-Edu diffusion model trained 3× longer (492M tokens, 145 min on an L4) | likelihood bound 5.269 → **4.729**; more fluent text (judge loss 3.62 → 3.01) |
 | A yardstick: OpenAI's GPT-2 small (124M) on held-out web text | **3.401**, against **3.549** for our same-size model (500M tokens of training) |
 
 Details in [Analysis](docs/analysis.md) and [the journey](docs/journey.md).

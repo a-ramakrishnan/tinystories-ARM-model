@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-14 14:25", kind: "win", area: "Diffusion", title: "The FineWeb-Edu diffusion model, 3× longer",
+    decision: "Train the same 51M diffusion model three times longer on Mini FineWeb-Edu: 60,000 updates, 492M tokens (the colab-long run mode).",
+    why: "The 164M-token run's bound was still falling and its text was on topic but loosely connected: the model, not the sampler.",
+    result: { label: "Likelihood bound · judge loss of its text (default sampler)", text: "5.269 → 4.729 · 3.62 → 3.01 (real text 3.79)" },
+    calc: ["still falling slowly at the end: 5.32 at 20,000 updates, 4.75 at 54,000",
+      "every sampler's text got easier for the base model to predict, with about the same variety",
+      "a few prompts still lock onto one word (\"class class class\"); blocks of 8 with penalty 1.2 avoid it"],
+    cost: "145 minutes on a Colab L4 at 59,300 tokens/s", anchor: "33-a-second-kind-of-model-masked-diffusion" },
   { when: "2026-11-14 10:00", kind: "fix", area: "Diffusion", title: "Diffusion text without loops",
     decision: "Score the diffusion models' text on held-out prompts (diffusion_models/quality.py: repetition, and the base model's loss on it) and try samplers; make a repetition penalty of 1.3 the default.",
     why: "On FineWeb-Edu, confident-first sampling filled one word everywhere: \"animals, animals, and animals, …\".",

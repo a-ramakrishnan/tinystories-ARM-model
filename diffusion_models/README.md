@@ -96,3 +96,28 @@ it's read with the next two), **repeated 4-grams** (share of 4-token runs alread
   tokens (16 steps: 0.235 → 0.083).
 - The FineWeb-Edu text is now on topic and rarely repeats, but it's still loosely connected; that's the model
   (bound 5.27, 164M tokens at 51M parameters), not the sampler. More training is the next lever.
+
+## Three times the training on FineWeb-Edu (14 November 2026)
+
+The `colab-long` run: the same model and data, 60,000 updates = **492M tokens** (3× the `colab` run), 145 minutes
+on an L4 at 59,300 tokens/s. Likelihood bound **4.729** nats per token (from 5.269), still falling slowly at the end
+(6.06 at 6,000 updates, 5.59 at 12,000, 5.32 at 20,000, 4.75 at 54,000). Weights in
+`runs/fineweb-edu-small-colab-long`.
+
+`quality.py` on the same prompts and seeds:
+
+| FineWeb-Edu, 64 new tokens | 164M tokens: judge · rep. 4-grams · distinct 2-grams | 492M tokens |
+|---|---|---|
+| Confident first, top-k 50, no penalty | 2.33 · 0.428 · 0.36 | 2.24 · 0.375 · 0.43 |
+| **Default: + repetition penalty 1.3** | 3.62 · 0.038 · 0.85 | **3.01 · 0.061 · 0.84** |
+| + penalty 1.2, blocks of 8 | 3.88 · 0.014 · 0.89 | 3.44 · 0.011 · 0.90 |
+| Left to right, one token per step | 4.42 · 0.003 · 0.90 | 4.17 · 0.009 · 0.90 |
+| Real continuation / base AR model's own text | 3.79 · 0 · 0.97 / 2.34 · 0.006 · 0.95 | (same) |
+
+- Every setting's text got easier for the autoregressive judge to predict (judge loss 0.3–0.6 lower), the sign of
+  more fluent text, with about the same variety.
+- Repetition isn't solved: with the default penalty a few prompts still lock onto one word (a programming prompt
+  gave "class class class …"). Blocks of 8 with penalty 1.2 avoid that at a slightly higher judge loss.
+- On a good prompt it now reads like the training data, if loosely: *"Greenhouse Energy Sources: These
+  technologies can be used for the use of renewable energy sources such as solar or wind power are used in
+  industrial applications."*
