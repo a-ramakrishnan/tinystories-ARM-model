@@ -1022,17 +1022,19 @@ async function loadGenPicker() {
   const order = GEN_DATA.map((x) => x[1]).filter((g) => groups.has(g));
   const opt = (m, label) => `<option value="${esc(m.id)}">${esc(label)}</option>`;
   const sel = $("#g-model-pick");
-  sel.innerHTML =
-    `<optgroup label="The best model for each kind of training data">${order.map((g) => opt(groups.get(g)[0], `★ ${g}: ${genLabel(groups.get(g)[0], false)}`)).join("")}</optgroup>` +
-    order.map((g) => `<optgroup label="${esc(g)} · ${groups.get(g).length} model${groups.get(g).length === 1 ? "" : "s"}">${groups.get(g).map((m, i) => opt(m, genLabel(m, i === 0))).join("")}</optgroup>`).join("") +
-    '<optgroup label="Other"><option value="">The model trained on the current datasets (Train step)</option></optgroup>';
-  sel.value = d.active || "";   // the first match: in the top group if the active model is one of the best
+  const bestIds = new Set(order.map((g) => groups.get(g)[0].id));
+  const a0 = d.models.find((m) => m.id === d.active);
+  sel.innerHTML = order.map((g) => opt(groups.get(g)[0], `★ ${g}: ${genLabel(groups.get(g)[0], false)}`)).join("") +
+    // a model chosen on the Models page that isn't one of the best stays listed while it's in use
+    (a0 && !bestIds.has(a0.id) ? `<option value="${esc(a0.id)}">In use: ${esc(genLabel(a0, false))}</option>` : "") +
+    '<option value="">The model trained on the current datasets (Train step)</option>';
+  sel.value = d.active || "";
   const a = d.models.find((m) => m.id === d.active);
   const g = a ? genGroup(a) : null;
   $("#g-pick-note").innerHTML = (a
     ? `Trained on <b>${esc(g.title)}</b>${g.about ? ` (${esc(g.about)})` : ""}${genWhere(a) ? `, on ${esc(genWhere(a))}` : ""}. `
     : "Using the model trained on the current datasets. ") +
-    `★ marks the lowest validation loss for each kind of training data. The diffusion models write differently: see the <a href="#" data-go="diffusion">Diffusion</a> page.`;
+    `The list has the best model (lowest validation loss) for each kind of training data; every saved model is on the <a href="#" data-go="models">Models</a> page. The diffusion models write differently: see the <a href="#" data-go="diffusion">Diffusion</a> page.`;
 }
 $("#g-model-pick").addEventListener("change", (e) => action(e.target, async () => {
   await api("/api/models/use", { id: e.target.value || null });
