@@ -1032,7 +1032,9 @@ async function loadGenPicker() {
   sel.value = d.active || "";
   const a = d.models.find((m) => m.id === d.active);
   const g = a ? genGroup(a) : null;
-  $("#g-pick-note").innerHTML = (a
+  $("#g-pick-note").innerHTML = (a?.chat
+    ? `An <b>instruction-tuned</b> model (from the base model, on smol-smoltalk conversations)${genWhere(a) ? `, on ${esc(genWhere(a))}` : ""}. `
+    : a
     ? `Trained on <b>${esc(g.title)}</b>${g.about ? ` (${esc(g.about)})` : ""}${genWhere(a) ? `, on ${esc(genWhere(a))}` : ""}. `
     : "Using the model trained on the current datasets. ") +
     (a?.chat ? `<b>Chat mode:</b> type a question as the prompt; the model answers and stops at the end of its answer (a chat model's loss counts only its answers, so it isn't comparable with the others). ` : "") +

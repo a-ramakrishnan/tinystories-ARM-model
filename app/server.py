@@ -1072,7 +1072,7 @@ def training_summary(m):
 def _model_row(m):
     return {k: m.get(k) for k in ("id", "name", "source", "origin", "added_at", "model_type", "model", "params",
                                   "datasets", "steps", "updates", "tokens", "best_val", "seconds", "trained_at", "chip",
-                                  "platform", "bytes")} | {"eval": m.get("eval"), "training": training_summary(m),
+                                  "platform", "bytes", "chat", "base_model")} | {"eval": m.get("eval"), "training": training_summary(m),
                                                            "benchmarks": benchmarks.load_results(m["id"]),
                                                            "active": m["id"] == S.active_model}
 
