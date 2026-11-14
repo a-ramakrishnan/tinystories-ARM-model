@@ -96,9 +96,13 @@ def prepare(specs, cache=None, num_proc=None, say=print):
         tokenize_and_save(ds, p.root, num_proc=num_proc)
         say(f"{spec}: tokenized in {(time.time() - t0) / 60:.1f} min")
         if cached:
-            os.makedirs(cached, exist_ok=True)
-            for f in ("train.bin", "validation.bin"):
-                shutil.copy(os.path.join(p.root, f), os.path.join(cached, f))
+            try:                       # a full Drive shouldn't stop the run: the cache only saves time later
+                os.makedirs(cached, exist_ok=True)
+                for f in ("train.bin", "validation.bin"):
+                    shutil.copy(os.path.join(p.root, f), os.path.join(cached, f))
+            except OSError as e:
+                say(f"  (couldn't keep a copy in {cache}: {e})")
+                shutil.rmtree(cached, ignore_errors=True)
     for spec, r in zip([s[0] for s in specs], roots):
         n = os.path.getsize(os.path.join(r, "train.bin")) // 2
         say(f"  {spec}: {n / 1e6:,.0f}M training tokens")
