@@ -133,12 +133,15 @@ HellaSwag is length-normalized accuracy, the others plain accuracy; chance is 25
 | Diffusion 51M · TinyStories · 164M tokens | 25.7% | 1.8% | 25.7% | 51.9% | 48.4% |
 | Autoregressive 51M · TinyStories · same tokens (*Medium 51M · 20k steps*) | 26.5% | 8.7% | 25.9% | 54.1% | 51.6% |
 | Diffusion 51M · FineWeb-Edu · 164M tokens | 25.3% | 0.2% | **31.2%** | 52.1% | 50.5% |
+| Diffusion 51M · FineWeb-Edu · 492M tokens (3× longer) | 26.6% | 2.2% | 29.2% | 52.2% | 51.9% |
 | Autoregressive 124M base · FineWeb-Edu + Cosmopedia · 500M tokens | 29.7% | 15.7% | 44.0% | 62.6% | 50.0% |
 
 - At this size both kinds of TinyStories model are at chance on everything but LAMBADA: the benchmarks ask about
   the everyday world and science, which children's stories barely cover.
 - The FineWeb-Edu diffusion model beats chance on ARC-Easy (31%), so it picked up some school science. The
   autoregressive base is bigger and saw 3× the tokens, so that row is a yardstick, not a fair match.
+- Three times the training helped where the bound matters most: LAMBADA 0.2% → 2.2% (its perplexity 538K → 99K)
+  and HellaSwag 25.3% → 26.6%; ARC-Easy's 2-point drop is within the noise (±0.9 points stderr).
 - **LAMBADA is the diffusion models' weak spot**: the whole last word is masked and every one of its tokens has to be
   the model's top guess in a single pass, where an autoregressive model sees each token's predecessors.
 - The bound is an estimate (8 random maskings), so the scores carry a little extra noise on top of the stderr.
