@@ -2,6 +2,7 @@
 // against OpenAI GPT-2 small's published scores. Data from /api/benchmarks (benchmarks.py).
 
 const bench = { data: null, picked: new Set(), tasks: new Set() };
+const bname = (m) => m.short || m.name.split(" · ")[0];
 const bpct = (v) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
 const BENCH_COLORS = ["#5b5bf0", "#e0662f", "#2f9e6b", "#c0399a", "#3f7be0", "#b8862c"];
 
@@ -34,7 +35,7 @@ function benchRender() {
     $("#bn-results").innerHTML = '<p class="muted">No results yet. Pick a model below and press <b>Run benchmarks</b>.</p>';
     $("#bn-chart").innerHTML = "";
   } else {
-    const head = `<tr><th>Benchmark</th><th class="num">Chance</th><th class="num">GPT-2 small<div class="muted small">published</div></th>${done.map((m, i) => `<th class="num"><span class="sw-dot" style="background:${BENCH_COLORS[i % BENCH_COLORS.length]}"></span>${esc(m.name.split(" · ")[0])}<div class="muted small">${short(m.params || 0)} · ${esc(m.benchmarks.measured_at || "")}</div></th>`).join("")}</tr>`;
+    const head = `<tr><th>Benchmark</th><th class="num">Chance</th><th class="num">GPT-2 small<div class="muted small">published</div></th>${done.map((m, i) => `<th class="num"><span class="sw-dot" style="background:${BENCH_COLORS[i % BENCH_COLORS.length]}"></span>${esc(bname(m))}<div class="muted small">${short(m.params || 0)}${m.kind === "diffusion" ? " · diffusion, likelihood bound" : ""} · ${esc(m.benchmarks.measured_at || "")}</div></th>`).join("")}</tr>`;
     const rows = tasks.flatMap((t) => {
       const metrics = t.key === "lambada" ? ["acc", "ppl"] : t.key === "winogrande" ? ["acc"] : ["acc", "acc_norm"];
       return metrics.map((k, mi) => {
@@ -56,11 +57,11 @@ function benchRender() {
       <td class="num muted">${bpct(tasks.reduce((a, t) => a + (t.gpt2[t.metric] ?? t.gpt2.acc), 0) / tasks.length)}</td>
       ${done.map((m) => { const vs = tasks.map((t) => benchMetricOf(t, m.benchmarks.results[t.key])); return `<td class="num"><b>${vs.some((v) => v == null) ? "–" : bpct(vs.reduce((a, b) => a + b, 0) / vs.length)}</b></td>`; }).join("")}</tr>`;
     $("#bn-results").innerHTML = `<div class="ptable-scroll"><table class="ptable bn">${head}${rows}${avgRow}</table></div>
-      <p class="hint">★ is the number usually quoted for each test. ± is one standard error: differences smaller than about twice that are within the noise. Zero-shot: no examples are shown to the model; each answer is scored by how likely the model finds it. The context is cut to the model's window (256 tokens for ours, 1,024 for GPT-2).</p>`;
+      <p class="hint">${done.some((m) => m.kind === "diffusion") ? "Diffusion models have no exact likelihood: each answer is scored by the likelihood bound (8 random maskings of the answer, context visible), a noisier estimate that can only understate how likely the model finds the answer; run with <code>python3 -m diffusion_models.benchmarks diffusion_models/runs/&lt;run&gt;</code>. " : ""}★ is the number usually quoted for each test. ± is one standard error: differences smaller than about twice that are within the noise. Zero-shot: no examples are shown to the model; each answer is scored by how likely the model finds it. The context is cut to the model's window (256 tokens for ours, 1,024 for GPT-2).</p>`;
     // chart: per task, how far above chance each model gets (headline metric)
     $("#bn-chart").innerHTML = `<div class="ev-bars">${tasks.map((t) => {
       const lo = t.key === "lambada" ? 0 : t.chance;
-      const vals = [["GPT-2 small (published)", t.gpt2[t.metric] ?? t.gpt2.acc, "#9aa3b8"], ...done.map((m, i) => [m.name.split(" · ")[0], benchMetricOf(t, m.benchmarks.results[t.key]), BENCH_COLORS[i % BENCH_COLORS.length]])];
+      const vals = [["GPT-2 small (published)", t.gpt2[t.metric] ?? t.gpt2.acc, "#9aa3b8"], ...done.map((m, i) => [bname(m), benchMetricOf(t, m.benchmarks.results[t.key]), BENCH_COLORS[i % BENCH_COLORS.length]])];
       const hi = Math.max(lo + 0.05, ...vals.map((v) => v[1] || 0)) * 1.05;
       return `<div class="ev-group"><div class="ev-gtitle">${esc(t.title)} <span class="muted small">${t.metric === "acc_norm" ? "acc_norm" : "accuracy"} · chance ${t.key === "lambada" ? "0%" : bpct(t.chance)}</span></div>
         ${vals.map(([n, v, col]) => `<div class="kvm-row"><span class="muted small" title="${esc(n)}">${esc(n)}</span><div class="kvm-track"><div class="kvm-bar" style="width:${v == null ? 0 : Math.max(1, ((v - lo) / (hi - lo)) * 100)}%;background:${col}"></div></div><b>${bpct(v)}</b></div>`).join("")}</div>`;
@@ -70,9 +71,10 @@ function benchRender() {
   // models worth testing first: ones with results, and ones trained on web text (story-only models score at chance)
   const web = (m) => (m.datasets || []).some((x) => /fineweb|webtext/i.test(x)) || m.id.startsWith("webtext");
   const pick = (m) => `<label class="bn-pick"><input type="checkbox" data-bpick="${esc(m.id)}" ${bench.picked.has(m.id) ? "checked" : ""}><span>${esc(m.name)}</span><span class="muted small">${short(m.params || 0)}${m.benchmarks ? " · has results" : ""}</span></label>`;
-  const first = d.models.filter((m) => m.benchmarks || web(m)), rest = d.models.filter((m) => !(m.benchmarks || web(m)));
+  const ar = d.models.filter((m) => m.kind !== "diffusion");   // diffusion models are run from the command line
+  const first = ar.filter((m) => m.benchmarks || web(m)), rest = ar.filter((m) => !(m.benchmarks || web(m)));
   $("#bn-models").innerHTML = `<div class="bn-modelgrid">${first.map(pick).join("")}</div>` +
-    (rest.length ? `<details class="bn-more"><summary class="muted small">Show all ${d.models.length} models (the others are trained on stories or small text sets)</summary><div class="bn-modelgrid">${rest.map(pick).join("")}</div></details>` : "");
+    (rest.length ? `<details class="bn-more"><summary class="muted small">Show all ${ar.length} models (the others are trained on stories or small text sets)</summary><div class="bn-modelgrid">${rest.map(pick).join("")}</div></details>` : "");
   $("#bn-taskpick").innerHTML = tasks.map((t) => `<label class="inline"><input type="checkbox" data-btask="${t.key}" ${bench.tasks.has(t.key) ? "checked" : ""}> ${esc(t.title)}</label>`).join("");
 }
 

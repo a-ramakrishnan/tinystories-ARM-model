@@ -41,8 +41,9 @@ that are easy to get wrong and rarely explained.
 30. [The best design at GPT-2 size](#30-the-best-design-at-gpt-2-size)
 31. [Faster training](#31-faster-training)
 32. [More kinds of data](#32-more-kinds-of-data)
-33. [Lessons](#33-lessons)
-34. [What's next](#34-whats-next)
+33. [A second kind of model: masked diffusion](#33-a-second-kind-of-model-masked-diffusion)
+34. [Lessons](#34-lessons)
+35. [What's next](#35-whats-next)
 
 ---
 
@@ -1174,7 +1175,42 @@ track did at this size (0.14 against 0.04 on held-out web text).
 **Lesson.** Let the evaluation tell you what to train on. The benchmarks showed which kinds of text were missing; adding
 exactly those closed the gaps they pointed at, and helped everywhere else too.
 
-## 33. Lessons
+## 33. A second kind of model: masked diffusion
+
+Every model so far writes left to right, one token per pass. A **masked diffusion model** (the author's own design,
+`diffusion_models/v1_original.py`, made modular in `diffusion_models/`) writes by denoising: the continuation starts as
+all `[MASK]`, and at each step a bidirectional transformer predicts every masked position at once and a few are
+revealed. Training is the reverse: hide a random share t/T of a real text's tokens and learn to recover them. Its
+**likelihood bound** (the masked loss weighted by T/t) is an upper bound on the loss per token, so it can sit next to an
+autoregressive model's loss, flattering the autoregressive side.
+
+| 51M parameters, 164M tokens, 49–50 min on a Colab L4 | Likelihood bound | Autoregressive model, same size and tokens |
+|---|---|---|
+| TinyStories | **2.525** | 1.583 (*Medium 51M · TinyStories · 20k steps*) |
+| Mini FineWeb-Edu (small) | **5.269**, still falling | (the 124M base model: 3.549 held out, 500M tokens) |
+
+- **A long plateau first.** For about 2,500 updates (20M tokens) the model only learned how common each word is, then
+  started to use the context and the loss fell fast, as BERT-style models do. On FineWeb-Edu it took 3,000 updates.
+  Both 2,000-update checks had stopped just short of it, and a higher learning rate made it worse.
+- **The sampler made the difference, twice.** v1's sampler re-drew every position at every step, so the last step
+  re-sampled all 128 tokens independently: fluent middle steps, jumbled final text. Keeping each token once revealed
+  gave coherent stories. On FineWeb-Edu that sampler then collapsed into one word ("fish, fish, fish"): it fills the
+  position it's surest about, which is usually a copy of a neighbouring word, and every copy makes the next surer.
+  `diffusion_models/quality.py` measured it (on held-out prompts: repetition, and the base model's loss on the text): a
+  repetition penalty of 1.3 took repeated 4-token runs from 43% to 4% on FineWeb-Edu (real text 0%) at about real
+  text's judge loss. Semi-autoregressive blocks, left-to-right order, re-masking and random order were all worse.
+- **Speed:** 64 tokens in 64 passes, but every pass reads the whole window: about 0.3 s on the L4, 6 s on the M5,
+  where the autoregressive model with its KV cache writes the same in under a second.
+- The app's **Diffusion** page replays the denoising: masked positions filling in, and a grid of when each position was
+  revealed (scattered clusters, where left-to-right writing draws a staircase).
+
+The TinyStories model writes stories about as coherent as the autoregressive one at the same size; the FineWeb-Edu one
+stays on topic but loosely connected. A three-times-longer FineWeb-Edu run (492M tokens) is training.
+
+**Lesson.** With a diffusion model, the sampler is half the model: the same weights produced jumbled text, a loop of one
+word, or readable stories depending only on which positions are revealed when.
+
+## 34. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1228,8 +1264,12 @@ exactly those closed the gaps they pointed at, and helped everywhere else too.
     nothing, because the compiled L4 was already compute-bound.
 30. **Let the evaluation tell you what to train on.** The benchmarks showed which kinds of text were missing;
     adding them closed those gaps and improved the original data too (0.14, against 0.04 from the architecture at 124M).
+31. **A diffusion model's sampler is half the model.** The same weights gave jumbled text, a one-word loop or coherent
+    stories depending only on which positions were revealed when; measure the text, not just the loss.
+32. **Look for the plateau before giving up.** The diffusion model learned nothing but word frequencies for 2,500
+    updates, then took off; a 2,000-update check would have called it broken.
 
-## 34. What's next
+## 35. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
 - **Quantization with GPTQ** (llm-compressor's `oneshot`) on the new base model, compared with the simple
@@ -1237,7 +1277,9 @@ The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) list
 - **Post-training:** instruction tuning (a Chat mode), preference optimization (DPO) against repetition, and
   reinforcement learning with checkable rewards (GRPO).
 - **More data:** a long, resumable run on FineWeb-Edu *full* plus Cosmopedia, ideally on an A100.
-- **Later:** a masked diffusion language model; re-testing depth and layer sharing with longer runs.
+- **Diffusion:** the longer FineWeb-Edu run, generation from the Generate page, and the side-by-side page with the
+  autoregressive model.
+- **Later:** re-testing depth and layer sharing with longer runs.
 
 Every step will be added here with what it measured.
 

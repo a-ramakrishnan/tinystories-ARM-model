@@ -37,6 +37,13 @@ doubles as a hands-on **machine learning tutorial**: learn how **large language 
 building and training one yourself, locally and privately on your own **MacBook, Mac mini, iMac or
 Mac Studio**.
 
+It also has a second kind of model: a **masked diffusion language model** ([`diffusion_models/`](diffusion_models/README.md)),
+which writes by denoising instead of left to right: the text starts as all `[MASK]` and a bidirectional transformer
+fills in a few positions per step. It's trained on Colab with
+[its own notebook](https://colab.research.google.com/github/a-ramakrishnan/tinystories-ARM-model/blob/main/diffusion_models/diffusion_colab.ipynb),
+on the same data and tokenizer as the autoregressive models, and the app's **Diffusion** page replays its denoising
+step by step.
+
 ## At a glance
 
 | | Result |
@@ -48,6 +55,8 @@ Mac Studio**.
 | Winning back generation speed (no hidden waits for the GPU, batched experts) | **1.8–3.5×** faster generation, identical output |
 | Adding more kinds of data (Cosmopedia stories, how-to, textbooks) and a 512-token context | held-out web text 3.691 → **3.549**, greedy repetition 75% → **25%** |
 | Standard benchmarks vs OpenAI's GPT-2 small (zero-shot) | ARC-Easy **44.0%** vs 43.8%, PIQA **62.6%** vs 62.9%, HellaSwag **29.7%** vs 31.1%, LAMBADA **15.7%** vs 32.6% ([details](docs/analysis.md#standard-benchmarks)) |
+| A masked diffusion model (51M, 164M tokens of TinyStories), against the autoregressive model of the same size | likelihood bound **2.525** vs loss 1.583; coherent stories once the sampler keeps revealed tokens |
+| Diffusion text without loops: a repetition penalty while denoising | repeated 4-token runs on FineWeb-Edu 43% → **4%** (real text 0%) |
 | A yardstick: OpenAI's GPT-2 small (124M) on held-out web text | **3.401**, against **3.549** for our same-size model (500M tokens of training) |
 
 Details in [Analysis](docs/analysis.md) and [the journey](docs/journey.md).
@@ -75,8 +84,9 @@ saved models and every option, see [How to use it](docs/usage.md).
 | [Analysis](docs/analysis.md) | Measured results: getting better stories, every improvement step with its result, the roadmap, the Colab measurements |
 | [The journey](docs/journey.md) | The whole story, from the first commit to today, with the lessons learned |
 | [The plan](docs/plan.md) | The roadmap: what's done, what's next, and who does it |
+| [Diffusion models](diffusion_models/README.md) | The masked diffusion language model: its modules, the Colab runs, the sampler and its fixes |
 
-**Keywords:** small language model · train LLM from scratch · GPT from scratch · transformer attention
+**Keywords:** small language model · masked diffusion language model · train LLM from scratch · GPT from scratch · transformer attention
 visualization · PyTorch MPS · Apple Silicon machine learning · M1/M2/M3/M4/M5 GPU training · local LLM training
 on Mac · TinyStories · nanoGPT · tokenization · Hugging Face datasets · deep learning on macOS
 

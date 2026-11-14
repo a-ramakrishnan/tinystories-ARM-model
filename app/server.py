@@ -1166,7 +1166,18 @@ def bench_list():
             "models": [{k: m.get(k) for k in ("id", "name", "params", "best_val", "datasets", "steps", "trained_at")}
                        | {"model": m.get("model"), "benchmarks": benchmarks.load_results(m["id"]),
                           "active": m["id"] == S.active_model}
-                       for m in registry.list_models()]}
+                       for m in registry.list_models()] + diffusion_bench_models()}
+
+
+def diffusion_bench_models():
+    """The diffusion runs with benchmark results (python3 -m diffusion_models.benchmarks), as extra columns."""
+    out = []
+    for r in diffusion_runs():
+        res = _read_json(os.path.join(DIFFUSION_RUNS, r["id"], "benchmarks.json"))
+        if res:
+            out.append({"id": "diffusion:" + r["id"], "name": r["name"], "short": f"Diffusion · {r['source']}",
+                        "params": r["params"], "kind": "diffusion", "benchmarks": res, "datasets": [r["source"]]})
+    return out
 
 
 @app.post("/api/benchmarks/run")
