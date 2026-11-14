@@ -190,7 +190,7 @@ function renderJobs(j) {
   });
   const running = j.status === "running";
   ["#ds-load", "#tok-run", "#b-run", "#m-run", "#t-start"].forEach((sel) => { $(sel).disabled = running; });
-  $("#g-run").disabled = running && j.kind === "train";
+  $("#g-run").disabled = (running && j.kind === "train") || !!ui.genAbort;   // one generation at a time
   $("#t-stop").classList.toggle("hidden", !(running && j.kind === "train"));
 }
 
@@ -1418,8 +1418,18 @@ function drawLatency(ms) {
 }
 
 async function generate() {
+  // only one stream writes into the output: a new run stops the previous one
+  ui.genAbort?.abort();
+  const ctrl = new AbortController();
+  ui.genAbort = ctrl;
+  try { await generateRun(ctrl); }
+  catch (e) { if (e.name !== "AbortError") throw e; }
+  finally { if (ui.genAbort === ctrl) ui.genAbort = null; }
+}
+
+async function generateRun(ctrl) {
   const body = { prompt: $("#g-prompt").value, ...samplingBody(), max_new_tokens: +$("#g-len").value, use_kv_cache: $("#g-kv").checked };
-  const res = await fetch("/api/generate/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetch("/api/generate/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
   if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.detail || res.statusText); }
   // keep the previous output in the history
   const prevText = $("#g-text").innerHTML;
