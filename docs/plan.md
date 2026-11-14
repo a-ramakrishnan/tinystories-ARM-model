@@ -24,17 +24,17 @@ earlier TinyStories and WikiText models are kept as the history of how we got he
 | B3 | Data run: 500M tokens, FineWeb-Edu + Cosmopedia, 4 h 20 min on a Colab L4 | Colab | ✅ |
 | B4 | Evaluation suite and the five benchmarks | Claude | ✅ |
 | B5 | Compare with the first base and GPT-2; it became the new base model | Claude, then the author | ✅ |
-| **C** | **Inference** | | next |
+| **C** | **Inference** | | the author's GPTQ (C1) whenever ready |
 | C1 | GPTQ quantization with llm-compressor's `oneshot`, written by hand for a standard Hugging Face model (e.g. GPT-2 small) | the author; Claude helps when asked | open |
 | C2 | Adapt C1 to our architecture (a local Hugging Face wrapper; RoPE, QK-norm, SwiGLU, tied output layer, 512 context); load the compressed weights back; compare with round-to-nearest `quantize.py` on loss, benchmarks, size and speed; add to the app | Claude | after C1 |
 | C3 | The author's other inference ideas | the author decides | after C2 |
 | **D** | **Post-training** (on the base model) | | |
-| D1 | Supervised fine-tuning on instructions (L7), with a Chat mode in Generate | Claude | after C |
+| D1 | Supervised fine-tuning on instructions (L7) on the base model: smol-smoltalk conversations in a plain `User:` / `Assistant:` format, loss on the assistant's words only, about 1 h on a Colab L4; a Chat mode in Generate | Claude | **in progress (14 Nov)**: first, before stage 2 (the author's decision); redone on the stage 2 model later, it's cheap |
 | D2 | DPO against repetition (greedy repetition is 25% today) | Claude | after D1 |
 | D3 | GRPO with automatically checkable rewards | Claude | after D2 |
 | **E** | **Scaling the data** (the data run showed more data helps) | | |
 | E1 | Measure training speed on an A100 (none was free on 13 Nov) | Claude | when one is free |
-| E2 | Stage 2: a long, resumable run on FineWeb-Edu *full* + Cosmopedia (~2.5B tokens) | Colab, the author's go-ahead | open |
+| E2 | Stage 2: a long, resumable run on FineWeb-Edu *full* + Cosmopedia (~2.5B tokens, ~20 tokens per parameter for 124M), continued from the base model; about 20 h on an L4 or ~8 h on an A100, checkpoints on Drive | Colab | **next after D1** (go-ahead given 14 Nov) |
 | E3 | L2 (low-memory tokenizing on the Mac), L4 (quality filter) | Claude | as needed |
 | **F** | **A masked diffusion language model** | | in progress |
 | F1 | The diffusion model (L8), written and first trained on TinyStories | the author | ✅ first version generates text (`diffusion_models/v1_original.py`) |
@@ -58,8 +58,8 @@ earlier TinyStories and WikiText models are kept as the history of how we got he
 
 **Open choices**
 
-- Stage 2 (E2) before or after post-training (D): post-training works better on a stronger base, but stage 2 is the
-  bigger GPU commitment.
+- ~~Stage 2 (E2) before or after post-training (D)~~ decided on 14 Nov: instruction tuning (D1) first, on today's
+  base, then stage 2; D1 is redone on the stage 2 model afterwards.
 - Where GitHub Pages (G) goes: it's independent of the rest, and most worth doing once there's more to show.
 - What C3 covers depends on the author's ideas.
 - The visualizations (H) can replay saved data, so they can also go on GitHub Pages (G2); H1's diffusion half and
