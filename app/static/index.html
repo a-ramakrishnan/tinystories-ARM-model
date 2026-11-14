@@ -475,9 +475,15 @@
         <header class="panel-head">
           <span class="eyebrow">Step 7</span>
           <h1>Generate text</h1>
-          <p>Uses the saved checkpoint with the best validation loss. Give it the start of a text and watch it continue, one token at a time.</p>
+          <p>Pick a model, give it the start of a text and watch it continue, one token at a time. A model can only write the kind of text it was trained on: one trained on TinyStories turns any prompt into a children&rsquo;s story.</p>
         </header>
 
+        <div class="card g-pick">
+          <div class="fields two">
+            <label>Model <select id="g-model-pick" class="select"></select></label>
+            <div id="g-pick-note" class="muted small"></div>
+          </div>
+        </div>
         <div id="g-model" class="note"></div>
         <details id="g-params-wrap" class="card details hidden">
           <summary><span>Trained model: <b id="g-params-total"></b> parameters</span><span class="muted small">How is this calculated?</span></summary>
@@ -548,7 +554,7 @@
               <ol class="flow small-flow">
                 <li><b>Prefill.</b> The prompt's tokens go through the model in one pass. That, plus picking the first token, is the <b>time to first token</b>.</li>
                 <li><b>Decode.</b> Each new token needs one more pass. With the <b>KV cache</b>, every layer keeps the keys and values it already computed, so only the new token is processed. Without it, the whole context is re-read every time.</li>
-                <li><b>Sliding window.</b> Past <span class="ctx-size">128</span> tokens, only the most recent fit in the context window. This model's positions are learned per slot, so when the window slides the cache must be rebuilt ("recomputes").</li>
+                <li><b>Sliding window.</b> Past <span class="ctx-size">128</span> tokens, only the most recent fit in the context window. When the window slides, every cached position shifts, so the cache is rebuilt ("recomputes").</li>
               </ol>
             </div>
           </div>

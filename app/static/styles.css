@@ -1021,3 +1021,7 @@ body.tg-wide [data-step=textgen] .panel-head { max-width: 960px; }
 [data-step=diffusion] .fields.four select { width: 100%; }
 body.tg-wide [data-step=diffusion] .panel-head { max-width: 960px; }
 #df-grid svg { max-width: 460px; }
+
+/* Generate: model picker */
+.g-pick .fields.two { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: center; }
+.g-pick select { width: 100%; }

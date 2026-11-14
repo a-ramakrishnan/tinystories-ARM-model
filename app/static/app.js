@@ -117,6 +117,7 @@ function go(id) {
   $$(".panel").forEach((p) => p.classList.toggle("active", p.dataset.step === id));
   window.scrollTo({ top: 0, behavior: "smooth" });
   if (id === "models") loadModels().catch((e) => toast(e.message, true));
+  if (id === "generate") loadGenPicker().catch((e) => toast(e.message, true));
   if (id === "lab" && typeof labOpen === "function") labOpen();
   if (id === "journey" && typeof journeyOpen === "function") journeyOpen();
   if (id === "benchmarks" && typeof benchOpen === "function") benchOpen().catch((e) => toast(e.message, true));
@@ -983,6 +984,63 @@ function drawChart(tr) {
 }
 
 // ---------- 7. generate ----------
+// ---------- choosing the model for Generate: grouped by training data, the best of each group first ----------
+const GEN_DATA = [
+  [(d) => d.some((x) => /cosmopedia/i.test(x)), "Mini FineWeb-Edu + Cosmopedia", "educational web text, textbooks, how-to and stories"],
+  [(d) => d.length > 0 && d.every((x) => /fineweb/i.test(x)), "Mini FineWeb-Edu", "educational web text"],
+  [(d) => d.length === 1 && /tinystories/i.test(d[0]), "TinyStories", "children's stories only"],
+  [(d) => d.some((x) => /wikitext/i.test(x)), "WikiText", "Wikipedia articles (small)"],
+  [(d) => d.some((x) => /webtext/i.test(x)), "OpenAI WebText (reference)", "OpenAI's GPT-2, for comparison"],
+  [() => true, "Other mixes", ""],
+];
+function genGroup(m) {
+  const g = GEN_DATA.find(([f]) => f(m.datasets || []));
+  return { title: g[1], about: g[2] };
+}
+function genWhere(m) {
+  const c = m.chip || "";
+  if (/nvidia|tesla/i.test(c)) return `Colab ${c.replace(/NVIDIA |Tesla /, "")}`;
+  if (/apple|mps/i.test(c)) return `Mac ${c.replace(/Apple |GPU |\(MPS\)/g, "").trim()}`.trim();
+  return m.platform === "reference" ? "OpenAI" : "";
+}
+const genLoss = (m) => (m.best_val == null ? 99 : +m.best_val);
+function genLabel(m, best) {
+  const p = m.params?.total ?? m.params;
+  const bits = [p ? short(p) : "", genWhere(m), m.best_val != null ? `val ${(+m.best_val).toFixed(3)}` : "", (m.trained_at || "").slice(0, 10)].filter(Boolean);
+  return `${best ? "★ " : ""}${m.name.split(" · ")[0]} · ${bits.join(" · ")}`;
+}
+async function loadGenPicker() {
+  const d = await (await fetch("/api/models")).json();
+  const groups = new Map();
+  for (const m of d.models) {
+    const g = genGroup(m).title;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(m);
+  }
+  // the best of each group: the lowest validation loss (losses are only comparable on the same training data)
+  groups.forEach((ms) => ms.sort((a, b) => genLoss(a) - genLoss(b)));
+  const order = GEN_DATA.map((x) => x[1]).filter((g) => groups.has(g));
+  const opt = (m, label) => `<option value="${esc(m.id)}">${esc(label)}</option>`;
+  const sel = $("#g-model-pick");
+  sel.innerHTML =
+    `<optgroup label="The best model for each kind of training data">${order.map((g) => opt(groups.get(g)[0], `★ ${g}: ${genLabel(groups.get(g)[0], false)}`)).join("")}</optgroup>` +
+    order.map((g) => `<optgroup label="${esc(g)} · ${groups.get(g).length} model${groups.get(g).length === 1 ? "" : "s"}">${groups.get(g).map((m, i) => opt(m, genLabel(m, i === 0))).join("")}</optgroup>`).join("") +
+    '<optgroup label="Other"><option value="">The model trained on the current datasets (Train step)</option></optgroup>';
+  sel.value = d.active || "";   // the first match: in the top group if the active model is one of the best
+  const a = d.models.find((m) => m.id === d.active);
+  const g = a ? genGroup(a) : null;
+  $("#g-pick-note").innerHTML = (a
+    ? `Trained on <b>${esc(g.title)}</b>${g.about ? ` (${esc(g.about)})` : ""}${genWhere(a) ? `, on ${esc(genWhere(a))}` : ""}. `
+    : "Using the model trained on the current datasets. ") +
+    `★ marks the lowest validation loss for each kind of training data. The diffusion models write differently: see the <a href="#" data-go="diffusion">Diffusion</a> page.`;
+}
+$("#g-model-pick").addEventListener("change", (e) => action(e.target, async () => {
+  await api("/api/models/use", { id: e.target.value || null });
+  await poll();
+  await loadGenPicker();
+  toast("Generate now uses this model.");
+}));
+
 function renderGenerateCard(s) {
   const c = s.active, el = $("#g-model");
   $("#g-params-wrap").classList.toggle("hidden", !c?.params);
