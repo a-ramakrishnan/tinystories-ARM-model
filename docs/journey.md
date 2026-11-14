@@ -42,8 +42,9 @@ that are easy to get wrong and rarely explained.
 31. [Faster training](#31-faster-training)
 32. [More kinds of data](#32-more-kinds-of-data)
 33. [A second kind of model: masked diffusion](#33-a-second-kind-of-model-masked-diffusion)
-34. [Lessons](#34-lessons)
-35. [What's next](#35-whats-next)
+34. [Teaching it to answer: instruction tuning](#34-teaching-it-to-answer-instruction-tuning)
+35. [Lessons](#35-lessons)
+36. [What's next](#36-whats-next)
 
 ---
 
@@ -1219,7 +1220,40 @@ chance only on ARC-Easy (31.2%; the bigger autoregressive base: 44.0%); trained 
 **Lesson.** With a diffusion model, the sampler is half the model: the same weights produced jumbled text, a loop of one
 word, or readable stories depending only on which positions are revealed when.
 
-## 34. Lessons
+## 34. Teaching it to answer: instruction tuning
+
+The base model has only read documents. Asked *"What is the water cycle?"*, it writes a blog post: *"I'm a bit of a
+water enthusiast, and I recently stumbled upon an interesting question on Reddit…"*. **Supervised fine-tuning**
+(`sft.py`) shows it conversations instead: 409,000 from `HuggingFaceTB/smol-smoltalk` (written for small models) in a
+plain `User: …` / `Assistant: …` format, every answer ending with `<|endoftext|>` so generation knows where to stop.
+The loss counts only the assistant's words, so it learns to answer, not to ask; whole conversations are packed into
+the 512-token context. One pass, 11,284 updates at learning rate 2e-4 (a sixth of pre-training's), 90 minutes on a
+Colab L4.
+
+| | Base model | Instruction-tuned |
+|---|---|---|
+| Loss on held-out answers | 2.437 | **1.548** |
+| Twelve questions, greedy: repeated 4-token runs | 29.4% | 27.5% |
+| Answers that end by themselves within 160 tokens | 0 of 12 | 3 of 12 |
+| HellaSwag · LAMBADA · ARC-Easy · PIQA · Winogrande | 29.7 · 15.7 · 44.0 · 62.6 · 50.0 | 28.9 · 10.6 · 38.1 · 58.5 · 50.4 |
+
+- **It answers now**, in the right register: *"The water cycle, also known as the hydrological cycle, is a continuous
+  process by which water is collected, transformed…"*; *"To stay focused while studying, it's essential to
+  establish a routine…"*.
+- **It didn't learn facts.** *"The sky is blue because it is a blue color"* (the base model had named Rayleigh
+  scattering in its blog post), and vaccines turned into antiviral drugs. Fine-tuning changes behaviour, not
+  knowledge; at 124M the knowledge is thin.
+- **The benchmarks paid a tax**, 3 points on average, most on LAMBADA and ARC-Easy: they score plain continuation of
+  text, which the chat model has moved away from. It's the well-known alignment tax, and it's why chat models are
+  benchmarked differently. It doesn't change the base model, which stays the one to build on.
+- **Still to fix:** greedy answers loop about as much as before (that's what preference tuning, D2, is for), and
+  answers run long, like smol-smoltalk's.
+- The app's Generate page has a **Chat mode** for it: pick the model, type a question, and it answers and stops.
+
+**Lesson.** Instruction tuning is cheap and changes how a model behaves, not what it knows: the answers took the right
+shape in 100 updates, and the facts were exactly as good as the base model's.
+
+## 35. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1277,15 +1311,19 @@ word, or readable stories depending only on which positions are revealed when.
     stories depending only on which positions were revealed when; measure the text, not just the loss.
 32. **Look for the plateau before giving up.** The diffusion model learned nothing but word frequencies for 2,500
     updates, then took off; a 2,000-update check would have called it broken.
+33. **Fine-tuning teaches behaviour, not knowledge.** Instruction tuning made the model answer instead of writing
+    blog posts, but not answer correctly, and cost a few benchmark points; knowledge comes from pre-training data.
 
-## 35. What's next
+## 36. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
 - **Quantization with GPTQ** (llm-compressor's `oneshot`) on the new base model, compared with the simple
   round-to-nearest 8- and 4-bit weights of section 27.
-- **Post-training:** instruction tuning (a Chat mode), preference optimization (DPO) against repetition, and
-  reinforcement learning with checkable rewards (GRPO).
-- **More data:** a long, resumable run on FineWeb-Edu *full* plus Cosmopedia, ideally on an A100.
+- **Post-training:** preference optimization (DPO) against repetition, then reinforcement learning with checkable
+  rewards (GRPO); instruction tuning again on the stage 2 model.
+- **More data:** stage 2 is training: the base model continued to 2.5B tokens on FineWeb-Edu *full* plus Cosmopedia
+  (the held-out documents removed from the training data first).
+- **Reasoning:** thinking before answering, for both the autoregressive and the diffusion model (phase I of the plan).
 - **Diffusion:** the longer FineWeb-Edu run, generation from the Generate page, and the side-by-side page with the
   autoregressive model.
 - **Later:** re-testing depth and layer sharing with longer runs.

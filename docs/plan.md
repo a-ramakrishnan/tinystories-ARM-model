@@ -8,7 +8,7 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 14 November 2026, 15:20 IST.*
+*Last updated: 14 November 2026, 17:30 IST.*
 
 ## Where things stand (14 November, afternoon)
 
@@ -17,17 +17,15 @@ Three things are running or queued; nothing else needs a decision until they fin
 | Lane | What | Status |
 |---|---|---|
 | Colab L4 | **F2c** the long diffusion run on FineWeb-Edu (492M tokens) | ✅ done 14:25: likelihood bound **4.729** (short run 5.269), 145 min; downloaded to `diffusion_models/runs/fineweb-edu-small-colab-long` |
-| Colab L4, now | **D1** instruction tuning: `sft.py` + `sft_colab.ipynb` | smoke run ✅ (100 updates: answers already take the right shape); full run started 15:00: 409K conversations → 361K windows, 11,284 updates at 37,000 tokens/s; held-out answer loss 2.436 (base) → 1.849 at 1,000 updates; done about 16:25, then the zip downloads automatically (queued cell) |
-| Colab L4, after that | **E2** stage 2: `stage2.py`, ~2.5B tokens, continued from the base | queued right behind D1 in the same session: ~1 h tokenizing, then ~18 h training (to about midday 15 Nov); resumable from Drive (`MyDrive/tinystories-runs/stage2-fineweb-full-cosmopedia`) |
+| Colab L4 | **D1** instruction tuning | ✅ 16:10: held-out answer loss 2.437 → **1.548** in 90 min; in the library as `chat-mini-fineweb-ed-202611141041-96c673`, evaluated (see D1) |
+| Colab L4, now | **E2** stage 2: `stage2.py`, ~2.5B tokens, continued from the base | training since 16:35 (tokenizing took 25 min: FineWeb-Edu full = 3.8B tokens, all 2,974 held-out documents removed); step 30,500 → 152,600 at ~34,000 tokens/s, done about **08:50 on 15 Nov**; checkpoints on Drive (`MyDrive/tinystories-runs/stage2-fineweb-full-cosmopedia`), so a disconnect only means running the cell again |
 | Mac | **F5** benchmarks for the two diffusion models | running (slow: shares the Mac's GPU); results this afternoon → Benchmarks page, README, journey |
 
 **What comes next, in order** (suggested):
 
-1. **Evaluate D1** (today, Claude): the chat model against the base on the same questions, its held-out answer loss,
-   the five benchmarks (SFT shouldn't lower them much), and greedy repetition, the number D2 will target. Add it to the
-   library; Chat mode on Generate is ready for it.
-2. **Close F2c and F5** (today, Claude): the long run's bound, generation quality and benchmarks next to the short run
-   and the autoregressive models; download the weights only with the author's OK.
+1. ~~**Evaluate D1**~~ ✅ done (see the D1 row).
+2. ~~**Close F2c and F5**~~ ✅ done: the long run's bound, quality and benchmarks are in the README, journey and on the
+   Benchmarks page.
 3. **While E2 trains (~1 day), work that needs no Colab GPU** (Claude): **F4** the diffusion vs autoregressive
    comparison, then the visualizations **H1** (diffusion half of the side-by-side page) and **H2** (noising slider,
    denoising player). F3's last piece, diffusion in Generate, folds into H1.
@@ -58,7 +56,7 @@ Three things are running or queued; nothing else needs a decision until they fin
 | C2 | Adapt C1 to our architecture (a local Hugging Face wrapper; RoPE, QK-norm, SwiGLU, tied output layer, 512 context); load the compressed weights back; compare with round-to-nearest `quantize.py` on loss, benchmarks, size and speed; add to the app | Claude | after C1 |
 | C3 | The author's other inference ideas | the author decides | after C2 |
 | **D** | **Post-training** (on the base model) | | |
-| D1 | Supervised fine-tuning on instructions (L7) on the base model: smol-smoltalk conversations in a plain `User:` / `Assistant:` format, loss on the assistant's words only, about 1 h on a Colab L4; a Chat mode in Generate | Claude | **in progress (14 Nov)**: `sft.py` (prepare / train / chat) and `sft_colab.ipynb` written and tested end to end on the Mac; Chat mode on Generate ✅. smol-smoltalk is long for 512 tokens: ~12% of conversations dropped, over half cut to the turns that fit. The full run is next on the L4, after F2c. First, before stage 2 (the author's decision); redone on the stage 2 model later, it's cheap |
+| D1 | Supervised fine-tuning on instructions (L7) on the base model: smol-smoltalk conversations in a plain `User:` / `Assistant:` format, loss on the assistant's words only, about 1 h on a Colab L4; a Chat mode in Generate | Claude | ✅ **14 Nov**: `sft.py` (prepare / train / chat / compare), `sft_colab.ipynb`, Chat mode on Generate. 409K conversations (smol-smoltalk is long for 512 tokens: ~11% dropped, over half cut to the turns that fit), 11,284 updates, 90 min on an L4. Held-out answer loss 2.437 → **1.548**; it answers in the right shape instead of writing blog posts, but facts are as weak as the base's ("the sky is blue because it is a blue color"); greedy repetition 29.4% → 27.5% (D2's target); 3 of 12 answers end by themselves within 160 tokens (answers run long); benchmarks HellaSwag 28.9, LAMBADA 10.6, ARC-Easy 38.1, PIQA 58.5, Winogrande 50.4 (base 29.7, 15.7, 44.0, 62.6, 50.0): the alignment tax. Redo on the stage 2 model (~1.5 h) |
 | D2 | DPO against repetition (greedy repetition is 25% today) | Claude | after D1 |
 | D3 | GRPO with automatically checkable rewards | Claude | after D2 |
 | **E** | **Scaling the data** (the data run showed more data helps) | | |

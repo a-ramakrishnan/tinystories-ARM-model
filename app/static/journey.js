@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-14 16:10", kind: "win", area: "Post-training", title: "Instruction tuning: it answers now",
+    decision: "Fine-tune the base model on 409,000 smol-smoltalk conversations in a plain User / Assistant format, the loss on the assistant's words only (sft.py), and add a Chat mode to Generate.",
+    why: "Asked a question, the base model wrote a blog post: \"I'm a bit of a water enthusiast, and I recently stumbled upon…\"",
+    result: { label: "Loss on held-out answers · benchmark average", text: "2.437 → 1.548 · 40.4 → 37.3 (the alignment tax)" },
+    calc: ["answers take the right shape: \"The water cycle, also known as the hydrological cycle, is…\"",
+      "facts no better than the base's: \"the sky is blue because it is a blue color\"",
+      "greedy answers still loop (27.5% repeated 4-token runs): the next step, DPO, targets that"],
+    cost: "90 minutes on a Colab L4 (11,284 updates at 37,000 tokens/s)", anchor: "34-teaching-it-to-answer-instruction-tuning" },
   { when: "2026-11-14 14:25", kind: "win", area: "Diffusion", title: "The FineWeb-Edu diffusion model, 3× longer",
     decision: "Train the same 51M diffusion model three times longer on Mini FineWeb-Edu: 60,000 updates, 492M tokens (the colab-long run mode).",
     why: "The 164M-token run's bound was still falling and its text was on topic but loosely connected: the model, not the sampler.",
