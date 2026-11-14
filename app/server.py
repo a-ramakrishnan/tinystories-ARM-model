@@ -1179,7 +1179,7 @@ def diffusion_bench_models():
     for r in diffusion_runs():
         res = _read_json(os.path.join(DIFFUSION_RUNS, r["id"], "benchmarks.json"))
         if res:
-            out.append({"id": "diffusion:" + r["id"], "name": r["name"], "short": f"Diffusion · {r['source']}",
+            out.append({"id": "diffusion:" + r["id"], "name": r["name"], "short": f"Diffusion · {r['source']} · {r['name'].split(' · ')[-1].replace(' tokens', '')}",
                         "params": r["params"], "kind": "diffusion", "benchmarks": res, "datasets": [r["source"]]})
     return out
 
