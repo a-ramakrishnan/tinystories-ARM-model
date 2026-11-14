@@ -69,7 +69,12 @@ RUN_MODES = {
     # autoregressive "Medium 51M · TinyStories · 20k steps" (8 layers x 512, learned positions, GELU, lr 6e-4)
     "colab": (_model(8, 512, 8), TrainSettings(steps=20000, batch_size=32, warmup_steps=1000, eval_interval=1000,
                                                eval_batches=40, sample_interval=5000),
-              "51M parameters, 164M tokens: matches our 51M autoregressive TinyStories model; about 70 min on an L4 (42,000 tokens/s)"),
+              "51M parameters, 164M tokens: matches our 51M autoregressive TinyStories model; about 50 min on an L4 (59,000 tokens/s)"),
+    # Colab, the longer run (14 Nov 2026): the same model for 60,000 updates = 492M tokens, 3x the colab mode; on
+    # FineWeb-Edu the bound was still falling at 164M tokens, and the text was on topic but loosely connected
+    "colab-long": (_model(8, 512, 8), TrainSettings(steps=60000, batch_size=32, warmup_steps=2000, eval_interval=2000,
+                                                    eval_batches=40, sample_interval=10000),
+                   "51M parameters, 492M tokens (3x colab): about 2 h 30 min on an L4"),
 }
 
 
