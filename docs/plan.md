@@ -8,18 +8,18 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 14 November 2026, 19:40 IST.*
+*Last updated: 14 November 2026, 22:30 IST.*
 
 ## Where things stand (14 November, evening)
 
-One thing is running (stage 2, overnight); nothing needs a decision until it finishes.
+Nothing is running: stage 2 is paused at step 61,000 and resumes from its Drive checkpoint when the author says so.
 
 | Lane | What | Status |
 |---|---|---|
 | Colab L4 | **F2c** the long diffusion run on FineWeb-Edu (492M tokens) | ✅ done 14:25: likelihood bound **4.729** (short run 5.269), 145 min; downloaded to `diffusion_models/runs/fineweb-edu-small-colab-long` |
 | Colab L4 | **D1** instruction tuning | ✅ 16:10: held-out answer loss 2.437 → **1.548** in 90 min; in the library as `chat-mini-fineweb-ed-202611141041-96c673`, evaluated (see D1) |
 | Mac | **D2** DPO against repetition, on the chat model | ✅ 19:30: held-out repetition 20.0% → **11.2%**, answers that end 59% → **84%**; in the library as `chat-mini-fineweb-ed-202611141900-a8f8a7` (see D2) |
-| Colab L4, now | **E2** stage 2: `stage2.py`, ~2.5B tokens, continued from the base | training since 16:35, step 45,000 at 18:40 (tokenizing took 25 min: FineWeb-Edu full = 3.8B tokens, all 2,974 held-out documents removed); step 30,500 → 152,600 at ~34,000 tokens/s, done about **08:50 on 15 Nov**; checkpoints on Drive (`MyDrive/tinystories-runs/stage2-fineweb-full-cosmopedia`), so a disconnect only means running the cell again |
+| Colab L4 | **E2** stage 2: `stage2.py`, ~2.5B tokens, continued from the base | **paused at step 61,000** (the runtime disconnected after 20:59; resume from Drive when the author says so); trained from 16:35, step 45,000 at 18:40 (tokenizing took 25 min: FineWeb-Edu full = 3.8B tokens, all 2,974 held-out documents removed); step 30,500 → 152,600 at ~34,000 tokens/s, done about **08:50 on 15 Nov**; checkpoints on Drive (`MyDrive/tinystories-runs/stage2-fineweb-full-cosmopedia`), so a disconnect only means running the cell again |
 | Mac | **F5** benchmarks for the two diffusion models | ✅ done: Benchmarks page, README, journey |
 
 **What comes next, in order** (suggested):
@@ -63,7 +63,7 @@ One thing is running (stage 2, overnight); nothing needs a decision until it fin
 | D3 | GRPO with automatically checkable rewards | Claude | after D2 |
 | **E** | **Scaling the data** (the data run showed more data helps) | | |
 | E1 | Measure training speed on an A100 (none was free on 13 Nov) | Claude | when one is free |
-| E2 | Stage 2: a long, resumable run on FineWeb-Edu *full* + Cosmopedia (~2.5B tokens, ~20 tokens per parameter for 124M), continued from the base model; about 20 h on an L4 or ~8 h on an A100, checkpoints on Drive | Colab | **training since 14 Nov 16:35** (step 45,000 at 18:40, done about 09:00 on 15 Nov): `stage2.py` extends the base run's own training state (step 30,500 → ~152,600, the cosine schedule stretched, the learning rate re-warmed) on Mini FineWeb-Edu *full* (3.5M documents) + the same Cosmopedia subsets. Small's held-out documents are removed from full first (the tiny subset alone held 594 of the 2,974), so the held-out comparison stays fair |
+| E2 | Stage 2: a long, resumable run on FineWeb-Edu *full* + Cosmopedia (~2.5B tokens, ~20 tokens per parameter for 124M), continued from the base model; about 20 h on an L4 or ~8 h on an A100, checkpoints on Drive | Colab | **paused at step 61,000 of 152,600** (14 Nov 20:59; the Colab runtime disconnected; validation on the stage 2 mix 3.341): resumes from the Drive checkpoint on a new L4 runtime, ~13 h left, when the author says so. `stage2.py` extends the base run's own training state (step 30,500 → ~152,600, the cosine schedule stretched, the learning rate re-warmed) on Mini FineWeb-Edu *full* (3.5M documents) + the same Cosmopedia subsets. Small's held-out documents are removed from full first (the tiny subset alone held 594 of the 2,974), so the held-out comparison stays fair |
 | E3 | L2 (low-memory tokenizing on the Mac), L4 (quality filter) | Claude | as needed |
 | **F** | **A masked diffusion language model** | | in progress |
 | F1 | The diffusion model (L8), written and first trained on TinyStories | the author | ✅ first version generates text (`diffusion_models/v1_original.py`) |
