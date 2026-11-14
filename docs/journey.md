@@ -43,8 +43,9 @@ that are easy to get wrong and rarely explained.
 32. [More kinds of data](#32-more-kinds-of-data)
 33. [A second kind of model: masked diffusion](#33-a-second-kind-of-model-masked-diffusion)
 34. [Teaching it to answer: instruction tuning](#34-teaching-it-to-answer-instruction-tuning)
-35. [Lessons](#35-lessons)
-36. [What's next](#36-whats-next)
+35. [Teaching it to stop: preference tuning (DPO)](#35-teaching-it-to-stop-preference-tuning-dpo)
+36. [Lessons](#36-lessons)
+37. [What's next](#37-whats-next)
 
 ---
 
@@ -1253,7 +1254,44 @@ Colab L4.
 **Lesson.** Instruction tuning is cheap and changes how a model behaves, not what it knows: the answers took the right
 shape in 100 updates, and the facts were exactly as good as the base model's.
 
-## 35. Lessons
+## 35. Teaching it to stop: preference tuning (DPO)
+
+The instruction-tuned model answers, but its greedy answers loop (*"A sea of blue, a sea of blue, a sea of blue…"*)
+and most run on to the length limit. **DPO** (Direct Preference Optimization, `dpo.py`) learns from pairs of answers to
+the same question, one preferred: it raises the preferred answer's probability and lowers the other's, both measured
+against a frozen copy of the starting model, so the model moves only as far as the preferences ask. The pairs cost
+nothing to collect: for 2,000 smol-smoltalk questions with a short reference answer (under 200 tokens), the
+*preferred* answer is the reference, which ends, and the *rejected* one is the chat model's own greedy answer
+(20% repeated 4-token runs, 38% still going at 200 tokens). A small likelihood term on the preferred answer keeps
+DPO from simply lowering both. 1,900 pairs, two passes (948 updates of 4 pairs, learning rate 3e-6, β 0.1), 21
+minutes on the Mac.
+
+Before training, the chat model found the reference answer more likely than its own on only 5% of held-out pairs;
+after, it preferred the reference on 99%. What matters is how it writes, measured on the 100 held-out questions
+(never trained on) and the twelve questions of section 34:
+
+| | Instruction-tuned | + DPO |
+|---|---|---|
+| 100 held-out questions, greedy: repeated 4-token runs | 20.0% | **11.2%** |
+| Answers that end by themselves within 200 tokens | 59% | **84%** |
+| Mean answer length (tokens) | 148 | 124 |
+| Twelve questions: repeated 4-token runs · ended within 160 tokens | 27.5% · 3 of 12 | **16.1% · 6 of 12** |
+| Loss on held-out reference answers (smol-smoltalk) | **1.548** | 1.617 |
+| HellaSwag · LAMBADA · ARC-Easy · PIQA · Winogrande | 28.9 · 10.6 · 38.1 · 58.5 · 50.4 | 29.3 · 9.5 · 38.5 · 58.5 · 50.4 |
+
+- **Repetition halved and most answers now end.** The Python answer that repeated `if len(parts) != …` stops after
+  seven lines; *"three tips for staying focused"* is now a numbered list of three.
+- **It still loops in places**: the sea poem moved from *"a sea of blue"* to *"a canvas of endless blue"*, repeated;
+  and it knows no more than before (World War I was fought *"between the United States and the United States"*).
+- **The benchmarks didn't move** (average 37.2 against 37.3): DPO changed how it ends answers, not what it knows.
+- **The cost:** the loss on reference answers rose by 0.07. DPO lowers the probability of the preferred answers too,
+  only far less than the rejected ones (about −5 against −47 nats per answer at the end); the likelihood term
+  limited the drift but didn't stop it.
+
+**Lesson.** A model's own mistakes make good training data: preferring a reference answer to the model's own greedy
+one halved repetition in 21 minutes on a laptop, with no human labels.
+
+## 36. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1313,14 +1351,17 @@ shape in 100 updates, and the facts were exactly as good as the base model's.
     updates, then took off; a 2,000-update check would have called it broken.
 33. **Fine-tuning teaches behaviour, not knowledge.** Instruction tuning made the model answer instead of writing
     blog posts, but not answer correctly, and cost a few benchmark points; knowledge comes from pre-training data.
+34. **A model's own mistakes are free training data.** Preferring a reference answer over the model's own greedy one
+    halved repetition with no human labels; DPO lowers the preferred answers' probability a little too, so watch
+    the held-out loss.
 
-## 36. What's next
+## 37. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
 - **Quantization with GPTQ** (llm-compressor's `oneshot`) on the new base model, compared with the simple
   round-to-nearest 8- and 4-bit weights of section 27.
-- **Post-training:** preference optimization (DPO) against repetition, then reinforcement learning with checkable
-  rewards (GRPO); instruction tuning again on the stage 2 model.
+- **Post-training:** reinforcement learning with checkable rewards (GRPO); instruction tuning and DPO again on the
+  stage 2 model.
 - **More data:** stage 2 is training: the base model continued to 2.5B tokens on FineWeb-Edu *full* plus Cosmopedia
   (the held-out documents removed from the training data first).
 - **Reasoning:** thinking before answering, for both the autoregressive and the diffusion model (phase I of the plan).

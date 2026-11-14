@@ -60,6 +60,7 @@ step by step.
 | The FineWeb-Edu diffusion model trained 3× longer (492M tokens, 145 min on an L4) | likelihood bound 5.269 → **4.729**; more fluent text (judge loss 3.62 → 3.01) |
 | Benchmarks for diffusion models (each choice scored by its likelihood bound) | TinyStories: at chance like the autoregressive model of the same size, but LAMBADA 1.8% vs 8.7%; FineWeb-Edu: ARC-Easy **31.2%** |
 | Instruction tuning on 409K smol-smoltalk conversations (90 min on an L4): a Chat mode | loss on held-out answers 2.437 → **1.548**; it answers instead of writing blog posts, at a cost of 3 benchmark points |
+| DPO against repetition: the reference answer preferred to the chat model's own greedy one, 2,000 pairs (21 min on the Mac) | greedy repetition on held-out questions 20.0% → **11.2%**, answers that end 59% → **84%**; held-out answer loss 1.548 → 1.617 |
 | A yardstick: OpenAI's GPT-2 small (124M) on held-out web text | **3.401**, against **3.549** for our same-size model (500M tokens of training) |
 
 Details in [Analysis](docs/analysis.md) and [the journey](docs/journey.md).

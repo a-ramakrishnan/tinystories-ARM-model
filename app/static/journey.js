@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-14 19:30", kind: "win", area: "Post-training", title: "Preference tuning: it loops less and stops",
+    decision: "DPO on the chat model (dpo.py): for 2,000 smol-smoltalk questions, prefer the short reference answer to the model's own greedy answer, against a frozen copy of the chat model, plus a small likelihood term on the preferred answer.",
+    why: "The chat model's greedy answers looped (\"A sea of blue, a sea of blue, …\") and 38% were still going at 200 tokens.",
+    result: { label: "100 held-out questions: repetition · answers that end", text: "20.0% → 11.2% · 59% → 84%" },
+    calc: ["held-out preference accuracy 5% → 99% after two passes",
+      "the cost: loss on held-out reference answers 1.548 → 1.617 (DPO lowers the preferred answers a little too)",
+      "facts unchanged, and some loops remain (poems)"],
+    cost: "21 minutes on the Mac (948 updates of 4 pairs), plus 45 minutes generating the pairs", anchor: "35-teaching-it-to-stop-preference-tuning-dpo" },
   { when: "2026-11-14 16:10", kind: "win", area: "Post-training", title: "Instruction tuning: it answers now",
     decision: "Fine-tune the base model on 409,000 smol-smoltalk conversations in a plain User / Assistant format, the loss on the assistant's words only (sft.py), and add a Chat mode to Generate.",
     why: "Asked a question, the base model wrote a blog post: \"I'm a bit of a water enthusiast, and I recently stumbled upon…\"",
