@@ -36,5 +36,27 @@
  "chip": "NVIDIA L4",
  "platform": "Colab",
  "dataset_config": "small",
- "library_id": "mini-fineweb-edu-202611130718-14ed26"
+ "library_id": "mini-fineweb-edu-202611130718-14ed26",
+ "train_config": {
+  "learning_rate": 0.0012,
+  "min_lr": 0.00011999999999999999,
+  "max_iters": 30500,
+  "warmup_steps": 1000,
+  "eval_interval": 1000,
+  "eval_iters": 100,
+  "batch_size": 32,
+  "gradient_accumulation_steps": 1,
+  "weight_decay": 0.1,
+  "betas": [
+   0.9,
+   0.95
+  ],
+  "eps": 1e-09,
+  "grad_clip": 1.0,
+  "best_model_path": "/content/drive/MyDrive/tinystories-runs/mix-baominhtran__mini-+huggingfacetb__cos+huggingfacetb__cos+huggingfacetb__cos+huggingfacetb__cos+huggingfacetb__cos-e3deeec9/best_model_params.pt",
+  "seed": 42,
+  "compile": true,
+  "fused_adamw": true,
+  "tf32": true
+ }
 }
