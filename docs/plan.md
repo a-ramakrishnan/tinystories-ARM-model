@@ -8,7 +8,7 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 14 November 2026, 14:40 IST.*
+*Last updated: 14 November 2026, 15:20 IST.*
 
 ## Where things stand (14 November, afternoon)
 
@@ -17,8 +17,8 @@ Three things are running or queued; nothing else needs a decision until they fin
 | Lane | What | Status |
 |---|---|---|
 | Colab L4 | **F2c** the long diffusion run on FineWeb-Edu (492M tokens) | ✅ done 14:25: likelihood bound **4.729** (short run 5.269), 145 min; downloaded to `diffusion_models/runs/fineweb-edu-small-colab-long` |
-| Colab L4, now | **D1** instruction tuning: `sft.py` + `sft_colab.ipynb` | code ✅ and tested on the Mac; smoke run on the L4 started 14:35 (in the same Colab session, so Drive stays mounted), then the full run (~1 h 15 min) → done about 16:30 |
-| Colab L4, after that | **E2** stage 2: ~2.5B tokens, continued from the base | starts after D1 (this evening); ~20 h on an L4, resumable from Drive; an A100, if one is free, cuts it to ~8 h (E1) |
+| Colab L4, now | **D1** instruction tuning: `sft.py` + `sft_colab.ipynb` | smoke run ✅ (100 updates: answers already take the right shape); full run started 15:00: 409K conversations → 361K windows, 11,284 updates at 37,000 tokens/s; held-out answer loss 2.436 (base) → 1.849 at 1,000 updates; done about 16:25, then the zip downloads automatically (queued cell) |
+| Colab L4, after that | **E2** stage 2: `stage2.py`, ~2.5B tokens, continued from the base | queued right behind D1 in the same session: ~1 h tokenizing, then ~18 h training (to about midday 15 Nov); resumable from Drive (`MyDrive/tinystories-runs/stage2-fineweb-full-cosmopedia`) |
 | Mac | **F5** benchmarks for the two diffusion models | running (slow: shares the Mac's GPU); results this afternoon → Benchmarks page, README, journey |
 
 **What comes next, in order** (suggested):
@@ -63,7 +63,7 @@ Three things are running or queued; nothing else needs a decision until they fin
 | D3 | GRPO with automatically checkable rewards | Claude | after D2 |
 | **E** | **Scaling the data** (the data run showed more data helps) | | |
 | E1 | Measure training speed on an A100 (none was free on 13 Nov) | Claude | when one is free |
-| E2 | Stage 2: a long, resumable run on FineWeb-Edu *full* + Cosmopedia (~2.5B tokens, ~20 tokens per parameter for 124M), continued from the base model; about 20 h on an L4 or ~8 h on an A100, checkpoints on Drive | Colab | **next after D1** (go-ahead given 14 Nov) |
+| E2 | Stage 2: a long, resumable run on FineWeb-Edu *full* + Cosmopedia (~2.5B tokens, ~20 tokens per parameter for 124M), continued from the base model; about 20 h on an L4 or ~8 h on an A100, checkpoints on Drive | Colab | **queued behind D1 (14 Nov)**: `stage2.py` extends the base run's own training state (step 30,500 → ~152,600, the cosine schedule stretched, the learning rate re-warmed) on Mini FineWeb-Edu *full* (3.5M documents) + the same Cosmopedia subsets. Small's held-out documents are removed from full first (the tiny subset alone held 594 of the 2,974), so the held-out comparison stays fair |
 | E3 | L2 (low-memory tokenizing on the Mac), L4 (quality filter) | Claude | as needed |
 | **F** | **A masked diffusion language model** | | in progress |
 | F1 | The diffusion model (L8), written and first trained on TinyStories | the author | ✅ first version generates text (`diffusion_models/v1_original.py`) |
