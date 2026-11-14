@@ -73,6 +73,8 @@ def default_name(info):
                                        + (f" shared ×{m['block_repeat']}" if (m.get("block_repeat") or 1) > 1 else "")
                                        + (f" MTP-{m['mtp_heads']}" if (m.get("mtp_heads") or 1) > 1 else "")
                                        + (f" MoE {m['n_experts']}×top{m.get('moe_top_k', 1)}" if (m.get("n_experts") or 1) > 1 else "") if params else size, data, steps]
+    if info.get("chat"):     # instruction-tuned: the base's size, then the conversations it learned from
+        parts = ["Chat " + parts[0], "instruction-tuned on " + _short_dataset((info.get("datasets") or [""])[-1]), parts[2]]
     return " · ".join(p for p in parts if p)
 
 
@@ -113,6 +115,7 @@ def _summary(info, weights):
         "best_val": info.get("best_val"), "seconds": info.get("seconds"),
         "trained_at": info.get("trained_at"), "chip": info.get("chip"), "platform": info.get("platform"),
         "device": info.get("device"), "dtype": info.get("dtype"),
+        "chat": bool(info.get("chat")), "chat_format": info.get("chat_format"), "base_model": info.get("base_model"),
         "bytes": os.path.getsize(weights),
     }
 
@@ -120,6 +123,8 @@ def _summary(info, weights):
 def _new_id(summary, fp):
     when = re.sub(r"\D", "", summary.get("trained_at") or "")[:12] or time.strftime("%Y%m%d%H%M")
     data = re.sub(r"[^a-z0-9]+", "-", _short_dataset((summary.get("datasets") or [None])[0]).lower()).strip("-")
+    if summary.get("chat"):
+        data = "chat-" + data
     return f"{data[:20] or 'model'}-{when}-{fp[:6]}"
 
 

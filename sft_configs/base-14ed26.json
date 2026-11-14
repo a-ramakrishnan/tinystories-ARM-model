@@ -1,0 +1,40 @@
+{
+ "model": {
+  "block_size": 512,
+  "vocab_size": 50257,
+  "n_layer": 12,
+  "n_head": 12,
+  "n_embd": 768,
+  "dropout": 0.0,
+  "bias": false,
+  "pos_encoding": "rope",
+  "rope_theta": 10000.0,
+  "norm": "layernorm",
+  "mlp": "swiglu",
+  "qk_norm": true,
+  "n_kv_head": 0,
+  "block_repeat": 1,
+  "n_experts": 1,
+  "moe_top_k": 1,
+  "moe_aux_weight": 0.01,
+  "gelu_approx": "none",
+  "mtp_heads": 1
+ },
+ "datasets": [
+  "BaoMinhTran/mini-fineweb-edu",
+  "HuggingFaceTB/cosmopedia@stories%300000",
+  "HuggingFaceTB/cosmopedia@wikihow",
+  "HuggingFaceTB/cosmopedia@openstax",
+  "HuggingFaceTB/cosmopedia@stanford%100000",
+  "HuggingFaceTB/cosmopedia@khanacademy"
+ ],
+ "mix": "size",
+ "tokens": 499712000,
+ "params": 123552768,
+ "best_val": 2.9029979705810547,
+ "trained_at": "2026-11-13 07:18",
+ "chip": "NVIDIA L4",
+ "platform": "Colab",
+ "dataset_config": "small",
+ "library_id": "mini-fineweb-edu-202611130718-14ed26"
+}

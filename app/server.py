@@ -43,6 +43,7 @@ import benchmarks  # noqa: E402
 import textgen  # noqa: E402
 from diffusion_models import model as diffusion_model  # noqa: E402
 from diffusion_models.sample import diffusion_generate  # noqa: E402
+from sft import format_prompt  # noqa: E402
 from diffusion_models.tokens import MASK_ID as DIFFUSION_MASK_ID  # noqa: E402
 import registry  # noqa: E402
 from pretrain import pretrain, read_state_meta  # noqa: E402
@@ -248,7 +249,8 @@ def active_info():
         return {"source": "library", "id": meta["id"], "name": meta["name"], "model": meta["model"],
                 "params": param_breakdown(cfg), "steps": meta.get("steps"), "updates": meta.get("updates"),
                 "best_val": meta.get("best_val"), "trained_at": meta.get("trained_at"), "stopped_early": False,
-                "datasets": meta.get("datasets"), "chip": meta.get("chip"), "platform": meta.get("platform")}
+                "datasets": meta.get("datasets"), "chip": meta.get("chip"), "platform": meta.get("platform"),
+                "chat": bool(meta.get("chat")), "base_model": meta.get("base_model")}
     ck = checkpoint_info(selection_paths())
     return {"source": "datasets", **ck} if ck else None
 
@@ -364,6 +366,7 @@ class GenerateReq(SamplingReq):
     prompt: str = "Once upon a time"
     max_new_tokens: int = 200
     use_kv_cache: bool = True
+    chat: bool = False                # an instruction-tuned model: the prompt is a question, wrapped as "User: …\n\nAssistant:"
 
 
 class DistributionReq(SamplingReq):
@@ -853,9 +856,10 @@ def generate_stream_endpoint(req: GenerateReq):
         raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
     model, _ = inference_model()
     prompt = req.prompt[:4000]
-    ids = S.enc.encode_ordinary(prompt)
-    if not ids:
+    if not prompt.strip():
         raise HTTPException(400, "Type a prompt first.")
+    # a chat model answers a question in its training format; the leading <|endoftext|> is part of it
+    ids = format_prompt([{"role": "user", "content": prompt}], S.enc) if req.chat else S.enc.encode_ordinary(prompt)
     block = model.config.block_size
     max_new = max(1, min(req.max_new_tokens, 1000))
     temperature, top_k, extras = req.clean()

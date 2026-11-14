@@ -986,6 +986,7 @@ function drawChart(tr) {
 // ---------- 7. generate ----------
 // ---------- choosing the model for Generate: grouped by training data, the best of each group first ----------
 const GEN_DATA = [
+  [(d, m) => !!m?.chat, "Chat (instruction-tuned)", "answers questions: type a question as the prompt"],
   [(d) => d.some((x) => /cosmopedia/i.test(x)), "Mini FineWeb-Edu + Cosmopedia", "educational web text, textbooks, how-to and stories"],
   [(d) => d.length > 0 && d.every((x) => /fineweb/i.test(x)), "Mini FineWeb-Edu", "educational web text"],
   [(d) => d.length === 1 && /tinystories/i.test(d[0]), "TinyStories", "children's stories only"],
@@ -994,7 +995,7 @@ const GEN_DATA = [
   [() => true, "Other mixes", ""],
 ];
 function genGroup(m) {
-  const g = GEN_DATA.find(([f]) => f(m.datasets || []));
+  const g = GEN_DATA.find(([f]) => f(m.datasets || [], m));
   return { title: g[1], about: g[2] };
 }
 function genWhere(m) {
@@ -1034,6 +1035,7 @@ async function loadGenPicker() {
   $("#g-pick-note").innerHTML = (a
     ? `Trained on <b>${esc(g.title)}</b>${g.about ? ` (${esc(g.about)})` : ""}${genWhere(a) ? `, on ${esc(genWhere(a))}` : ""}. `
     : "Using the model trained on the current datasets. ") +
+    (a?.chat ? `<b>Chat mode:</b> type a question as the prompt; the model answers and stops at the end of its answer (a chat model's loss counts only its answers, so it isn't comparable with the others). ` : "") +
     `The list has the best model (lowest validation loss) for each kind of training data; every saved model is on the <a href="#" data-go="models">Models</a> page. The diffusion models write differently: see the <a href="#" data-go="diffusion">Diffusion</a> page.`;
 }
 $("#g-model-pick").addEventListener("change", (e) => action(e.target, async () => {
@@ -1428,7 +1430,8 @@ async function generate() {
 }
 
 async function generateRun(ctrl) {
-  const body = { prompt: $("#g-prompt").value, ...samplingBody(), max_new_tokens: +$("#g-len").value, use_kv_cache: $("#g-kv").checked };
+  const chat = !!ui.status?.active?.chat;
+  const body = { prompt: $("#g-prompt").value, ...samplingBody(), max_new_tokens: +$("#g-len").value, use_kv_cache: $("#g-kv").checked, chat };
   const res = await fetch("/api/generate/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
   if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.detail || res.statusText); }
   // keep the previous output in the history
@@ -1443,7 +1446,7 @@ async function generateRun(ctrl) {
   $("#g-live").classList.remove("hidden");
   const out = $("#g-text");
   out.classList.toggle("plain", !$("#g-color").checked);
-  out.innerHTML = `<span class="prompt">${esc(body.prompt)}</span>`;
+  out.innerHTML = chat ? `<span class="prompt">User: ${esc(body.prompt)}\n\nAssistant:</span>` : `<span class="prompt">${esc(body.prompt)}</span>`;
   let meta = null, count = 0, probSum = 0, lastMs = 0, nlRun = 0;
   const reader = res.body.getReader(), dec = new TextDecoder();
   let buf = "";
