@@ -121,3 +121,24 @@ on an L4 at 59,300 tokens/s. Likelihood bound **4.729** nats per token (from 5.2
 - On a good prompt it now reads like the training data, if loosely: *"Greenhouse Energy Sources: These
   technologies can be used for the use of renewable energy sources such as solar or wind power are used in
   industrial applications."*
+
+## The five benchmarks (14 November 2026)
+
+`benchmarks.py` scores each answer choice by its likelihood bound (8 maskings per choice; see the top of the file)
+on the same questions as the autoregressive models; LAMBADA masks the whole last word and needs every token right.
+HellaSwag is length-normalized accuracy, the others plain accuracy; chance is 25% (HellaSwag, ARC-Easy) or 50%.
+
+| Model | HellaSwag | LAMBADA | ARC-Easy | PIQA | Winogrande |
+|---|---|---|---|---|---|
+| Diffusion 51M · TinyStories · 164M tokens | 25.7% | 1.8% | 25.7% | 51.9% | 48.4% |
+| Autoregressive 51M · TinyStories · same tokens (*Medium 51M · 20k steps*) | 26.5% | 8.7% | 25.9% | 54.1% | 51.6% |
+| Diffusion 51M · FineWeb-Edu · 164M tokens | 25.3% | 0.2% | **31.2%** | 52.1% | 50.5% |
+| Autoregressive 124M base · FineWeb-Edu + Cosmopedia · 500M tokens | 29.7% | 15.7% | 44.0% | 62.6% | 50.0% |
+
+- At this size both kinds of TinyStories model are at chance on everything but LAMBADA: the benchmarks ask about
+  the everyday world and science, which children's stories barely cover.
+- The FineWeb-Edu diffusion model beats chance on ARC-Easy (31%), so it picked up some school science. The
+  autoregressive base is bigger and saw 3× the tokens, so that row is a yardstick, not a fair match.
+- **LAMBADA is the diffusion models' weak spot**: the whole last word is masked and every one of its tokens has to be
+  the model's top guess in a single pass, where an autoregressive model sees each token's predecessors.
+- The bound is an estimate (8 random maskings), so the scores carry a little extra noise on top of the stderr.

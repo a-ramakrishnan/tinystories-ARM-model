@@ -1210,6 +1210,11 @@ stays on topic but loosely connected. Three times the training (492M tokens) bro
 made every sampler's text easier for the base model to predict (judge loss 3.62 → 3.01 with the default sampler), but
 a few prompts still lock onto one word.
 
+**The five benchmarks**, each answer scored by its likelihood bound: the TinyStories diffusion model is at chance like
+the autoregressive model of the same size and data (HellaSwag 25.7% vs 26.5%, PIQA 51.9% vs 54.1%), except LAMBADA
+(1.8% vs 8.7%), where the whole last word is masked and must come out right in one pass. The FineWeb-Edu one beats
+chance only on ARC-Easy (31.2%; the bigger autoregressive base: 44.0%).
+
 **Lesson.** With a diffusion model, the sampler is half the model: the same weights produced jumbled text, a loop of one
 word, or readable stories depending only on which positions are revealed when.
 
