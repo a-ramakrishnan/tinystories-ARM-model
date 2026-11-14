@@ -14,6 +14,7 @@ version is kept unchanged in [`v1_original.py`](v1_original.py), and the modules
 | [`train.py`](train.py) | The training loop: AdamW, warmup + cosine, mixed precision, `torch.compile`, resumable |
 | [`sample.py`](sample.py) | Generation by denoising, recording every step |
 | [`render.py`](render.py) | The denoising steps as a GIF |
+| [`quality.py`](quality.py) | Scores the generated text on held-out prompts: repetition, and the base AR model's loss on it |
 | [`diffusion_colab.ipynb`](diffusion_colab.ipynb) | Train on Colab, watch it generate, download the results |
 
 **Changes from v1:** GPT-2's tokenizer (the same as the autoregressive models, so both read the same data);
@@ -66,3 +67,32 @@ token after 164M tokens, still falling at the end. The word-frequency plateau la
   parameters; 164M tokens at 51M is little for text this varied.
 - Fixed: with more or fewer denoising steps than the model's T noise levels, the sampler now passes the matching
   noise level (it passed the step number, which crashed with more than 64 steps).
+
+## Fixing the generation (14 November 2026)
+
+`quality.py` continues 8 held-out prompts per dataset (2 seeds, 64 new tokens) and scores the text: the
+**judge loss** (our base autoregressive model's loss on it, nats per token; repeating one word also scores low, so
+it's read with the next two), **repeated 4-grams** (share of 4-token runs already seen in the same text) and
+**distinct 2-grams**.
+
+| Settings | FineWeb-Edu: judge · rep. 4-grams · distinct 2-grams | TinyStories: judge · rep. · distinct |
+|---|---|---|
+| Real continuation | 3.79 · 0.000 · 0.97 | 2.68 · 0.008 · 0.94 |
+| Base AR model, top-k 50 (the judge's own text) | 2.34 · 0.006 · 0.95 | 2.00 · 0.006 · 0.97 |
+| Confident first, top-k 50 (yesterday's default) | 2.33 · **0.428** · 0.36 | 2.47 · 0.062 · 0.79 |
+| **+ repetition penalty 1.3 (the new default)** | **3.62 · 0.038 · 0.85** | **2.80 · 0.004 · 0.95** |
+| + penalty 1.2, blocks of 8 tokens | 3.88 · 0.014 · 0.89 | 3.27 · 0.002 · 0.95 |
+| Random order, temperature 0.8 | 5.27 · 0.000 · 0.95 | |
+| Left to right, one token per step | 4.42 · 0.003 · 0.90 | |
+| Re-mask 10% of revealed tokens per step | 3.43 · 0.289 · 0.45 | |
+
+- **Why confident-first collapsed:** with 64 tokens in 64 steps it reveals one token per step, so it wasn't
+  parallel decoding. The surest position to fill is usually one next to a word already there, filled with a copy
+  of it, and every copy makes the next one surer. A penalty on tokens already in the text (1.3, as in CTRL) breaks
+  the loop. At 128 tokens it still holds (FineWeb-Edu 0.066 repeated 4-grams, from 0.566).
+- **Blocks** (filling 4–16 tokens at a time, left to right, as in LLaDA) also cut repetition but cost fluency, more
+  so at 128 tokens; **left to right** reads worst (the model never learned to predict strictly left to right);
+  **re-masking** didn't help; **one reveal per token per step** (`distinct`) only matters with fewer steps than
+  tokens (16 steps: 0.235 → 0.083).
+- The FineWeb-Edu text is now on topic and rarely repeats, but it's still loosely connected; that's the model
+  (bound 5.27, 164M tokens at 51M parameters), not the sampler. More training is the next lever.
