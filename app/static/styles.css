@@ -1014,3 +1014,10 @@ body.ex-noscroll { overflow: hidden; }
 body.tg-wide main { max-width: 1720px; }
 body.tg-wide [data-step=textgen] .panel-head { max-width: 960px; }
 #tg-grid svg { max-width: 460px; }
+
+/* Diffusion page */
+.df-mask { color: var(--muted); opacity: .45; }
+[data-step=diffusion] .fields.four { grid-template-columns: 2fr 2fr .7fr .7fr; }
+[data-step=diffusion] .fields.four select { width: 100%; }
+body.tg-wide [data-step=diffusion] .panel-head { max-width: 960px; }
+#df-grid svg { max-width: 460px; }

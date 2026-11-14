@@ -714,6 +714,60 @@
       </section>
 
       <!-- ============ Writing text ============ -->
+      <section class="panel" data-step="diffusion">
+        <header class="panel-head">
+          <span class="eyebrow">Explore</span>
+          <h1>Diffusion: writing by denoising</h1>
+          <p>A <b>masked diffusion model</b> doesn't write left to right. The continuation starts as all <code>[MASK]</code> (█); at every step the model reads the whole text in both directions, predicts every masked position at once, and a few of them are revealed. After the last step nothing is masked. These models are trained on Colab with <code>diffusion_models/</code> and unpacked in <code>diffusion_models/runs/</code>.</p>
+        </header>
+        <div id="df-empty" class="card hidden"><p class="muted">No diffusion runs yet. Train one with <code>diffusion_models/diffusion_colab.ipynb</code> and unzip it into <code>diffusion_models/runs/&lt;name&gt;/</code>.</p></div>
+        <div id="df-main">
+        <div class="card">
+          <div class="card-head"><h3>Watch it denoise</h3><span id="df-model-note" class="muted small"></span></div>
+          <div class="fields four">
+            <label>Model <select id="df-model" class="select"></select></label>
+            <label>Prompt <select id="df-prompt" class="select"></select></label>
+            <label>Tokens <select id="df-tokens" class="select"><option value="32">32</option><option value="64" selected>64</option><option value="128">128</option></select></label>
+            <label>Steps <select id="df-steps" class="select"><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64" selected>64</option><option value="128">128</option></select></label>
+          </div>
+          <div class="fields four">
+            <label>Choosing which positions to reveal <select id="df-preset" class="select"></select></label>
+            <label>Seed <select id="df-seed" class="select"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+          </div>
+          <label id="df-own-wrap" class="block hidden">Your prompt <textarea id="df-own" rows="2" spellcheck="false">Once upon a time</textarea></label>
+          <div class="actions tight"><button id="df-run" class="btn primary">Generate</button>
+            <span id="df-busy" class="muted small hidden"><span class="spinner"></span> Denoising…</span></div>
+          <div id="df-out" class="hidden">
+            <div class="tg-player">
+              <button id="df-first" class="icon-btn" title="Back to the start">⏮</button>
+              <button id="df-play" class="icon-btn" title="Play">▶</button>
+              <button id="df-next" class="icon-btn" title="One step">⏭</button>
+              <input id="df-step" type="range" min="0" max="1" value="0">
+              <span id="df-step-label" class="muted small mono"></span>
+              <select id="df-speed" class="select"><option value="400">slow</option><option value="150" selected>medium</option><option value="40">fast</option></select>
+            </div>
+            <div id="df-text" class="tg-text"></div>
+            <div class="tg-cols">
+              <div id="df-stepcard" class="tg-stepcard"></div>
+              <div>
+                <div class="card-head"><h4>When each position is revealed</h4><span class="muted small">rows: steps · columns: positions</span></div>
+                <div id="df-grid" class="chart"></div>
+              </div>
+            </div>
+            <div id="df-metrics" class="stats"></div>
+            <div class="two-col">
+              <div><div class="card-head"><h4>Positions still masked</h4><span class="muted small">after each step</span></div><div id="df-masked" class="chart"></div></div>
+              <div id="df-ref"></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>The trained diffusion models</h3><span class="muted small">diffusion_models/runs/</span></div>
+          <div id="df-models"></div>
+        </div>
+        </div>
+      </section>
+
       <section class="panel" data-step="textgen">
         <header class="panel-head">
           <span class="eyebrow">Explore</span>
@@ -884,6 +938,7 @@
   <script src="/static/journey.js"></script>
   <script src="/static/bench.js"></script>
   <script src="/static/textgen.js"></script>
+  <script src="/static/diffusion.js"></script>
   <script src="/static/explorer.js"></script>
   <script src="/static/flow.js"></script>
   <script src="/static/flowplay.js"></script>

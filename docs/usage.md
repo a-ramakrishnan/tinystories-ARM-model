@@ -435,6 +435,18 @@ averages), e.g. about 1.5 GB for the 124M Large model.
 
 ## Configuration
 
+### Diffusion: writing by denoising
+
+The **Diffusion** page (under Explore) runs the masked diffusion models from `diffusion_models/` (train one with
+`diffusion_models/diffusion_colab.ipynb`, then unzip it into `diffusion_models/runs/<name>/`). The continuation
+starts as all `[MASK]` (█); every step is one pass through the model, reading the whole text in both directions,
+and a few masked positions are revealed. Pick a model, a prompt (the same held-out prompts as Writing text), the
+number of tokens and steps, and how positions are chosen (confident first with a repetition penalty of 1.3 by
+default; also no penalty, blocks of 8 left to right, random order, or v1's re-sampling), then play it back. A grid
+shows when each position was revealed: scattered clusters instead of the left-to-right staircase. Below, a table
+compares the trained runs: size, training tokens and time, the likelihood bound, and the scores from
+`python3 -m diffusion_models.quality <run>` (the base model's loss on the generated text, and repetition).
+
 ### Model size: `full-model.py`
 
 ```python

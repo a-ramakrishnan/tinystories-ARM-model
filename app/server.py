@@ -41,6 +41,9 @@ from explain import explain_forward  # noqa: E402
 import evaluate  # noqa: E402
 import benchmarks  # noqa: E402
 import textgen  # noqa: E402
+from diffusion_models import model as diffusion_model  # noqa: E402
+from diffusion_models.sample import diffusion_generate  # noqa: E402
+from diffusion_models.tokens import MASK_ID as DIFFUSION_MASK_ID  # noqa: E402
 import registry  # noqa: E402
 from pretrain import pretrain, read_state_meta  # noqa: E402
 from tokenization import bin_files_exist, get_tokenizer, tokenize_and_save  # noqa: E402
@@ -1301,6 +1304,114 @@ def lab_datasets():
         out.append({"key": d["key"], "title": d["title"], "name": name, "config": cfg, "text_column": "text", "local": True,
                     "val_tokens": d["tokens"], "train_tokens": token_count(os.path.join(root, "train.bin"))})
     return out
+
+
+# ---------- diffusion models (diffusion_models/: trained on Colab, unpacked in diffusion_models/runs/<run>) ----------
+DIFFUSION_RUNS = os.path.join(PROJECT_DIR, "diffusion_models", "runs")
+DIFFUSION_SOURCES = {"roneneldan/TinyStories": "TinyStories", "BaoMinhTran/mini-fineweb-edu@small": "Mini FineWeb-Edu"}
+_diffusion_cache = {}
+
+
+def _read_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def diffusion_runs():
+    """The trained diffusion runs: a folder with model.pt and config.json, plus metrics.json from training and
+    quality.json from diffusion_models/quality.py if they're there."""
+    out = []
+    if not os.path.isdir(DIFFUSION_RUNS):
+        return out
+    for name in sorted(os.listdir(DIFFUSION_RUNS)):
+        d = os.path.join(DIFFUSION_RUNS, name)
+        if not (os.path.exists(os.path.join(d, "model.pt")) and os.path.exists(os.path.join(d, "config.json"))):
+            continue
+        m = _read_json(os.path.join(d, "metrics.json")) or {}
+        q = _read_json(os.path.join(d, "quality.json"))
+        cfg = (_read_json(os.path.join(d, "config.json")) or {}).get("model", {})
+        datasets = m.get("datasets") or (_read_json(os.path.join(d, "config.json")) or {}).get("datasets") or []
+        source = DIFFUSION_SOURCES.get(datasets[0], datasets[0]) if datasets else "?"
+        tokens = m.get("tokens")
+        params = m.get("params")
+        title = (f"Diffusion {round(params / 1e6)}M" if params else "Diffusion") + f" · {source}" + \
+            (f" · {round(tokens / 1e6)}M tokens" if tokens else "")
+        out.append({"id": name, "name": title, "source": source, "params": params, "tokens": tokens,
+                    "best_bound": m.get("best_bound"), "seconds": m.get("seconds"), "gpu": m.get("gpu"),
+                    "tokens_per_sec": m.get("tokens_per_sec"), "finished_at": m.get("finished_at"),
+                    "val": (m.get("history") or {}).get("val"), "model": cfg,
+                    "quality": {k: v.get("summary") for k, v in (q or {}).get("results", {}).items()} if q else None})
+    return out
+
+
+def _diffusion_model(run):
+    d = os.path.join(DIFFUSION_RUNS, os.path.basename(run))
+    w = os.path.join(d, "model.pt")
+    if not os.path.exists(w):
+        raise HTTPException(404, f"No diffusion run {run!r} in diffusion_models/runs/.")
+    key = (w, os.path.getmtime(w))
+    if key not in _diffusion_cache:
+        _diffusion_cache.clear()
+        _diffusion_cache[key] = diffusion_model.load(d, S.dev.device)
+    return _diffusion_cache[key]
+
+
+class DiffusionReq(BaseModel):
+    run: str
+    prompt: str = ""
+    prompt_key: Optional[str] = None
+    tokens: int = 64
+    steps: int = 64
+    sampler: str = "keep"
+    temperature: float = 1.0
+    top_k: int = 50
+    repetition_penalty: float = 1.3
+    block_size: int = 0
+    seed: Optional[int] = 1
+
+
+@app.get("/api/diffusion")
+def diffusion_info():
+    return {"runs": diffusion_runs(), "mask_id": DIFFUSION_MASK_ID,
+            "prompts": [{k: p[k] for k in ("key", "source", "prompt", "reference")} for p in textgen.heldout_prompts()]}
+
+
+@app.post("/api/diffusion/generate")
+def diffusion_run(req: DiffusionReq):
+    """Generate by denoising and return every step: the tokens, which positions are still masked, and the model's
+    confidence, so the page can replay it."""
+    if training_running():
+        raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
+    if req.sampler not in ("keep", "random", "v1"):
+        raise HTTPException(400, "sampler must be keep, random or v1")
+    model = _diffusion_model(req.run)
+    ref_ids = None
+    if req.prompt_key:
+        p = next((p for p in textgen.heldout_prompts() if p["key"] == req.prompt_key), None)
+        if not p:
+            raise HTTPException(400, f"Unknown prompt: {req.prompt_key}")
+        ids, ref_ids, source = p["prompt_ids"], p["ref_ids"], p["source"]
+    else:
+        ids, source = S.enc.encode_ordinary(req.prompt[:2000])[-120:], "your prompt"
+    n = max(8, min(req.tokens, 192))
+    steps = max(1, min(req.steps, 256))
+    r = diffusion_generate(model, max_new_tokens=n, diffusion_steps=steps, temperature=max(0.05, min(req.temperature, 2.0)),
+                           top_k=max(0, req.top_k), seed=req.seed, sampler=req.sampler,
+                           repetition_penalty=max(1.0, min(req.repetition_penalty, 3.0)),
+                           block_size=max(0, req.block_size), prompt_ids=ids, record_steps=True)
+    vocab = sorted({i for st in r["trace"] for i in st["ids"]})
+    text_of = {str(i): ("█" if i == DIFFUSION_MASK_ID else S.enc.decode([i])) for i in vocab}
+    final = r["trace"][-1]["ids"] if r["trace"] else []
+    rep = textgen.repetition(r["ids"])
+    return {"run": req.run, "device": S.dev.device, "source": source, "prompt": S.enc.decode(ids), "prompt_tokens": len(ids),
+            "reference": S.enc.decode(ref_ids[:n]) if ref_ids else None, "completion": r["completion"],
+            "gen_len": r["gen_len"], "length": len(r["ids"]), "steps": r["steps"], "seconds": r["seconds"],
+            "tokens_per_sec": round(r["gen_len"] / r["seconds"], 1) if r["seconds"] else None, "repetition": rep,
+            "mask_id": DIFFUSION_MASK_ID, "text_of": text_of, "final": final,
+            "trace": [{"t": st["t"], "ids": st["ids"], "conf": st["conf"], "ms": st["ms"]} for st in r["trace"]]}
 
 
 @app.get("/api/lab/datasets")
