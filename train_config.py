@@ -21,6 +21,7 @@ class TrainConfig:
     eps: float = 1e-9
     grad_clip: float = 1.0
     best_model_path: str = "best_model_params.pt"
+    snapshot_every: int = 0                 # also keep a copy of the full training state every N steps (snapshots/), 0 = off
     seed: int = 42
     # speed (Nvidia GPUs; ignored on the Mac): none of these change the maths, only how fast it runs
     compile: bool = False                   # torch.compile the model: fuses small GPU operations (slow first steps)

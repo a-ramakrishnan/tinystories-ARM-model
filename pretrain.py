@@ -14,6 +14,7 @@
 import json
 import math
 import os
+import shutil
 from dataclasses import asdict
 
 import torch
@@ -72,6 +73,22 @@ def _save_state(cfg, model, optimizer, scaler, step, best_val, train_losses, val
             "model_config": (extra or {}).get("model_config")}
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
+    every = getattr(cfg, "snapshot_every", 0)
+    if every and step % every == 0:
+        # a kept copy of everything a restart needs (training_state.pt is overwritten at every evaluation): if the
+        # latest file is lost or training goes wrong, copy a snapshot back over it and resume from there
+        snap = os.path.join(os.path.dirname(path), "snapshots")
+        try:
+            os.makedirs(snap, exist_ok=True)
+            tag = f"step{step:06d}"
+            for src, name in ((path, f"training_state-{tag}.pt"), (meta_path, f"training_state-{tag}.json"),
+                              (cfg.best_model_path, f"best_model_params-at-{tag}.pt")):
+                if os.path.exists(src):
+                    shutil.copy(src, os.path.join(snap, name + ".tmp"))
+                    os.replace(os.path.join(snap, name + ".tmp"), os.path.join(snap, name))
+            print(f"Snapshot of the training state kept: {snap}/training_state-{tag}.pt")
+        except OSError as e:          # a full disk shouldn't stop training: the snapshot is a spare
+            print(f"(couldn't keep a snapshot at step {step:,}: {e})")
 
 
 def pretrain(model, loader, cfg, dev, callback=None, resume=False, save_state=True, model_config=None):

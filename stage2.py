@@ -13,10 +13,11 @@
 #    new mix sets the bar and checkpoints keep being saved.
 #
 #   python3 stage2.py --base-run <folder with training_state.pt> --out <run folder> [--tokens 2.5e9]
-#                     [--data-cache <folder>] [--prepare-only]
+#                     [--data-cache <folder>] [--prepare-only] [--snapshot-every 10000] [--from-snapshot <step>]
 #
-# Run it again with the same --out to resume after a disconnect. Token files are copied to --data-cache (Google
-# Drive on Colab), so a new session skips the tokenizing.
+# Run it again with the same --out to resume after a disconnect (from the state saved at the last evaluation, every
+# 1,000 steps). Every 10,000 steps a full copy is also kept in <out>/snapshots/; --from-snapshot <step> goes back to
+# one. Token files are copied to --data-cache (Google Drive on Colab), so a new session skips the tokenizing.
 
 import argparse
 import hashlib
@@ -138,6 +139,8 @@ def main():
     ap.add_argument("--base-config", default=None, help="model_config.json of the base (default: the run's, else the repo copy)")
     ap.add_argument("--data-cache", default=None, help="folder to keep token files in (e.g. on Google Drive)")
     ap.add_argument("--prepare-only", action="store_true")
+    ap.add_argument("--snapshot-every", type=int, default=10000, help="keep a copy of the full training state every N steps")
+    ap.add_argument("--from-snapshot", type=int, default=None, help="restart from the snapshot kept at this step")
     ap.add_argument("--num-proc", type=int, default=None)
     a = ap.parse_args()
 
@@ -158,6 +161,12 @@ def main():
     train_cfg.max_iters = steps
     train_cfg.best_model_path = os.path.join(a.out, "best_model_params.pt")
     train_cfg.compile = dev.device == "cuda"
+    train_cfg.snapshot_every = a.snapshot_every
+    if a.from_snapshot is not None:     # go back to a kept snapshot: it becomes the state to resume from
+        snap = os.path.join(a.out, "snapshots", f"training_state-step{a.from_snapshot:06d}")
+        shutil.copy(snap + ".pt", os.path.join(a.out, STATE_FILE))
+        shutil.copy(snap + ".json", os.path.join(a.out, STATE_META))
+        print(f"Restored the training state from {snap}.pt", flush=True)
     if not os.path.exists(os.path.join(a.out, STATE_FILE)):
         start_from_base(a.base_run, a.out)
     print(f"Training to step {steps:,} ({steps * train_cfg.batch_size * config.block_size / 1e9:.2f}B tokens), "
