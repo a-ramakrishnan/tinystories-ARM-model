@@ -31,7 +31,8 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
    comparison, then the visualizations **H1** (diffusion half of the side-by-side page) and ~~**H2**~~ ✅ (noising slider,
    denoising player). F3's last piece, diffusion in Generate, folds into H1.
 4. **After E2**: ~~evaluate stage 2 against the base and GPT-2~~ ✅ better than the base on every held-out set and the
-   benchmark average (42.3 vs 40.4); if better, it becomes the base, and D1 is re-run on it
+   benchmark average (42.3 vs 40.4); ~~if better, it becomes the base~~ ✅ the base since 15 Nov
+   (`mini-fineweb-edu-ful-202611151103-bb160c`, also the app default and the judge of generated text); next D1 is re-run on it
    (~1 h). Then **F6**: the 124M diffusion model on the stage 2 data, 1B tokens (~8 h on the L4), extended to 2.5B if it
    keeps improving, so F4, H1 and I7 compare like with like.
 5. ~~**D2** (DPO against repetition) on today's chat model~~ ✅ done on the Mac; redone on the stage 2 chat model

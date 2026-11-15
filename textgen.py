@@ -23,7 +23,10 @@ from tokenization import get_tokenizer
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(PROJECT_DIR, "data")
 RESULTS = "textgen.json"
-BASE_MODEL = "mini-fineweb-edu-202611130718-14ed26"  # the project's base model (docs/plan.md): the default here
+# the project's base model (docs/plan.md): the default here, and the judge that scores generated text. Since 15 Nov
+# 2026 it's the stage 2 model (2.5B tokens); before that mini-fineweb-edu-202611130718-14ed26 (500M tokens), so judge
+# losses measured before then came from the older model.
+BASE_MODEL = "mini-fineweb-edu-ful-202611151103-bb160c"
 
 # held-out sets the prompts come from: (data folder, title). Documents are separated by <|endoftext|>.
 SOURCES = [("baominhtran__mini-fineweb-edu-small", "Mini FineWeb-Edu"), ("roneneldan__tinystories", "TinyStories")]
