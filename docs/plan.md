@@ -8,7 +8,7 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 15 November 2026, 10:15 IST.*
+*Last updated: 15 November 2026, 10:30 IST.*
 
 ## Where things stand (15 November, morning)
 
@@ -34,7 +34,8 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
    (~1 h).
 5. ~~**D2** (DPO against repetition) on today's chat model~~ ✅ done on the Mac; redone on the stage 2 chat model
    later. Then **D3** (GRPO).
-6. **Then reasoning (I):** the eval set and longer context (I0), thinking by fine-tuning (I1), test-time compute (I2),
+6. **Then reasoning (I):** the author writes the autoregressive reasoning model by hand on the best model (IA, after
+   stage 2), Claude integrates it; the eval set and longer context (I0), thinking by fine-tuning (I1), test-time compute (I2),
    RL (I3); for diffusion, instruction tuning (I4), thinking (I5), RL (I6); then compare (I7).
 7. **Any time:** C1, the author's GPTQ (Claude adapts it in C2 when it's ready); G, GitHub Pages, once there's more
    to show.
@@ -85,10 +86,11 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
 | H2 | **A separate set of illustrations for diffusion models:** a noising slider (a sentence going from clean to fully masked as t grows, with the mask schedule), a denoising player (from all [MASK], positions revealed by confidence, with a steps-vs-quality slider), the loss on masked positions only, and the architecture flow with bidirectional attention and the time embedding | Claude | after H1 |
 | H3 | Numbered stage cards in the Flow player (autoregressive): what happens at each stage, its formula and the example's real numbers | Claude | can start any time |
 | **I** | **Reasoning models** (added 14 Nov at the author's request): make both kinds of model think before answering. At 124M / 51M the realistic goal is reasoning on small, automatically checkable tasks (multi-digit arithmetic, short word problems, countdown, sudoku-like puzzles), not GSM8K-level maths; the point is to see the mechanics work and compare the two kinds of model | | after D1 |
+| IA | **The autoregressive reasoning model, written by hand by the author** (15 Nov, the author's decision, as with the diffusion model in F1): built on the best model this project produces (the stage 2 model if it beats today's base, else the base `mini-fineweb-edu-202611130718-14ed26`). The author writes the core (I1–I3 below are the outline: thinking format, test-time compute, RL); Claude then integrates it: app (Chat mode with visible thinking), notebook, evaluation, comparison with the diffusion reasoning model (I7) | the author | open: after stage 2 picks the best model |
 | I0 | **Prerequisites.** A reasoning eval set with checkable answers: synthetic tasks we generate (arithmetic with carries, countdown to a target, small sudoku/logic grids, unit conversions), plus GSM8K's test set as a stretch goal; exact-match scoring. Longer context for thinking: extend the AR model from 512 to 1024–2048 tokens (RoPE scaling plus a short continued training run), and the diffusion model from 256 to 512+ | Claude | after D1 |
-| I1 | **AR: thinking format by fine-tuning.** Extend D1's format with a visible thought: `User: …` / `Assistant: <think> step by step … </think> answer`, in plain text like D1. Data: worked solutions with steps (GSM8K's train solutions, the synthetic tasks' step-by-step traces we generate exactly, short public reasoning traces that fit the context). Loss on the thought and the answer | Claude | after I0 |
-| I2 | **AR: test-time compute, no training.** Self-consistency (sample N thoughts, majority vote on the answer), best-of-N with a checker, and budget forcing (append "Wait," when it stops thinking too early); measure accuracy against the number of samples and tokens | Claude | after I1 |
-| I3 | **AR: reinforcement learning with checkable rewards** (D3's GRPO): reward 1 for a correct answer, a little for the right format; groups of samples per question, no value model. Watch whether thoughts get longer and accuracy climbs, as in DeepSeek-R1, on tasks the model can just about solve (curriculum from easy to hard) | Claude | after I1 and D3 |
+| I1 | **AR: thinking format by fine-tuning.** Extend D1's format with a visible thought: `User: …` / `Assistant: <think> step by step … </think> answer`, in plain text like D1. Data: worked solutions with steps (GSM8K's train solutions, the synthetic tasks' step-by-step traces we generate exactly, short public reasoning traces that fit the context). Loss on the thought and the answer | the author (IA); Claude integrates afterwards | after I0 |
+| I2 | **AR: test-time compute, no training.** Self-consistency (sample N thoughts, majority vote on the answer), best-of-N with a checker, and budget forcing (append "Wait," when it stops thinking too early); measure accuracy against the number of samples and tokens | the author (IA); Claude integrates afterwards | after I1 |
+| I3 | **AR: reinforcement learning with checkable rewards** (D3's GRPO): reward 1 for a correct answer, a little for the right format; groups of samples per question, no value model. Watch whether thoughts get longer and accuracy climbs, as in DeepSeek-R1, on tasks the model can just about solve (curriculum from easy to hard) | the author (IA); Claude integrates afterwards | after I1 and D3 |
 | I4 | **Diffusion: instruction tuning first.** The diffusion version of D1: mask only the answer (the question stays visible), as LLaDA's fine-tuning does; Chat mode on the Diffusion page | Claude | after D1 |
 | I5 | **Diffusion: thinking.** The same `<think>` traces as I1; the model fills the thought and the answer together and can revise early steps after later ones (diffusion-of-thought), with a semi-autoregressive block order as an option | Claude | after I4 |
 | I6 | **Diffusion: reinforcement learning** (d1 / diffu-GRPO style): the answer's log probability estimated from one masked pass (the likelihood bound used in F5), the same rewards as I3 | Claude | after I5 and I3 |
