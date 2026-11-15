@@ -1324,6 +1324,12 @@ word prediction), WikiText and Shakespeare: it read 40GB of varied web text, our
 decoding loops more again (55% of 4-token runs repeated, GPT-2 66%); sampled text doesn't (1%). The validation loss on
 the stage 2 mix ended at 2.963 (it isn't comparable with the base's 2.903, which was measured on the old mix).
 
+**Post-training on the new base.** Instruction tuning (section 34) redone on stage 2, on a Colab A100 in 19 minutes:
+the held-out answer loss went 2.316 → **1.390** (1.548 on the old base). On the 100 held-out questions the greedy
+answers repeat **12.4%** of 4-token runs (old chat model 20.0%; after DPO 11.2%) and 70% end by themselves (59%; 84%
+after DPO), so a better base removed most of what DPO was fixing. The benchmark average after tuning is 38.5 (37.3 for
+the old chat model, 42.3 for its own base: tuning still costs a few points).
+
 ## 37. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
