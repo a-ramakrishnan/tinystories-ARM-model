@@ -1018,8 +1018,11 @@ async function loadGenPicker() {
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push(m);
   }
-  // the best of each group: the lowest validation loss (losses are only comparable on the same training data)
-  groups.forEach((ms) => ms.sort((a, b) => genLoss(a) - genLoss(b)));
+  // the best of each group: the lowest validation loss (losses are only comparable on the same training data);
+  // for chat models the furthest post-trained first (DPO on top of instruction tuning loops less and ends its
+  // answers, though its loss on reference answers is a little higher)
+  const tuned = (m) => ({ dpo: 0, sft: 1 }[m.tuning] ?? 2);
+  groups.forEach((ms) => ms.sort((a, b) => (a.chat && b.chat ? tuned(a) - tuned(b) : 0) || genLoss(a) - genLoss(b)));
   const order = GEN_DATA.map((x) => x[1]).filter((g) => groups.has(g));
   const opt = (m, label) => `<option value="${esc(m.id)}">${esc(label)}</option>`;
   const sel = $("#g-model-pick");
@@ -1033,12 +1036,12 @@ async function loadGenPicker() {
   const a = d.models.find((m) => m.id === d.active);
   const g = a ? genGroup(a) : null;
   $("#g-pick-note").innerHTML = (a?.chat
-    ? `An <b>instruction-tuned</b> model (from the base model, on smol-smoltalk conversations)${genWhere(a) ? `, on ${esc(genWhere(a))}` : ""}. `
+    ? `An <b>instruction-tuned</b> model (from the base model, on smol-smoltalk conversations)${a.tuning === "dpo" ? `, then <b>preference-tuned (DPO)</b> to loop less and end its answers` : ""}${genWhere(a) ? `, on ${esc(genWhere(a))}` : ""}. `
     : a
     ? `Trained on <b>${esc(g.title)}</b>${g.about ? ` (${esc(g.about)})` : ""}${genWhere(a) ? `, on ${esc(genWhere(a))}` : ""}. `
     : "Using the model trained on the current datasets. ") +
     (a?.chat ? `<b>Chat mode:</b> type a question as the prompt; the model answers and stops at the end of its answer (a chat model's loss counts only its answers, so it isn't comparable with the others). ` : "") +
-    `The list has the best model (lowest validation loss) for each kind of training data; every saved model is on the <a href="#" data-go="models">Models</a> page. The diffusion models write differently: see the <a href="#" data-go="diffusion">Diffusion</a> page.`;
+    `The list has the best model (lowest validation loss; for chat, the furthest post-trained) for each kind of training data; every saved model is on the <a href="#" data-go="models">Models</a> page. The diffusion models write differently: see the <a href="#" data-go="diffusion">Diffusion</a> page.`;
 }
 $("#g-model-pick").addEventListener("change", (e) => action(e.target, async () => {
   await api("/api/models/use", { id: e.target.value || null });

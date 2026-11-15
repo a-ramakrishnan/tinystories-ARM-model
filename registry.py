@@ -116,6 +116,8 @@ def _summary(info, weights):
         "trained_at": info.get("trained_at"), "chip": info.get("chip"), "platform": info.get("platform"),
         "device": info.get("device"), "dtype": info.get("dtype"),
         "chat": bool(info.get("chat")), "chat_format": info.get("chat_format"), "base_model": info.get("base_model"),
+        # how a chat model was post-trained: "sft" (instruction tuning) or "dpo" (preference tuning on top)
+        "tuning": ("dpo" if info.get("dpo") else "sft") if info.get("chat") else None,
         "bytes": os.path.getsize(weights),
     }
 
