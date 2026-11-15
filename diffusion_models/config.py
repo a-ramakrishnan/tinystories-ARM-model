@@ -29,6 +29,10 @@ class DiffusionLMConfig:
     diffusion_steps: int = 64   # T: noise levels t = 1..T mask t/T of the tokens
     mask_id: int = MASK_ID
     tokenizer: str = "gpt2"
+    # "v1": PyTorch's encoder layers as in v1 (learned positions, GELU, LayerNorm); "gpt": the autoregressive base
+    # model's blocks (RoPE, SwiGLU, no biases, QK-norm) with bidirectional attention, so a diffusion model and an
+    # autoregressive one can differ only in the objective (F6)
+    arch: str = "v1"
 
 
 @dataclass
@@ -46,6 +50,7 @@ class TrainSettings:
     sample_interval: int = 0    # every N updates, print a short sample (0: only at the end)
     seed: int = 42
     compile: bool = True        # torch.compile, on an Nvidia GPU only
+    snapshot_every: int = 0     # also keep a copy of state.pt every N updates (snapshots/), 0 = off
 
     @property
     def tokens(self):
@@ -75,6 +80,19 @@ RUN_MODES = {
     "colab-long": (_model(8, 512, 8), TrainSettings(steps=60000, batch_size=32, warmup_steps=2000, eval_interval=2000,
                                                     eval_batches=40, sample_interval=10000),
                    "51M parameters, 492M tokens (3x colab): about 2 h 30 min on an L4"),
+    # F6 (15 Nov 2026): the size and design of the autoregressive base model (12 layers x 768, RoPE, SwiGLU, no
+    # biases, QK-norm, 512 tokens), bidirectional, on the stage 2 data mix (train.py --mix stage2). 61,000 updates of
+    # 32 x 512 tokens = 1.0B tokens (~8 h on an L4); extended to 2.5B tokens later with --steps 152600 --resume (the
+    # learning rate re-warms onto the longer schedule). 6e-4 is the rate that worked for the 51M diffusion model.
+    "f6-124m": (DiffusionLMConfig(seq_len=512, d_model=768, n_layers=12, n_heads=12, d_ff=0, arch="gpt"),
+                TrainSettings(steps=61000, batch_size=32, lr=6e-4, min_lr=6e-5, warmup_steps=2000, eval_interval=2000,
+                              eval_batches=40, sample_interval=10000, snapshot_every=10000),
+                "124M, the base model's design, bidirectional: 1.0B tokens of the stage 2 mix, about 8 h on an L4"),
+    # the same model, tiny, to check the F6 code end to end on a Mac
+    "f6-smoke": (DiffusionLMConfig(seq_len=128, d_model=128, n_layers=2, n_heads=4, d_ff=0, arch="gpt"),
+                 TrainSettings(steps=60, batch_size=8, warmup_steps=10, eval_interval=20, eval_batches=3,
+                               compile=False, snapshot_every=40),
+                 "a tiny F6-design model: checks the code in a minute"),
 }
 
 

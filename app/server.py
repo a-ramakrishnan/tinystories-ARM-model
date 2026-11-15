@@ -1169,8 +1169,17 @@ def bench_list():
     return {"tasks": [{"key": k, **v} for k, v in benchmarks.TASK_INFO.items()],
             "models": [{k: m.get(k) for k in ("id", "name", "params", "best_val", "datasets", "steps", "trained_at")}
                        | {"model": m.get("model"), "benchmarks": benchmarks.load_results(m["id"]),
-                          "active": m["id"] == S.active_model}
+                          "active": m["id"] == S.active_model, "short": _bench_short(m)}
                        for m in registry.list_models()] + diffusion_bench_models()}
+
+
+def _bench_short(m):
+    """A column heading: chat models share the first part of their name, so add how they were tuned."""
+    parts = (m.get("name") or "").split(" · ")
+    if not m.get("chat") or len(parts) < 2:
+        return None
+    how = parts[1].replace("instruction-tuned on smol-smoltalk", "instruction-tuned").replace("DPO against repetition", "DPO")
+    return f"{parts[0].split(' RoPE')[0]} · {how}"
 
 
 def diffusion_bench_models():

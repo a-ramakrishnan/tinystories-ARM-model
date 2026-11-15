@@ -76,6 +76,8 @@ class CausalSelfAttention(nn.Module):
         if self.qk_norm:
             self.q_norm = RMSNorm(config.n_embd // config.n_head)
             self.k_norm = RMSNorm(config.n_embd // config.n_head)
+        # causal=False (the masked diffusion models): every token attends to every other, before and after it
+        self.causal = getattr(config, "causal", True)
         self.flash = hasattr(F, 'scaled_dot_product_attention')
         if not self.flash:
             self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
@@ -86,10 +88,12 @@ class CausalSelfAttention(nn.Module):
         rep = self.n_head // self.n_kv_head
         return t if rep == 1 else t.repeat_interleave(rep, dim=1)
 
-    def forward(self, x, kv_cache=None, rope=None):
+    def forward(self, x, kv_cache=None, rope=None, attn_mask=None):
         """kv_cache: optional dict for fast generation. It holds the keys and values of earlier tokens;
         the new tokens' keys and values are added, so only the new tokens need computing.
         rope: optional (cos, sin) for these tokens' positions (RoPE models): queries and keys are rotated.
+        attn_mask: optional [B, 1, 1, T] boolean, True for keys that may be attended to (padding in a bidirectional
+        model; not used with the KV cache).
 
         The cache is a fixed-size buffer of max_len slots. Until it's full, tokens are written in order. Once
         it's full (RoPE models only, see GPT.forward) the newest token overwrites the oldest slot, like a ring:
@@ -134,11 +138,15 @@ class CausalSelfAttention(nn.Module):
             y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=written == 0 and T > 1)
         elif self.flash:
             k, v = self._expand(k), self._expand(v)
-            y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.attn_dropout.p if self.training else 0.0, is_causal=True)
+            y = F.scaled_dot_product_attention(q, k, v, attn_mask=None if self.causal else attn_mask,
+                                               dropout_p=self.attn_dropout.p if self.training else 0.0, is_causal=self.causal)
         else:
             k, v = self._expand(k), self._expand(v)
             att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-            att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
+            if self.causal:
+                att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
+            elif attn_mask is not None:
+                att = att.masked_fill(~attn_mask, float('-inf'))
             att = F.softmax(att, dim=-1)
             att = self.attn_dropout(att)
             y = att @ v
@@ -262,8 +270,8 @@ class Block(nn.Module):
         else:
             self.mlp = SwiGLU(config) if config.mlp == "swiglu" else MLP(config)
 
-    def forward(self, x, kv_cache=None, rope=None):
-        x = x + self.attn(self.ln1(x), kv_cache, rope)
+    def forward(self, x, kv_cache=None, rope=None, attn_mask=None):
+        x = x + self.attn(self.ln1(x), kv_cache, rope, attn_mask)
         x = x + self.mlp(self.ln2(x))
         return x
 
@@ -289,6 +297,7 @@ class GPTConfig:
     moe_top_k: int = 1              # experts each token is sent to
     moe_aux_weight: float = 0.01    # weight of the load-balancing loss (Switch Transformer)
     gelu_approx: str = "none"       # "tanh": GPT-2's own approximation of GELU (to load OpenAI's weights exactly)
+    causal: bool = True             # False: bidirectional attention (the masked diffusion models' denoiser)
     mtp_heads: int = 1              # multi-token prediction (Gloeckle et al. 2024, DeepSeek-V3): 1 = next token only;
                                     # n = n - 1 extra heads, one transformer block each, also predict tokens 2…n ahead
                                     # during training. Generation and validation loss use the next-token head only.

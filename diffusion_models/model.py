@@ -55,6 +55,43 @@ class DiffusionTransformerLM(nn.Module):
         return sum(p.numel() for p in self.parameters())
 
 
+class GPTDenoiser(nn.Module):
+    """The denoiser built from the autoregressive base model's blocks (model.py: RoPE, SwiGLU, no biases, QK-norm)
+    with bidirectional attention, plus v1's embedding of the noise level t added to every position."""
+
+    def __init__(self, cfg: DiffusionLMConfig):
+        super().__init__()
+        from model import GPT, GPTConfig
+        self.cfg = cfg
+        self.gpt = GPT(GPTConfig(block_size=cfg.seq_len, vocab_size=cfg.vocab_size, n_layer=cfg.n_layers,
+                                 n_head=cfg.n_heads, n_embd=cfg.d_model, dropout=cfg.dropout, bias=False,
+                                 pos_encoding="rope", mlp="swiglu", qk_norm=True, causal=False))
+        self.time_emb = nn.Embedding(cfg.diffusion_steps + 1, cfg.d_model)
+        nn.init.normal_(self.time_emb.weight, mean=0.0, std=0.02)
+
+    def forward(self, input_ids, timesteps, attention_mask=None):
+        """As DiffusionTransformerLM.forward: logits [B, L, vocab]."""
+        B, L = input_ids.shape
+        if L > self.cfg.seq_len:
+            raise ValueError(f"Sequence length {L} > cfg.seq_len {self.cfg.seq_len}")
+        g = self.gpt
+        x = g.transformer.wte(input_ids) + self.time_emb(timesteps).unsqueeze(1)
+        x = g.transformer.drop(x)
+        rope = g.rope_tables(0, L, input_ids.device)
+        mask = None if attention_mask is None else attention_mask[:, None, None, :].bool()
+        for block in g.transformer.h:
+            x = block(x, None, rope, mask)
+        return g.lm_head(g.transformer.ln_f(x))
+
+    def n_params(self):
+        return sum(p.numel() for p in self.parameters())
+
+
+def build(cfg: DiffusionLMConfig):
+    """The denoiser for a config: v1's encoder or the base model's design."""
+    return GPTDenoiser(cfg) if getattr(cfg, "arch", "v1") == "gpt" else DiffusionTransformerLM(cfg)
+
+
 def save(model, run_dir, name="model.pt", extra=None):
     os.makedirs(run_dir, exist_ok=True)
     m = getattr(model, "_orig_mod", model)   # unwrap torch.compile
@@ -66,6 +103,6 @@ def save(model, run_dir, name="model.pt", extra=None):
 def load(run_dir, device="cpu", name="model.pt"):
     with open(os.path.join(run_dir, "config.json")) as f:
         cfg = DiffusionLMConfig(**json.load(f)["model"])
-    model = DiffusionTransformerLM(cfg)
+    model = build(cfg)
     model.load_state_dict(torch.load(os.path.join(run_dir, name), map_location=device))
     return model.to(device).eval()

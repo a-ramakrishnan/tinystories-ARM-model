@@ -7,12 +7,15 @@
 #
 #   python3 -m diffusion_models.train --mode smoke                 # a few minutes, checks everything works
 #   python3 -m diffusion_models.train --mode colab --out <folder>  # the comparison run (on Colab)
+#   python3 -m diffusion_models.train --mode f6-124m --mix stage2 --data-cache <drive folder> --out <folder> [--resume]
+#                                                                  # F6: the base model's size and design, stage 2 data
 
 import argparse
 import json
 import math
 import os
 import platform
+import shutil
 import time
 from contextlib import nullcontext
 from dataclasses import asdict
@@ -32,11 +35,20 @@ RUNS_DIR = os.path.join(PROJECT_DIR, "diffusion_models", "runs")
 SAMPLE_PROMPTS = ["Once upon a time", "Lily wanted to", "The little dog was sad because"]
 
 
-def lr_at(step, ts: TrainSettings):
+REWARM = 500    # updates to blend onto the longer schedule when a run is extended
+
+
+def lr_at(step, ts: TrainSettings, rewarm=None):
+    """rewarm = (start, lr there): a resumed run asked for more updates blends from its old rate onto the new
+    cosine curve over REWARM updates, so nothing jumps."""
     if step < ts.warmup_steps:
-        return ts.lr * (step + 1) / ts.warmup_steps
-    p = min(1.0, (step - ts.warmup_steps) / max(1, ts.steps - ts.warmup_steps))
-    return ts.min_lr + 0.5 * (ts.lr - ts.min_lr) * (1 + math.cos(math.pi * p))
+        lr = ts.lr * (step + 1) / ts.warmup_steps
+    else:
+        p = min(1.0, (step - ts.warmup_steps) / max(1, ts.steps - ts.warmup_steps))
+        lr = ts.min_lr + 0.5 * (ts.lr - ts.min_lr) * (1 + math.cos(math.pi * p))
+    if rewarm and step < rewarm[0] + REWARM:
+        lr = rewarm[1] + (lr - rewarm[1]) * (step - rewarm[0]) / REWARM
+    return lr
 
 
 @torch.no_grad()
@@ -64,20 +76,24 @@ def train(cfg, ts, roots, out_dir, dev=None, resume=False, say=print, dataset_na
         torch.backends.cudnn.allow_tf32 = True
     os.makedirs(out_dir, exist_ok=True)
 
-    model = M.DiffusionTransformerLM(cfg).to(device)
+    model = M.build(cfg).to(device)
     decay = [p for p in model.parameters() if p.dim() >= 2]
     no_decay = [p for p in model.parameters() if p.dim() < 2]
     opt = torch.optim.AdamW([{"params": decay, "weight_decay": ts.weight_decay}, {"params": no_decay, "weight_decay": 0.0}],
                             lr=ts.lr, betas=(0.9, 0.95), **({"fused": True} if cuda else {}))
     scaler = torch.amp.GradScaler("cuda", enabled=cuda and dev.dtype == "float16")
-    start, history, best = 0, {"train": [], "val": []}, float("inf")
+    start, history, best, rewarm = 0, {"train": [], "val": []}, float("inf"), None
     state_path = os.path.join(out_dir, "state.pt")
     if resume and os.path.exists(state_path):
         st = torch.load(state_path, map_location=device)
         model.load_state_dict(st["model"])
         opt.load_state_dict(st["optimizer"])
         start, history, best = st["step"], st["history"], st["best"]
-        say(f"Resuming at update {start:,} of {ts.steps:,} (best bound so far {best:.4f})")
+        old_steps = st.get("steps", ts.steps)
+        if old_steps != ts.steps:   # extended (e.g. 1B -> 2.5B tokens): re-warm onto the stretched schedule
+            rewarm = (start, st.get("lr", lr_at(start - 1, TrainSettings(**{**asdict(ts), "steps": old_steps}))))
+        say(f"Resuming at update {start:,} of {ts.steps:,} (best bound so far {best:.4f})"
+            + (f"; the schedule now ends at {ts.steps:,} (was {old_steps:,})" if rewarm else ""))
     run = torch.compile(model) if cuda and ts.compile else model
 
     loader = BlockLoader(roots, cfg.seq_len, ts.batch_size, device)
@@ -91,7 +107,7 @@ def train(cfg, ts, roots, out_dir, dev=None, resume=False, say=print, dataset_na
     t_start, t_log, tokens_since = time.time(), time.time(), 0
     for step in range(start, ts.steps):
         for g in opt.param_groups:
-            g["lr"] = lr_at(step, ts)
+            g["lr"] = lr_at(step, ts, rewarm)
         for _ in range(ts.grad_accum):
             loss, _ = diffusion_loss(run, loader.batch("train"), cfg.diffusion_steps, cfg.mask_id, ctx=ctx)
             scaler.scale(loss / ts.grad_accum).backward()
@@ -120,7 +136,21 @@ def train(cfg, ts, roots, out_dir, dev=None, resume=False, say=print, dataset_na
             say(f"  eval @ {u:,}: masked-token loss {vl:.4f} | likelihood bound {vb:.4f} nats/token"
                 f"{'  (best, saved)' if is_best else ''}")
             torch.save({"model": model.state_dict(), "optimizer": opt.state_dict(), "step": u, "history": history,
-                        "best": best}, state_path)
+                        "best": best, "steps": ts.steps, "lr": opt.param_groups[0]["lr"]}, state_path + ".tmp")
+            os.replace(state_path + ".tmp", state_path)   # never leave a half-written state behind
+            if ts.snapshot_every and u % ts.snapshot_every == 0:
+                # a kept copy of everything a restart needs; state.pt itself is overwritten at every evaluation
+                try:
+                    snap = os.path.join(out_dir, "snapshots")
+                    os.makedirs(snap, exist_ok=True)
+                    for src, name in ((state_path, f"state-update{u:06d}.pt"),
+                                      (os.path.join(out_dir, "model.pt"), f"model-best-at-update{u:06d}.pt"),
+                                      (os.path.join(out_dir, "config.json"), f"config-at-update{u:06d}.json")):
+                        if os.path.exists(src):
+                            shutil.copy(src, os.path.join(snap, name))
+                    say(f"  snapshot kept: {snap}/state-update{u:06d}.pt")
+                except OSError as e:
+                    say(f"  (couldn't keep a snapshot at update {u:,}: {e})")
         if ts.sample_interval and u % ts.sample_interval == 0 and u < ts.steps:
             r = diffusion_generate(model, SAMPLE_PROMPTS[0], 64, top_k=50, record_steps=False, seed=0)
             say(f"  sample @ {u:,}: {r['text']!r}")
@@ -169,22 +199,39 @@ def plot(summary, path):
 
 def main():
     ap = argparse.ArgumentParser(description="Train the masked diffusion language model.")
-    ap.add_argument("--mode", default="smoke", help="smoke, quick or colab (see config.RUN_MODES)")
+    ap.add_argument("--mode", default="smoke", help="smoke, quick, colab, colab-long, f6-124m, f6-smoke (config.RUN_MODES)")
     ap.add_argument("--dataset", default=TINYSTORIES[0])
     ap.add_argument("--subset", default=None)
     ap.add_argument("--out", default=None, help="run folder (default diffusion_models/runs/<mode>-<time>)")
     ap.add_argument("--steps", type=int, default=None, help="override the preset's number of updates")
     ap.add_argument("--lr", type=float, default=None, help="override the peak learning rate (min_lr = lr / 10)")
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--mix", default=None, choices=["stage2"],
+                    help="stage2: the stage 2 data mix (Mini FineWeb-Edu full + the base's Cosmopedia subsets)")
+    ap.add_argument("--fineweb", default="full", help="with --mix stage2: the Mini FineWeb-Edu subset (tiny for a test)")
+    ap.add_argument("--data-cache", default=None, help="folder of cached token files (e.g. on Google Drive)")
+    ap.add_argument("--from-snapshot", type=int, default=None, help="restart from the snapshot kept at this update")
     a = ap.parse_args()
     cfg, ts = run_mode(a.mode)
     if a.steps:
         ts.steps = a.steps
     if a.lr:
         ts.lr, ts.min_lr = a.lr, a.lr / 10
-    root = ensure_tokenized(a.dataset, a.subset)
+    if a.mix == "stage2":
+        # the stage 2 autoregressive run's data, so F6 and the stage 2 model saw the same text (small's held-out
+        # documents removed from full, the token files shared through the same cache)
+        import stage2
+        specs = stage2.specs_from_base(json.load(open(stage2.BASE_CONFIG)), a.fineweb)
+        roots = stage2.prepare(specs, a.data_cache)
+        names = [sp[0] for sp in specs]
+    else:
+        roots = [ensure_tokenized(a.dataset, a.subset, cache_dir=a.data_cache)]
+        names = [a.dataset + (f"@{a.subset}" if a.subset else "")]
     out = a.out or os.path.join(RUNS_DIR, f"{a.mode}-{time.strftime('%Y%m%d-%H%M')}")
-    s = train(cfg, ts, [root], out, resume=a.resume, dataset_names=[a.dataset + (f"@{a.subset}" if a.subset else "")])
+    if a.from_snapshot is not None:     # go back to a kept snapshot: it becomes the state to resume from
+        shutil.copy(os.path.join(out, "snapshots", f"state-update{a.from_snapshot:06d}.pt"), os.path.join(out, "state.pt"))
+        a.resume = True
+    s = train(cfg, ts, roots, out, resume=a.resume, dataset_names=names)
     plot(s, os.path.join(out, "loss.png"))
     for x in s["samples"]:
         print(f"\n--- {x['prompt']!r}\n{x['text']}")
