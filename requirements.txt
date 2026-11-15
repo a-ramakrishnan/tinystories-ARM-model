@@ -6,3 +6,7 @@ torch
 matplotlib
 fastapi
 uvicorn
+tokenizers
+transformers
+accelerate
+imageio
