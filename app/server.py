@@ -1438,6 +1438,112 @@ def diffusion_run(req: DiffusionReq):
             "trace": [{"t": st["t"], "ids": st["ids"], "conf": st["conf"], "ms": st["ms"]} for st in r["trace"]]}
 
 
+class DiffusionNoiseReq(BaseModel):
+    run: str
+    prompt_key: Optional[str] = None
+    prompt: str = ""
+    tokens: int = 48
+    seed: int = 1
+
+
+@app.post("/api/diffusion/noise")
+def diffusion_noise(req: DiffusionNoiseReq):
+    """The forward process on one real text, and the model's guesses at every noise level. Each position gets one
+    random number u; at level t it is masked when u < t/T, so raising t only adds masks. All T levels go through the
+    model in one batch; the loss is the cross-entropy on the masked positions only."""
+    if training_running():
+        raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
+    model = _diffusion_model(req.run)
+    if req.prompt_key:
+        p = next((p for p in textgen.heldout_prompts() if p["key"] == req.prompt_key), None)
+        if not p:
+            raise HTTPException(400, f"Unknown prompt: {req.prompt_key}")
+        ids = list(p["prompt_ids"]) + list(p["ref_ids"])
+    else:
+        ids = S.enc.encode_ordinary(req.prompt[:2000])
+    ids = ids[:max(8, min(req.tokens, 128, model.cfg.seq_len))]
+    if len(ids) < 4:
+        raise HTTPException(400, "The text is too short.")
+    T, L, dev = model.cfg.diffusion_steps, len(ids), next(model.parameters()).device
+    g = torch.Generator().manual_seed(req.seed)
+    u = torch.rand(L, generator=g)
+    levels = torch.arange(1, T + 1)
+    masked = u[None, :] < (levels.float() / T)[:, None]                         # [T, L]
+    x = torch.tensor(ids)[None, :].repeat(T, 1)
+    noisy = torch.where(masked, torch.full_like(x, DIFFUSION_MASK_ID), x)
+    with torch.no_grad():
+        logits = model(noisy.to(dev), timesteps=levels.to(dev)).float().cpu()
+    logits[..., DIFFUSION_MASK_ID] = -1e9
+    logp = torch.log_softmax(logits, -1)
+    p_true = logp.gather(-1, x[..., None])[..., 0].exp()
+    top_p, top_id = logp.max(-1)
+    out = []
+    for k in range(T):
+        m = masked[k]
+        ce = -torch.log(p_true[k][m].clamp_min(1e-12))
+        out.append({"t": k + 1, "ratio": (k + 1) / T, "masked": [int(i) for i in torch.nonzero(m)[:, 0]],
+                    "guess": [int(i) for i in top_id[k]], "guess_p": [round(float(v), 4) for v in top_p[k].exp()],
+                    "p_true": [round(float(v), 4) for v in p_true[k]],
+                    "loss": round(float(ce.mean()), 4) if m.any() else None,
+                    "correct": round(float((top_id[k][m] == x[k][m]).float().mean()), 4) if m.any() else None})
+    vocab = set(ids) | {i for r in out for i in r["guess"]}
+    return {"run": req.run, "T": T, "ids": ids, "u": [round(float(v), 4) for v in u],
+            "text_of": {str(i): S.enc.decode([i]) for i in vocab}, "levels": out}
+
+
+_judge_cache = {}
+
+
+def _judge():
+    """The base autoregressive model, which scores generated text (as in diffusion_models/quality.py)."""
+    key = (textgen.BASE_MODEL, S.dev.device)
+    if key not in _judge_cache:
+        _judge_cache.clear()
+        m = textgen.load_library_model(textgen.BASE_MODEL, S.dev.device)
+        m.eval()
+        _judge_cache[key] = m
+    return _judge_cache[key]
+
+
+class DiffusionStepsReq(DiffusionReq):
+    step_counts: list[int] = [4, 8, 16, 32, 64]
+
+
+@app.post("/api/diffusion/steps")
+def diffusion_steps(req: DiffusionStepsReq):
+    """The same prompt and seed with different numbers of denoising steps: fewer steps are faster (more positions
+    are revealed per pass) but each pass decides more tokens at once without seeing the others. Each text is
+    scored by the base autoregressive model (judge loss) and for repetition."""
+    if training_running():
+        raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
+    model = _diffusion_model(req.run)
+    if req.prompt_key:
+        p = next((p for p in textgen.heldout_prompts() if p["key"] == req.prompt_key), None)
+        if not p:
+            raise HTTPException(400, f"Unknown prompt: {req.prompt_key}")
+        ids, ref_ids = p["prompt_ids"], p["ref_ids"]
+    else:
+        ids, ref_ids = S.enc.encode_ordinary(req.prompt[:2000])[-120:], None
+    n = max(8, min(req.tokens, 192))
+    judge = _judge()
+    rows = []
+    for steps in sorted({max(1, min(s, 256)) for s in req.step_counts})[:8]:
+        r = diffusion_generate(model, max_new_tokens=n, diffusion_steps=steps, temperature=max(0.05, min(req.temperature, 2.0)),
+                               top_k=max(0, req.top_k), seed=req.seed, sampler=req.sampler,
+                               repetition_penalty=max(1.0, min(req.repetition_penalty, 3.0)),
+                               block_size=max(0, req.block_size), prompt_ids=ids)
+        gen = r["ids"]
+        loss = textgen.continuation_loss(judge, ids, gen, S.dev.device)[0] if len(gen) > 1 else None
+        rows.append({"steps": steps, "per_step": round(r["gen_len"] / steps, 2), "seconds": r["seconds"],
+                     "completion": r["completion"], "length": len(gen), "judge_loss": loss,
+                     "repetition": textgen.repetition(gen)})
+    ref = None
+    if ref_ids:
+        ref = {"completion": S.enc.decode(ref_ids[:n]),
+               "judge_loss": textgen.continuation_loss(judge, ids, ref_ids[:n], S.dev.device)[0]}
+    return {"run": req.run, "prompt": S.enc.decode(ids), "tokens": n, "judge": textgen.BASE_MODEL, "rows": rows, "reference": ref}
+
+
 @app.get("/api/lab/datasets")
 def lab_datasets_endpoint():
     return {"datasets": lab_datasets(), "device": S.dev.device, "chip": S.chip, "memory": S.memory}

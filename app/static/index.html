@@ -769,6 +769,50 @@
           </div>
         </div>
         <div class="card">
+          <div class="card-head"><h3>Adding noise: how a training example is made</h3><span id="dn-note" class="muted small"></span></div>
+          <p class="muted">Training runs the process backwards. Take a real text, pick a noise level <i>t</i> between 1 and <i>T</i>, and hide each token with probability <i>t</i>/<i>T</i>. The model sees the masked text and <i>t</i>, and guesses the hidden tokens. Move the slider: at low <i>t</i> it fills a few gaps from plenty of context; near <i>T</i> almost nothing is left to read. Uses the model and prompt chosen above.</p>
+          <div class="actions tight"><button id="dn-run" class="btn">Mask the text at every level</button>
+            <label class="inline small" style="white-space:nowrap"><input id="dn-guess" type="checkbox" checked> show the model's guesses</label></div>
+          <div id="dn-out" class="hidden">
+            <div class="tg-player">
+              <span class="muted small mono">t = 0</span>
+              <input id="dn-t" type="range" min="0" max="64" value="16">
+              <span id="dn-t-label" class="muted small mono"></span>
+            </div>
+            <div id="dn-text" class="tg-text"></div>
+            <div id="dn-legend" class="muted small"></div>
+            <div id="dn-stats" class="stats"></div>
+            <div class="two-col">
+              <div><div class="card-head"><h4>Loss on the masked tokens</h4><span class="muted small">at every noise level</span></div><div id="dn-loss" class="chart"></div></div>
+              <div><div class="card-head"><h4>The mask schedule</h4><span class="muted small">share of tokens hidden at level t</span></div><div id="dn-sched" class="chart"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Fewer steps or more?</h3><span id="dq-note" class="muted small"></span></div>
+          <p class="muted">The number of steps is chosen when generating, not when training. With 64 steps for 64 tokens the model reveals about one token per pass and sees each choice before the next; with 4 steps it decides 16 tokens per pass, each without knowing the others. Same model, prompt, sampler and seed as above; each text is scored by the base autoregressive model (the judge loss: lower reads more like real text).</p>
+          <div class="actions tight"><button id="dq-run" class="btn">Generate with 4, 8, 16, 32 and 64 steps</button>
+            <span id="dq-busy" class="muted small hidden"><span class="spinner"></span> Generating five times…</span></div>
+          <div id="dq-out" class="hidden">
+            <div class="tg-player">
+              <span class="muted small">steps</span>
+              <input id="dq-k" type="range" min="0" max="4" value="4">
+              <span id="dq-k-label" class="muted small mono"></span>
+            </div>
+            <div id="dq-text" class="tg-text"></div>
+            <div id="dq-stats" class="stats"></div>
+            <div class="two-col">
+              <div><div class="card-head"><h4>Judge loss</h4><span class="muted small">by number of steps</span></div><div id="dq-loss" class="chart"></div></div>
+              <div><div class="card-head"><h4>Time</h4><span class="muted small">seconds, by number of steps</span></div><div id="dq-time" class="chart"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Inside the denoiser</h3><span id="da-note" class="muted small"></span></div>
+          <div id="da-flow" class="chart"></div>
+          <div id="da-attn"></div>
+        </div>
+        <div class="card">
           <div class="card-head"><h3>The trained diffusion models</h3><span class="muted small">diffusion_models/runs/</span></div>
           <div id="df-models"></div>
         </div>

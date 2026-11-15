@@ -1034,3 +1034,13 @@ body.tg-wide [data-step=diffusion] .panel-head { max-width: 960px; }
 /* Generate: model picker */
 .g-pick .fields.two { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: center; }
 .g-pick select { width: 100%; }
+/* H2: diffusion illustrations */
+.dn-guess { border-radius: 3px; padding: 0 2px; }
+.dn-guess.ok { background: var(--good-soft); color: var(--good); }
+.dn-guess.bad { background: var(--bad-soft); color: var(--bad); text-decoration: line-through; text-decoration-thickness: 1px; }
+.dn-fresh { outline: 1.5px solid var(--accent); }
+.da-svg { width: 100%; height: auto; }
+.da-svg .da-t { font-size: 13px; fill: var(--text); font-weight: 600; }
+.da-svg .da-s { font-size: 11px; fill: var(--muted); }
+.da-svg .da-m { font-size: 13px; fill: var(--muted); opacity: .6; }
+.da-grid { width: 160px; height: 160px; display: block; margin: 4px 0 8px; }

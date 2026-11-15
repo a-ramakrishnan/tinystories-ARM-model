@@ -30,6 +30,7 @@ async function diffusionOpen() {
   $("#df-empty").classList.toggle("hidden", runs.length > 0);
   $("#df-main").classList.toggle("hidden", runs.length === 0);
   diffusionModels();
+  denoiserFlow();
 }
 
 // pick a prompt from the model's own dataset
@@ -173,3 +174,174 @@ $("#df-play").addEventListener("click", () => (df.timer ? diffusionStop() : diff
 $("#df-first").addEventListener("click", () => { diffusionStop(); diffusionShow(0); });
 $("#df-next").addEventListener("click", () => { diffusionStop(); diffusionShow(df.k + 1); });
 $("#df-step").addEventListener("input", (e) => { diffusionStop(); diffusionShow(+e.target.value); });
+
+// ---------- H2: adding noise ----------
+// One real text, one random number u per position: at level t a position is hidden when u < t/T, so raising t only
+// adds masks. The server runs all T levels through the model in one batch and returns its guesses and the loss on
+// the hidden positions (the training loss ignores the visible ones).
+const dn = { r: null };
+
+async function noiseRun() {
+  const key = $("#df-prompt").value;
+  dn.r = await api("/api/diffusion/noise", { run: $("#df-model").value, prompt_key: key || null,
+    prompt: key ? "" : $("#df-own").value, tokens: 48, seed: +$("#df-seed").value });
+  const r = dn.r, T = r.T;
+  $("#dn-out").classList.remove("hidden");
+  $("#dn-t").max = T;
+  if (+$("#dn-t").value > T) $("#dn-t").value = Math.round(T / 4);
+  $("#dn-note").textContent = `${r.ids.length} tokens · T = ${T}`;
+  noiseShow();
+}
+
+function noiseShow() {
+  const r = dn.r;
+  if (!r) return;
+  const T = r.T, t = +$("#dn-t").value, lv = t ? r.levels[t - 1] : null, show = $("#dn-guess").checked;
+  const hidden = new Set(lv ? lv.masked : []);
+  const tok = (id) => tgTok(r.text_of[id] ?? "");
+  let right = 0;
+  const html = r.ids.map((id, i) => {
+    const fresh = t && r.u[i] >= (t - 1) / T && r.u[i] < t / T;
+    if (!hidden.has(i)) return `<span class="tg-tok">${tok(id)}</span>`;
+    const g = lv.guess[i], ok = g === id;
+    if (ok) right++;
+    const title = `position ${i + 1}: hidden "${esc(r.text_of[id] ?? "")}" · model's guess "${esc(r.text_of[g] ?? "")}" (${tgPct(lv.guess_p[i])}) · p(real token) ${tgPct(lv.p_true[i])}`;
+    if (!show) return `<span class="df-mask${fresh ? " dn-fresh" : ""}" title="${title}">█</span>`;
+    return `<span class="tg-tok dn-guess ${ok ? "ok" : "bad"}${fresh ? " dn-fresh" : ""}" title="${title}">${tok(g) || "∅"}</span>`;
+  }).join("");
+  $("#dn-text").innerHTML = html;
+  $("#dn-t-label").textContent = `t = ${t} of ${T} · ${tgPct(t / T)} masked`;
+  $("#dn-legend").innerHTML = show
+    ? `Hidden positions show the model's guess: <span class="dn-guess ok">right</span> or <span class="dn-guess bad">wrong</span>; outlined ones were hidden at this level. Hover a token for the real one.`
+    : `█ = hidden ([MASK]); outlined ones were hidden at this level. Tick “show the model's guesses” to see what it predicts.`;
+  const stat = (k, v, d = "") => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
+  $("#dn-stats").innerHTML = [
+    stat("Noise level", `t = ${t}`, `mask probability t/T = ${(t / T).toFixed(2)}`),
+    stat("Hidden", `${hidden.size} of ${r.ids.length}`, "the loss is computed only on these"),
+    stat("Loss on hidden tokens", lv?.loss == null ? "–" : lv.loss.toFixed(2), "cross-entropy, nats per hidden token"),
+    stat("Guessed right", lv?.correct == null ? "–" : tgPct(lv.correct), lv ? `${right} of ${hidden.size} top guesses` : ""),
+  ].join("");
+  const marks = t ? [{ i: t - 1, label: `t = ${t}` }] : [];
+  $("#dn-loss").innerHTML = lineChart([{ label: "loss on hidden tokens", color: "var(--accent)", values: r.levels.map((l) => l.loss ?? 0) }],
+    { xLabel: "noise level t", yLabel: "nats per hidden token", marks }) +
+    `<p class="hint">One text, so the line is noisy; it rises with t because there is less left to read. Training averages this over random t and many texts.</p>`;
+  $("#dn-sched").innerHTML = lineChart([{ label: "t/T", color: "var(--series-val)", values: r.levels.map((l) => l.ratio) },
+    { label: "hidden in this text", color: "var(--accent)", values: r.levels.map((l) => l.masked.length / r.ids.length) }],
+  { xLabel: "noise level t", yLabel: "share hidden", yMax: 1, marks }) +
+    `<p class="hint">Orange: the linear schedule t/T. Purple: what this text actually got (each token is a coin flip).</p>`;
+}
+
+// ---------- H2: fewer steps or more ----------
+const dq = { r: null };
+
+async function stepsRun() {
+  $("#dq-busy").classList.remove("hidden");
+  try {
+    const key = $("#df-prompt").value, pr = DF_PRESETS[$("#df-preset").value];
+    dq.r = await api("/api/diffusion/steps", { run: $("#df-model").value, prompt_key: key || null,
+      prompt: key ? "" : $("#df-own").value, tokens: 64, steps: 64, step_counts: [4, 8, 16, 32, 64],
+      sampler: pr.sampler, repetition_penalty: pr.repetition_penalty, block_size: pr.block_size,
+      temperature: pr.temperature, top_k: 50, seed: +$("#df-seed").value });
+  } finally { $("#dq-busy").classList.add("hidden"); }
+  const r = dq.r;
+  $("#dq-out").classList.remove("hidden");
+  $("#dq-k").max = r.rows.length - 1;
+  $("#dq-k").value = r.rows.length - 1;
+  $("#dq-note").textContent = `${r.tokens} tokens · judge: ${r.judge}`;
+  stepsShow();
+}
+
+function stepsShow() {
+  const r = dq.r;
+  if (!r) return;
+  const k = +$("#dq-k").value, row = r.rows[k];
+  $("#dq-k-label").textContent = `${row.steps} steps · ${row.per_step} token${row.per_step === 1 ? "" : "s"} per pass`;
+  $("#dq-text").innerHTML = `<span class="tg-prompt">${tgTok(r.prompt)}</span>${tgTok(row.completion)}`;
+  const stat = (k, v, d = "") => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
+  $("#dq-stats").innerHTML = [
+    stat("Steps", row.steps, `${row.per_step} token${row.per_step === 1 ? "" : "s"} revealed per pass`),
+    stat("Time", `${row.seconds.toFixed(2)} s`, `${(row.seconds * 1000 / row.steps).toFixed(1)} ms per pass`),
+    stat("Judge loss", dfFmt(row.judge_loss, 2), r.reference ? `real text: ${dfFmt(r.reference.judge_loss, 2)}` : "lower reads more like real text"),
+    stat("Variety", tgPct(row.repetition.distinct_2), `distinct pairs · ${tgPct(row.repetition.repeated_4grams)} repeated 4-token runs`),
+  ].join("");
+  const labels = r.rows.map((x) => x.steps).join(" · ");
+  const marks = [{ i: k, label: `${row.steps} steps` }];
+  const series = [{ label: "judge loss", color: "var(--accent)", values: r.rows.map((x) => x.judge_loss ?? 0) }];
+  if (r.reference) series.push({ label: "real text", color: "var(--series-val)", values: r.rows.map(() => r.reference.judge_loss) });
+  $("#dq-loss").innerHTML = lineChart(series, { x0: 1, xLabel: `steps: ${labels}`, yLabel: "nats per token", marks }) +
+    `<p class="hint">${r.reference ? "Orange: the judge loss of the real continuation. " : ""}One prompt and seed, so differences of a few tenths can be luck; a very low loss with heavy repetition is not good text.</p>`;
+  $("#dq-time").innerHTML = lineChart([{ label: "seconds", color: "var(--series-train)", values: r.rows.map((x) => x.seconds) }],
+    { x0: 1, xLabel: `steps: ${labels}`, yLabel: "seconds", marks }) +
+    `<p class="hint">Time grows with the number of passes: each pass reads the whole text, however many tokens it reveals.</p>`;
+}
+
+// ---------- H2: inside the denoiser ----------
+function denoiserFlow() {
+  const run = df.info?.runs.find((x) => x.id === $("#df-model").value) || df.info?.runs[0];
+  if (!run) return;
+  const c = run.model || {}, gpt = c.arch === "gpt", T = c.diffusion_steps || 64;
+  $("#da-note").textContent = `${run.name}: ${c.n_layers ?? "?"} blocks × ${c.d_model ?? "?"} wide, T = ${T}`;
+  const box = (x, y, w, h, title, sub, hl) => `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="${hl ? "var(--accent-soft)" : "var(--panel-2)"}" stroke="${hl ? "var(--accent)" : "var(--border)"}"/>
+    <text x="${x + w / 2}" y="${y + h / 2 - (sub ? 4 : -4)}" text-anchor="middle" class="da-t">${title}</text>${sub ? `<text x="${x + w / 2}" y="${y + h / 2 + 12}" text-anchor="middle" class="da-s">${sub}</text>` : ""}</g>`;
+  const arrow = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#da-arr)"/>`;
+  // the input row: a few tokens, some masked
+  const toks = ["The", "█", "sat", "█", "the", "█"], tw = 52;
+  const tokRow = toks.map((w, i) => `<rect x="${20 + i * (tw + 6)}" y="14" width="${tw}" height="26" rx="5" fill="${w === "█" ? "var(--panel-2)" : "var(--panel)"}" stroke="var(--border)"/>
+    <text x="${20 + i * (tw + 6) + tw / 2}" y="32" text-anchor="middle" class="${w === "█" ? "da-m" : "da-t"}">${w}</text>`).join("");
+  const outRow = ["The", "cat", "sat", "on", "the", "mat"].map((w, i) => `<rect x="${20 + i * (tw + 6)}" y="452" width="${tw}" height="26" rx="5" fill="${toks[i] === "█" ? "var(--accent-soft)" : "var(--panel)"}" stroke="${toks[i] === "█" ? "var(--accent)" : "var(--border)"}"/>
+    <text x="${20 + i * (tw + 6) + tw / 2}" y="470" text-anchor="middle" class="da-t">${w}</text>`).join("");
+  const W = 760, midX = 186;
+  $("#da-flow").innerHTML = `<svg viewBox="0 0 ${W} 520" class="da-svg">
+    <defs><marker id="da-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+    ${tokRow}<text x="${20 + 6 * (tw + 6) + 6}" y="32" class="da-s">noisy text at level t (█ = [MASK], a token id of its own)</text>
+    ${arrow(midX, 42, midX, 66)}
+    ${box(12, 68, 110, 46, "token embedding", `${c.vocab_size ?? 50304} × ${c.d_model ?? "d"}`)}
+    ${box(130, 68, 104, 46, "+ position", gpt ? "RoPE, in attention" : `learned, ${c.seq_len ?? "L"} slots`)}
+    ${box(242, 68, 118, 46, "+ time embedding", `one per t (${T + 1})`, true)}
+    ${arrow(midX, 116, midX, 140)}
+    <rect x="12" y="142" width="348" height="186" rx="10" fill="none" stroke="var(--border)" stroke-dasharray="4 4"/>
+    <text x="22" y="160" class="da-s">× ${c.n_layers ?? "N"} blocks</text>
+    ${box(32, 168, 308, 58, "self-attention, bidirectional", `${c.n_heads ?? "h"} heads · each position reads all the others`, true)}
+    ${arrow(midX, 228, midX, 250)}
+    ${box(32, 252, 308, 58, gpt ? "SwiGLU MLP" : "MLP (GELU)", `${c.d_model ?? "d"} → ${c.d_ff ?? (gpt ? "SwiGLU" : "4d")} → ${c.d_model ?? "d"}, with residual connections`)}
+    ${arrow(midX, 330, midX, 354)}
+    ${box(32, 356, 308, 50, "final norm → output layer", "tied to the token embedding: a score per token")}
+    ${arrow(midX, 408, midX, 448)}
+    <text x="${midX + 8}" y="432" class="da-s">a distribution per position</text>
+    ${outRow}
+    ${box(400, 356, 340, 50, "loss: cross-entropy on the hidden positions only", "visible tokens get label −100 and add nothing", true)}
+    <line x1="372" y1="465" x2="398" y2="408" stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="3 3"/>
+    <text x="410" y="428" class="da-s">only the highlighted outputs (cat, on, mat) are scored;</text>
+    <text x="410" y="444" class="da-s">the bound weights each level's loss by 1/(t/T) and averages</text>
+    <text x="410" y="460" class="da-s">over all tokens (diffusion_models/noising.py)</text>
+    <text x="400" y="100" class="da-s">What differs from the autoregressive GPT:</text>
+    <text x="400" y="122" class="da-s">• the input has [MASK] tokens instead of a cut-off text</text>
+    <text x="400" y="142" class="da-s">• a time embedding says how much is hidden (t)</text>
+    <text x="400" y="162" class="da-s">• attention has no causal mask: it reads both ways</text>
+    <text x="400" y="182" class="da-s">• it predicts the hidden tokens themselves, not the next one</text>
+    <text x="400" y="202" class="da-s">• generation runs it once per step, revealing a few tokens</text>
+    <text x="400" y="222" class="da-s">  each time, instead of once per token</text>
+  </svg>`;
+  // causal vs bidirectional attention, 8 positions
+  const n = 8, s = 18, grid = (full) => {
+    let cells = "";
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const on = full || j <= i;
+      cells += `<rect x="${j * s}" y="${i * s}" width="${s - 2}" height="${s - 2}" rx="2" fill="${on ? "var(--accent)" : "var(--panel-2)"}" opacity="${on ? .7 : 1}" stroke="var(--border)"/>`;
+    }
+    return `<svg viewBox="-4 -4 ${n * s + 8} ${n * s + 8}" class="da-grid">${cells}</svg>`;
+  };
+  $("#da-attn").innerHTML = `<div class="two-col">
+    <div><div class="card-head"><h4>Autoregressive GPT: causal attention</h4></div>${grid(false)}
+      <p class="hint">Row = the position reading, column = the position read. Each position sees only itself and the past, so the model can only predict what comes next.</p></div>
+    <div><div class="card-head"><h4>Diffusion denoiser: bidirectional attention</h4></div>${grid(true)}
+      <p class="hint">Every position sees the whole text, masked or not. A hidden word in the middle can use the words after it, which is why the model can fill gaps in any order.${gpt ? " This model is the base GPT's own block code with the causal mask turned off (causal=False)." : ""}</p></div>
+  </div>`;
+}
+
+$("#dn-run").addEventListener("click", (e) => action(e.target, noiseRun));
+$("#dn-t").addEventListener("input", noiseShow);
+$("#dn-guess").addEventListener("change", noiseShow);
+$("#dq-run").addEventListener("click", (e) => action(e.target, stepsRun));
+$("#dq-k").addEventListener("input", stepsShow);
+$("#df-model").addEventListener("change", () => { denoiserFlow(); dn.r = null; dq.r = null; $("#dn-out").classList.add("hidden"); $("#dq-out").classList.add("hidden"); });
