@@ -8,7 +8,7 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 15 November 2026, 10:30 IST.*
+*Last updated: 15 November 2026, 10:50 IST.*
 
 ## Where things stand (15 November, morning)
 
@@ -19,7 +19,7 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
 | Colab L4 | **F2c** the long diffusion run on FineWeb-Edu (492M tokens) | ✅ done 14:25: likelihood bound **4.729** (short run 5.269), 145 min; downloaded to `diffusion_models/runs/fineweb-edu-small-colab-long` |
 | Colab L4 | **D1** instruction tuning | ✅ 16:10: held-out answer loss 2.437 → **1.548** in 90 min; in the library as `chat-mini-fineweb-ed-202611141041-96c673`, evaluated (see D1) |
 | Mac | **D2** DPO against repetition, on the chat model | ✅ 19:30: held-out repetition 20.0% → **11.2%**, answers that end 59% → **84%**; in the library as `chat-mini-fineweb-ed-202611141900-a8f8a7` (see D2) |
-| Colab L4, now | **E2** stage 2: `stage2.py`, ~2.5B tokens, continued from the base | **training again since 15 Nov 10:00** from step 61,000 (the runtime had disconnected after 20:59 on 14 Nov), done about **21:30 on 15 Nov**; snapshots every 10,000 steps; first trained from 16:35 on 14 Nov, step 45,000 at 18:40 (tokenizing took 25 min: FineWeb-Edu full = 3.8B tokens, all 2,974 held-out documents removed); step 30,500 → 152,600 at ~34,000 tokens/s, done about **08:50 on 15 Nov**; checkpoints on Drive (`MyDrive/tinystories-runs/stage2-fineweb-full-cosmopedia`), so a disconnect only means running the cell again |
+| Colab L4, now | **E2** stage 2: `stage2.py`, ~2.5B tokens, continued from the base | **training again since 15 Nov 10:00** from step 61,000, done about **21:30 on 15 Nov**; snapshots every 10,000 steps. History: tokenizing took 25 min (FineWeb-Edu full = 3.8B tokens, all 2,974 held-out documents removed); trained from 16:35 on 14 Nov, step 30,500 → 152,600 at ~34,000 tokens/s (step 45,000 at 18:40); the runtime disconnected after 20:59 at step 61,000 (it had been due about 08:50 on 15 Nov); checkpoints on Drive (`MyDrive/tinystories-runs/stage2-fineweb-full-cosmopedia`), so a disconnect only means running the cell again |
 | Mac | **F5** benchmarks for the two diffusion models | ✅ done: Benchmarks page, README, journey |
 
 **What comes next, in order** (suggested):
@@ -31,7 +31,8 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
    comparison, then the visualizations **H1** (diffusion half of the side-by-side page) and **H2** (noising slider,
    denoising player). F3's last piece, diffusion in Generate, folds into H1.
 4. **After E2**: evaluate stage 2 against the base and GPT-2; if better, it becomes the base, and D1 is re-run on it
-   (~1 h).
+   (~1 h). Then **F6**: the 124M diffusion model on the stage 2 data, 1B tokens (~8 h on the L4), extended to 2.5B if it
+   keeps improving, so F4, H1 and I7 compare like with like.
 5. ~~**D2** (DPO against repetition) on today's chat model~~ ✅ done on the Mac; redone on the stage 2 chat model
    later. Then **D3** (GRPO).
 6. **Then reasoning (I):** the author writes the autoregressive reasoning model by hand on the best model (IA, after
@@ -76,6 +77,7 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
 | F3 | Integrate it into the app (Lab, Generate, Explorer) | Claude | in progress: ✅ a **Diffusion** page (Explore): pick a run from `diffusion_models/runs/`, a held-out prompt, tokens, steps and sampler, and replay the denoising (masked █ positions filling in, a step × position grid of when each was revealed, speed, repetition), plus a table of the trained runs (bound, training, quality scores). Next: diffusion in Generate, folded into the side-by-side page (H1) |
 | F4 | Compare on both datasets: the TinyStories diffusion model against the autoregressive *Medium 51M · TinyStories · 20k steps* (the same size, tokens and schedule as the `colab` run mode), and the FineWeb-Edu one against the base model; on the prompt set's TinyStories and FineWeb-Edu prompts: the outputs, loss (the diffusion loss is an upper bound, ours is exact), steps and speed | Claude | after F3 |
 | F5 | **Benchmark the diffusion models** like the autoregressive ones: the held-out losses (the likelihood bound on the same held-out sets), the five benchmarks (ARC-Easy, PIQA, HellaSwag, Winogrande scored by each choice's likelihood bound; LAMBADA by masking the last word), and generation quality (repetition, the AR base model's loss on the text, speed), shown on the Benchmarks page next to the AR models and GPT-2 | Claude | ✅ `diffusion_models/benchmarks.py` (each choice scored by a Monte Carlo likelihood bound, 8 maskings); the Benchmarks page shows diffusion runs; the full runs on both models are going on the Mac (14 Nov). FineWeb-Edu (164M-token run): HellaSwag 25.3% (length-normalized, as for the others), LAMBADA 0.2%, ARC-Easy 31.2%, PIQA 52.1%, Winogrande 50.5% (the 124M AR base: 29.7, 15.7, 39.4, 61.1, 50.0); TinyStories (164M tokens): 25.7, 1.8, 25.7, 51.9, 48.4, against 26.5, 8.7, 25.9, 54.1, 51.6 for the autoregressive model of the same size and tokens (benchmarked for this): both at chance except LAMBADA. The long run (492M tokens): 26.6, 2.2, 29.2, 52.2, 51.9: better on LAMBADA and HellaSwag. Generation quality ✅ (F2b); remaining: show the diffusion runs' numbers next to the AR models on the Benchmarks page (check) |
+| F6 | **A diffusion model the size of the base, on the stage 2 data** (option B, chosen 15 Nov): a 124M masked diffusion model with the base's design (12 layers × 768, RoPE, SwiGLU, no biases, QK-norm, 512 context; bidirectional attention, the masking objective) trained from scratch on the stage 2 mix (Mini FineWeb-Edu *full* + the same Cosmopedia subsets, small's held-out documents removed; the token files already cached on Drive). **1B tokens first** (~8 h on an L4, snapshots every 10,000 steps), then **extended to 2.5B tokens** (~12 h more) if the likelihood bound is still falling, so the comparison with the stage 2 AR model is like for like: same size, data, tokens and tokenizer, only the objective differs. A new run mode in `diffusion_models/config.py` (the author's `v1_original.py` untouched); measured like F2–F5 (bound, quality, five benchmarks). Later, as a separate experiment: converting the AR model into a diffusion model (option C, Dream-7B / DiffuLLaMA style, ~0.5B tokens) as a quick strong base for I4–I6 | Claude, Colab | after E2, and after D1/D2 are redone on the stage 2 model (it needs the L4; ask before starting) |
 | **G** | **Publish on GitHub Pages** | | |
 | G1 | The documentation as a website | Claude | open |
 | G2 | Browser-only versions of the Journey timeline, the Benchmarks results, the model comparison, and the Explorer replaying the base model's real numbers for a few saved prompts | Claude | open |
@@ -104,6 +106,8 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
 - What C3 covers depends on the author's ideas.
 - Reasoning (I): which synthetic tasks to start with, and whether to extend the context (I0) before or after stage 2;
   RL (I3, I6) builds on D3's GRPO, so D3 comes first.
+- ~~How to scale the diffusion model~~ decided 15 Nov: F6, option B (124M, the stage 2 data, 1B tokens then 2.5B);
+  converting the AR model (option C) stays a later experiment.
 - The visualizations (H) can replay saved data, so they can also go on GitHub Pages (G2); H1's diffusion half and
   H2 come with the diffusion integration (F2–F4).
 
