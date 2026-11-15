@@ -1330,6 +1330,11 @@ answers repeat **12.4%** of 4-token runs (old chat model 20.0%; after DPO 11.2%)
 after DPO), so a better base removed most of what DPO was fixing. The benchmark average after tuning is 38.5 (37.3 for
 the old chat model, 42.3 for its own base: tuning still costs a few points).
 
+DPO (section 35) redone on this chat model, with the same 2,000 questions and settings (19 minutes on the Mac): greedy
+repetition on the held-out questions 12.4% → **6.5%** and answers that end 70% → **86%**, the best on both so far
+(the old DPO model: 11.2%, 84%), for a small rise in the loss on the reference answers (1.156 → 1.196) and no change
+in the benchmarks (38.4).
+
 ## 37. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
