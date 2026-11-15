@@ -32,7 +32,7 @@ from data import BatchLoader, dataset_paths, get_dataset, parse_dataset_spec
 from inference import save_model_config
 from model import GPT, GPTConfig
 from pretrain import STATE_FILE, STATE_META, pretrain
-from tokenization import bin_files_exist, tokenize_and_save
+from tokenization import META_FILE, TOKEN_FORMAT, bin_files_exist, tokenize_and_save
 from train_config import TrainConfig, setup_device
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -75,11 +75,18 @@ def prepare(specs, cache=None, num_proc=None, say=print):
         if bin_files_exist(p.root):
             say(f"{spec}: token files already here")
             continue
-        if cached and bin_files_exist(cached):
+        if cached and all(os.path.exists(os.path.join(cached, f)) for f in ("train.bin", "validation.bin")):
+            # the cache holds what this script tokenized (current format); its metadata file is written here, as
+            # earlier caches kept only the two .bin files
             t0 = time.time()
             os.makedirs(p.root, exist_ok=True)
             for f in ("train.bin", "validation.bin"):
                 shutil.copy(os.path.join(cached, f), os.path.join(p.root, f))
+            if os.path.exists(os.path.join(cached, META_FILE)):
+                shutil.copy(os.path.join(cached, META_FILE), os.path.join(p.root, META_FILE))
+            else:
+                json.dump({"format": TOKEN_FORMAT, "tokenizer": "gpt2", "eot_between_documents": True},
+                          open(os.path.join(p.root, META_FILE), "w"))
             say(f"{spec}: token files copied from {cache} in {time.time() - t0:.0f} s")
             continue
         t0 = time.time()
@@ -98,7 +105,7 @@ def prepare(specs, cache=None, num_proc=None, say=print):
         if cached:
             try:                       # a full Drive shouldn't stop the run: the cache only saves time later
                 os.makedirs(cached, exist_ok=True)
-                for f in ("train.bin", "validation.bin"):
+                for f in ("train.bin", "validation.bin", META_FILE):
                     shutil.copy(os.path.join(p.root, f), os.path.join(cached, f))
             except OSError as e:
                 say(f"  (couldn't keep a copy in {cache}: {e})")
