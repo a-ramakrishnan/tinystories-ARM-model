@@ -947,6 +947,15 @@ body.ex-noscroll { overflow: hidden; }
 .fl-dot-btn.on { background: var(--accent); transform: scale(1.25); }
 .fl-caption { margin-top: 8px; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--accent); background: var(--accent-soft); font-size: 15px; line-height: 1.6; }
 .fl-caption code { font-size: 13.5px; }
+.fl-stages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.fl-stagechip { border: 1px solid var(--border); background: var(--panel); color: var(--muted); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; cursor: pointer; }
+.fl-stagechip b { color: var(--accent); margin-right: 2px; }
+.fl-stagechip.on { border-color: var(--accent); background: var(--accent); color: #fff; }
+.fl-stagechip.on b { color: #fff; }
+.fl-stagecard { display: flex; gap: 14px; align-items: flex-start; }
+.fl-stagenum { flex: none; min-width: 44px; height: 44px; padding: 0 8px; border-radius: 22px; background: var(--accent); color: #fff; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.fl-stagebody { flex: 1; min-width: 0; }
+.fl-formula { font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 14px; margin: 4px 0 8px; padding: 6px 10px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); overflow-x: auto; }
 .fl-capname { font-weight: 700; margin-bottom: 4px; color: var(--accent); }
 .fl-play path, .fl-play rect, .fl-play circle, .fl-play text { opacity: .1; transition: opacity .35s; }
 .fl-play .fl-lit, .fl-play .fl-lit * { opacity: 1; }

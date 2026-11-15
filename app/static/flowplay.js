@@ -5,6 +5,22 @@
 const fp = { on: false, auto: false, step: 0, t: null, timer: null, raf: null };
 const FP_DUR = 4200;   // ms per step when playing
 
+// The ten stages of one token's trip, numbered as on the stage cards (H3 in docs/plan.md); each step of the player
+// belongs to one (later blocks fold stages 2–7 into one "Attention" step). The formulas use the model's own sizes.
+const FP_STAGES = [
+  { key: "emb", title: "Embedding", f: (c) => c.pos_encoding === "rope" ? "x = E[id]  (a row of the embedding table; position comes later, by RoPE)" : "x = E[id] + P[pos]" },
+  { key: "qkv", title: "Query, key, value", f: (c) => `q, k, v = W<sub>qkv</sub> · ${c.norm === "rmsnorm" ? "RMSNorm" : "LayerNorm"}(x)${c.qk_norm ? ";  q, k ← RMSNorm(q), RMSNorm(k)" : ""}${c.pos_encoding === "rope" ? ";  q, k ← rotate(q, k, θ · pos)" : ""}` },
+  { key: "head", title: "Into the head", f: (c) => `${c.n_embd} numbers → ${c.n_head} heads × ${c.head_dim}` },
+  { key: "scores", title: "Scores", f: (c) => `s<sub>j</sub> = q · k<sub>j</sub> / √${c.head_dim}` },
+  { key: "mask", title: "Mask", f: () => "s<sub>j</sub> = −∞  for every j after this token" },
+  { key: "softmax", title: "Softmax", f: () => "a<sub>j</sub> = e<sup>s<sub>j</sub></sup> / Σ<sub>k</sub> e<sup>s<sub>k</sub></sup>" },
+  { key: "values", title: "Weighted values", f: () => "o = Σ<sub>j</sub> a<sub>j</sub> v<sub>j</sub>;  out = W<sub>o</sub> · [o<sub>1</sub> … o<sub>H</sub>]" },
+  { key: "resid", title: "Residual", f: () => "x ← x + out" },
+  { key: "ffn", title: "Feed-forward", f: (c) => c.n_experts > 1 ? "x ← x + Σ<sub>e</sub> g<sub>e</sub> · Expert<sub>e</sub>(Norm(x))" : c.mlp === "swiglu" ? "x ← x + W<sub>down</sub> · (silu(W<sub>gate</sub> h) ⊙ W<sub>up</sub> h),  h = Norm(x)" : "x ← x + W<sub>2</sub> · GELU(W<sub>1</sub> · Norm(x))" },
+  { key: "pred", title: "Prediction", f: () => "p = softmax(E · Norm(x) / temperature);  loss = −log p(real next token)" },
+];
+const fpStageNo = (key) => FP_STAGES.findIndex((x) => x.key === key) + 1;
+
 const fpTok = (i) => `<code>${esc(ex.data.tokens[i].text)}</code>`;
 const fpPct = (p) => `${(p * 100).toFixed(p < 0.1 ? 1 : 0)}%`;
 
@@ -35,7 +51,7 @@ function fpSteps(t) {
   };
   const ffnLit = [row('[data-p="dip"]'), ".fl-hidden", row(".fl-act"), row(".fl-mlprow"), ".fl-resid", 'text[data-focus="mlp"]'];
   const steps = [];
-  steps.push({ layer: 0, name: "Embedding", lit: [row(".fl-embrow"), 'text[data-focus="embedding"]'], paths: [],
+  steps.push({ layer: 0, sk: "emb", name: "Embedding", lit: [row(".fl-embrow"), 'text[data-focus="embedding"]'], paths: [],
     text: `${fpTok(t)} is token ${fmt(d.tokens[t].id)} in the vocabulary. That id picks row ${fmt(d.tokens[t].id)} of a learned table: a vector of <b>${D}</b> numbers that stands for this token. ` +
       (rope ? `Its position (${t + 1} of ${T}) isn't added here: RoPE rotates the query and key by an angle for this position, inside attention.` : `A learned vector for position ${t} is added, so the same word at another place looks different.`) +
       ` Now it goes through ${N} blocks, one after another.` });
@@ -43,35 +59,35 @@ function fpSteps(t) {
     const L = d.layers[b], sc = L.scores[h][t], tag = `Block ${b + 1} of ${N} · `;
     if (b === 0) {
       steps.push(
-        { layer: b, name: tag + "Query, key, value", lit: [row(".fl-embrow"), row('[data-p="fan"]'), `.fl-tab[data-headpick="${h}"]`, 'text[data-focus="qkv"]'], paths: [row('[data-p="fan"]')],
+        { layer: b, sk: "qkv", name: tag + "Query, key, value", lit: [row(".fl-embrow"), row('[data-p="fan"]'), `.fl-tab[data-headpick="${h}"]`, 'text[data-focus="qkv"]'], paths: [row('[data-p="fan"]')],
           text: `${norm}, then one matrix turns the ${D} numbers into a <b>query</b>, a <b>key</b> and a <b>value</b> for each of the ${H} heads, ${hd} numbers each${c.n_kv_head < H ? ` (${c.n_kv_head} key/value heads, shared)` : ""}.` +
             `${c.qk_norm ? " QK-norm normalizes each query and key." : ""}${rope ? " RoPE rotates them by the token's position." : ""} We follow head ${h + 1}.` },
-        { layer: b, name: tag + "Into the head", lit: [`.fl-tab[data-headpick="${h}"]`, row('[data-p="list"]'), row(".fl-cardrow"), ".fl-cardtitle"], paths: [row('[data-p="list"]')],
+        { layer: b, sk: "head", name: tag + "Into the head", lit: [`.fl-tab[data-headpick="${h}"]`, row('[data-p="list"]'), row(".fl-cardrow"), ".fl-cardtitle"], paths: [row('[data-p="list"]')],
           text: `In head ${h + 1}, ${fpTok(t)} now has a <b>query</b> (what it is looking for), a <b>key</b> (what it offers to others) and a <b>value</b> (what it will pass on if someone attends to it).` },
-        { layer: b, name: tag + "Scores", stage: "scores", lit: [...card, row('[data-p="qline"]'), ...upto('[data-p="kline"]'), `.ex-ag[data-i="${t}"]`], paths: [row('[data-p="qline"]'), ...upto('[data-p="kline"]')],
+        { layer: b, sk: "scores", name: tag + "Scores", stage: "scores", lit: [...card, row('[data-p="qline"]'), ...upto('[data-p="kline"]'), `.ex-ag[data-i="${t}"]`], paths: [row('[data-p="qline"]'), ...upto('[data-p="kline"]')],
           text: `Its query is compared with every key: the dot product of two ${hd}-number vectors, divided by √${hd} = ${Math.sqrt(hd).toFixed(1)}. ` +
             sc.map((v, j) => `${j <= t ? "" : "<span class='muted'>"}${fpTok(j)} ${v.toFixed(1)}${j <= t ? "" : "</span>"}`).join(" · ") },
-        { layer: b, name: tag + "Mask", stage: "masked", lit: [...card, row('[data-p="qline"]'), `.ex-ag[data-i="${t}"]`], paths: [],
+        { layer: b, sk: "mask", name: tag + "Mask", stage: "masked", lit: [...card, row('[data-p="qline"]'), `.ex-ag[data-i="${t}"]`], paths: [],
           text: t < T - 1 ? `A decoder can't look ahead: the scores for ${Array.from({ length: T - 1 - t }, (_, k) => fpTok(t + 1 + k)).join(", ")} are set to <b>−∞</b>, so they'll get no weight. When the model is generating, those tokens don't exist yet.`
             : `${fpTok(t)} is the last token, so there is nothing after it to hide. For every earlier token, the later positions are set to <b>−∞</b>.` },
-        { layer: b, name: tag + "Softmax", stage: "softmax", lit: [...card, row('[data-p="qline"]'), `.ex-ag[data-i="${t}"]`], paths: [row('[data-p="qline"]')],
+        { layer: b, sk: "softmax", name: tag + "Softmax", stage: "softmax", lit: [...card, row('[data-p="qline"]'), `.ex-ag[data-i="${t}"]`], paths: [row('[data-p="qline"]')],
           text: `Softmax turns the scores into weights that add up to 100%: ${weights(b)}. Head ${h + 1} looks mostly at ${fpTok(bestOf(b))}.` },
-        { layer: b, name: tag + "Weighted values → Out", values: true, lit: [...card, ".fl-vband"], paths: [],
+        { layer: b, sk: "values", name: tag + "Weighted values → Out", values: true, lit: [...card, ".fl-vband"], paths: [],
           text: `The head's output for ${fpTok(t)} is the weighted sum of the values: ${L.attention[h][t].slice(0, t + 1).map((w, j) => (w >= 0.01 ? `${w.toFixed(2)} × v(${fpTok(j)})` : null)).filter(Boolean).join(" + ")}. ` +
             `All ${H} heads do this at once; their outputs are put side by side (${H} × ${hd} = ${D}) and mixed by one more matrix.` },
-        { layer: b, name: tag + "Residual", lit: [row(".fl-cardrow"), row('[data-p="outline"]'), row(".fl-mlprow")], paths: [row('[data-p="outline"]')],
+        { layer: b, sk: "resid", name: tag + "Residual", lit: [row(".fl-cardrow"), row('[data-p="outline"]'), row(".fl-mlprow")], paths: [row('[data-p="outline"]')],
           text: `That result is <b>added</b> to the token's own vector (the residual connection): attention adds information, it never replaces what was there. Its size goes from ${sizeIn(b).toFixed(1)} to ${L.resid_norm_mid[t].toFixed(1)}.` },
-        { layer: b, name: tag + (c.n_experts > 1 ? "Experts" : "Feed-forward"), lit: ffnLit, paths: [row('[data-p="dip"]')],
+        { layer: b, sk: "ffn", name: tag + (c.n_experts > 1 ? "Experts" : "Feed-forward"), lit: ffnLit, paths: [row('[data-p="dip"]')],
           text: `${ffn(b)} That is added to the vector too: size ${L.resid_norm_mid[t].toFixed(1)} → ${L.resid_norm[t].toFixed(1)}. If the model stopped after this block, it would predict ${lens(b)} next.` },
       );
     } else {
       steps.push(
-        { layer: b, name: tag + "Attention", stage: "softmax", values: true, dur: 3600,
+        { layer: b, sk: "attn", name: tag + "Attention", stage: "softmax", values: true, dur: 3600,
           lit: [row(".fl-embrow"), row('[data-p="fan"]'), `.fl-tab[data-headpick="${h}"]`, row('[data-p="list"]'), ...card, row('[data-p="qline"]'), ...upto('[data-p="kline"]'), `.ex-ag[data-i="${t}"]`, ".fl-vband"],
           paths: [row('[data-p="fan"]'), row('[data-p="list"]')],
           text: `The vector that left block ${b} (size ${sizeIn(b).toFixed(1)}) is the input to block ${b + 1}, which has its own weights. Same steps: query, key and value; scores; mask; softmax. Head ${h + 1} here: ${weights(b)}, mostly ${fpTok(bestOf(b))}. ` +
             `Of all ${H} heads, the sharpest is ${sharpest(b)}. The weighted values are added back: size → ${L.resid_norm_mid[t].toFixed(1)}.` },
-        { layer: b, name: tag + (c.n_experts > 1 ? "Experts" : "Feed-forward"), dur: 3600, lit: [...ffnLit, row('[data-p="outline"]')], paths: [row('[data-p="outline"]'), row('[data-p="dip"]')],
+        { layer: b, sk: "ffn", name: tag + (c.n_experts > 1 ? "Experts" : "Feed-forward"), dur: 3600, lit: [...ffnLit, row('[data-p="outline"]')], paths: [row('[data-p="outline"]'), row('[data-p="dip"]')],
           text: `${ffn(b)} Added back: size ${L.resid_norm_mid[t].toFixed(1)} → ${L.resid_norm[t].toFixed(1)}. If the model stopped after block ${b + 1}, it would predict ${lens(b)} next.` },
       );
     }
@@ -79,11 +95,11 @@ function fpSteps(t) {
   const last = d.layers[N - 1].lens[t][0];
   if (t === T - 1) {
     const ps = exProbs(), kept = ps.filter((p) => !p.cut).length;
-    steps.push({ layer: N - 1, name: "Next token", lit: [".fl-pband", '[data-p="pline"]', ".fl-probs", ".fl-last", row('[data-p="blockline"]'), 'text[data-focus="probs"]'], paths: [row('[data-p="blockline"]'), '[data-p="pline"]'],
+    steps.push({ layer: N - 1, sk: "pred", name: "Next token", lit: [".fl-pband", '[data-p="pline"]', ".fl-probs", ".fl-last", row('[data-p="blockline"]'), 'text[data-focus="probs"]'], paths: [row('[data-p="blockline"]'), '[data-p="pline"]'],
       text: `After the last block: a final ${norm} and the output layer (the embedding table again) score all ${fmt(c.vocab_size)} tokens, and softmax turns the scores into probabilities: ${ps.slice(0, 4).map((p) => `<code>${esc(p.text)}</code> ${fpPct(p.p)}`).join(" · ")}. With temperature ${ex.temp}, top-k ${ex.topk || "off"} and top-p ${ex.topp >= 1 ? "off" : ex.topp}, the next token is drawn from ${kept} candidate${kept === 1 ? "" : "s"}.` });
   } else {
     const real = exRealNext(t);
-    steps.push({ layer: N - 1, name: "Its prediction", lit: [row(".fl-mlprow"), row('[data-p="blockline"]'), row(".fl-blk"), ".fl-pband", '[data-p="pline"]', ".fl-probs", ".fl-last", 'text[data-focus="probs"]', ".fl-realtxt", ".fl-realbg"],
+    steps.push({ layer: N - 1, sk: "pred", name: "Its prediction", lit: [row(".fl-mlprow"), row('[data-p="blockline"]'), row(".fl-blk"), ".fl-pband", '[data-p="pline"]', ".fl-probs", ".fl-last", 'text[data-focus="probs"]', ".fl-realtxt", ".fl-realbg"],
       paths: [row('[data-p="blockline"]'), '[data-p="pline"]'],
       text: `After all ${N} blocks, the final ${norm} and output layer turn ${fpTok(t)}'s vector into a prediction for the token after it (on the right): <code>${esc(last.text)}</code> is its top guess, ${fpPct(last.p)} as the model computes it` +
         ` (${fpPct(exProbs(t)[0].p)} on the right, after temperature ${ex.temp}${ex.topk ? `, top-k ${ex.topk}` : ""}${ex.topp < 1 ? ` and top-p ${ex.topp}` : ""}). ` +
@@ -133,7 +149,15 @@ function fpApply() {
   fpParticles(paths);
   // the caption and the step dots
   $("#fl-caption").classList.remove("hidden");
-  $("#fl-caption").innerHTML = `<div class="fl-capname">Step ${fp.step + 1} of ${steps.length} · ${esc(st.name)} <span class="muted small">· following ${fpTok(t)}, head ${h + 1}</span></div><div>${st.text}</div>`;
+  const c = d.config;
+  const nums = st.sk === "attn" ? [2, 3, 4, 5, 6, 7, 8] : [fpStageNo(st.sk)];
+  const formula = st.sk === "attn" ? `x ← x + W<sub>o</sub> · [softmax(q · k / √${c.head_dim}, masked) · v for each of the ${c.n_head} heads]`
+    : FP_STAGES[nums[0] - 1].f(c);
+  $("#fl-caption").innerHTML = `<div class="fl-stagecard"><div class="fl-stagenum" title="stage ${nums.join("–")} of ${FP_STAGES.length}">${nums.length > 1 ? `${nums[0]}–${nums[nums.length - 1]}` : nums[0]}</div><div class="fl-stagebody">` +
+    `<div class="fl-capname">${esc(st.name)} <span class="muted small">· step ${fp.step + 1} of ${steps.length} · following ${fpTok(t)}, head ${h + 1}</span></div>` +
+    `<div class="fl-formula">${formula}</div><div>${st.text}</div></div></div>`;
+  $("#fl-stages").classList.remove("hidden");
+  $("#fl-stages").innerHTML = FP_STAGES.map((x, i) => `<button class="fl-stagechip${nums.includes(i + 1) ? " on" : ""}" data-fstage="${x.key}" title="${esc(x.title)}"><b>${i + 1}</b> ${esc(x.title)}</button>`).join("");
   $("#fl-dots").innerHTML = steps.map((s, i) => `${i > 0 && s.layer !== steps[i - 1].layer ? '<span class="fl-dot-sep"></span>' : ""}<button class="fl-dot-btn${i === fp.step ? " on" : ""}${i < fp.step ? " done" : ""}" data-fstep="${i}" title="${esc(s.name)}"></button>`).join("");
   $("#fl-play").textContent = fp.auto ? "❚❚ Pause" : fp.step >= steps.length - 1 ? "↺ Replay" : "▶ Play";
 }
@@ -189,6 +213,7 @@ function fpStop() {
   fp.on = false; fp.auto = false;
   clearTimeout(fp.timer); cancelAnimationFrame(fp.raf);
   $("#fl-caption").classList.add("hidden");
+  $("#fl-stages").classList.add("hidden");
   $("#fl-dots").innerHTML = "";
   $("#fl-play").textContent = "▶ Play the data flow";
   const svg = $("#ex-svg svg");
@@ -236,6 +261,17 @@ $("#fl-dots").addEventListener("click", (e) => {
   const b = e.target.closest("[data-fstep]");
   if (!b) return;
   fp.step = +b.dataset.fstep; fp.auto = false; clearTimeout(fp.timer); fpApply();
+});
+$("#fl-stages").addEventListener("click", (e) => {
+  // a stage chip: that stage in the block being shown (in later blocks, stages 2–7 are the one Attention step)
+  const b = e.target.closest("[data-fstage]");
+  if (!b || !fp.on) return;
+  const steps = fpSteps(fp.t), layer = steps[fp.step].layer, key = b.dataset.fstage;
+  const match = (st) => st.sk === key || (st.sk === "attn" && ["qkv", "head", "scores", "mask", "softmax", "values", "resid"].includes(key));
+  let i = steps.findIndex((st) => st.layer === layer && match(st));
+  if (i < 0) i = steps.findIndex(match);
+  if (i < 0) return;
+  fp.step = i; fp.auto = false; clearTimeout(fp.timer); fpApply();
 });
 document.addEventListener("keydown", (e) => {
   if (!fp.on || ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
