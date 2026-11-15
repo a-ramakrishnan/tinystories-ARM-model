@@ -8,7 +8,7 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 15 November 2026, 13:30 IST.*
+*Last updated: 15 November 2026, 17:00 IST.*
 
 ## Where things stand (15 November, morning)
 
@@ -30,7 +30,8 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
 3. **While E2 trains (~1 day), work that needs no Colab GPU** (Claude): **F4** the diffusion vs autoregressive
    comparison, then the visualizations **H1** (diffusion half of the side-by-side page) and ~~**H2**~~ ✅ (noising slider,
    denoising player). F3's last piece, diffusion in Generate, folds into H1.
-4. **After E2**: evaluate stage 2 against the base and GPT-2; if better, it becomes the base, and D1 is re-run on it
+4. **After E2**: ~~evaluate stage 2 against the base and GPT-2~~ ✅ better than the base on every held-out set and the
+   benchmark average (42.3 vs 40.4); if better, it becomes the base, and D1 is re-run on it
    (~1 h). Then **F6**: the 124M diffusion model on the stage 2 data, 1B tokens (~8 h on the L4), extended to 2.5B if it
    keeps improving, so F4, H1 and I7 compare like with like.
 5. ~~**D2** (DPO against repetition) on today's chat model~~ ✅ done on the Mac; redone on the stage 2 chat model
@@ -65,7 +66,7 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
 | D3 | GRPO with automatically checkable rewards | Claude | after D2 |
 | **E** | **Scaling the data** (the data run showed more data helps) | | |
 | E1 | Measure training speed on an A100 (none was free on 13 Nov) | Claude | when one is free |
-| E2 | Stage 2: a long, resumable run on FineWeb-Edu *full* + Cosmopedia (~2.5B tokens, ~20 tokens per parameter for 124M), continued from the base model; about 20 h on an L4 or ~8 h on an A100, checkpoints on Drive | Colab | **training on an A100 since 15 Nov 15:35** (paused 14 Nov 20:59 at step 61,000, 15 Nov ~12:30 at step 79,000 and ~14:01 at step 121,000, each time when the browser tab holding the runtime closed; each time resumed from the Drive checkpoint): 2.18 steps/s on the L4, **10.3–10.7 steps/s on an A100**, so done about **16:30 on 15 Nov**; step 121,000 val 3.064 (best 3.061); a full snapshot of the training state is now kept every 10,000 steps (`snapshots/`, `--from-snapshot`). `stage2.py` extends the base run's own training state (step 30,500 → ~152,600, the cosine schedule stretched, the learning rate re-warmed) on Mini FineWeb-Edu *full* (3.5M documents) + the same Cosmopedia subsets. Small's held-out documents are removed from full first (the tiny subset alone held 594 of the 2,974), so the held-out comparison stays fair |
+| E2 | Stage 2: a long, resumable run on FineWeb-Edu *full* + Cosmopedia (~2.5B tokens, ~20 tokens per parameter for 124M), continued from the base model; about 20 h on an L4 or ~8 h on an A100, checkpoints on Drive | Colab | ✅ 15 Nov 16:35: 2.5B tokens, library id `mini-fineweb-edu-ful-202611151103-bb160c`. Held-out Mini FineWeb-Edu 3.549 → **3.296** (GPT-2 small 3.401), TinyStories 2.790 → 2.751, WikiText-2 5.370 → 5.047; benchmarks HellaSwag 32.3, LAMBADA 20.3, ARC-Easy 46.8, PIQA 62.4, Winogrande 49.9, average 40.4 → **42.3** (GPT-2 44.4); greedy repetition 25% → 55%. Validation on the stage 2 mix 2.963. Four Colab sessions (the runtime died three times when the browser tab closed): L4 2.18 steps/s, A100 10.3–10.7. Journey section 36. Earlier status: **training on an A100 since 15 Nov 15:35** (paused 14 Nov 20:59 at step 61,000, 15 Nov ~12:30 at step 79,000 and ~14:01 at step 121,000, each time when the browser tab holding the runtime closed; each time resumed from the Drive checkpoint): 2.18 steps/s on the L4, **10.3–10.7 steps/s on an A100**, so done about **16:30 on 15 Nov**; step 121,000 val 3.064 (best 3.061); a full snapshot of the training state is now kept every 10,000 steps (`snapshots/`, `--from-snapshot`). `stage2.py` extends the base run's own training state (step 30,500 → ~152,600, the cosine schedule stretched, the learning rate re-warmed) on Mini FineWeb-Edu *full* (3.5M documents) + the same Cosmopedia subsets. Small's held-out documents are removed from full first (the tiny subset alone held 594 of the 2,974), so the held-out comparison stays fair |
 | E3 | L2 (low-memory tokenizing on the Mac), L4 (quality filter) | Claude | as needed |
 | **F** | **A masked diffusion language model** | | in progress |
 | F1 | The diffusion model (L8), written and first trained on TinyStories | the author | ✅ first version generates text (`diffusion_models/v1_original.py`) |

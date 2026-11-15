@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-15 16:35", kind: "win", area: "Data", title: "Stage 2: five times the data, past GPT-2 on web text",
+    decision: "Continue the base model's training (weights and optimizer state) on the full Mini FineWeb-Edu plus the same Cosmopedia subsets, to 2.5B tokens (about 20 per parameter), with the held-out documents removed (stage2.py).",
+    why: "The base model had seen only 4 tokens per parameter; a 124M model keeps improving well past that.",
+    result: { label: "held-out web text · benchmark average", text: "3.549 → 3.296 (GPT-2 3.401) · 40.4 → 42.3 (GPT-2 44.4)" },
+    calc: ["HellaSwag 29.7% → 32.3%, ARC-Easy 44.0% → 46.8%, LAMBADA 15.7% → 20.3%: past GPT-2 small on the first two",
+      "GPT-2 still wins on LAMBADA, WikiText and Shakespeare (it read far more varied text)",
+      "greedy decoding repeats more (25% → 55% of 4-token runs); sampled text doesn't"],
+    cost: "four Colab sessions: steps 30,500–79,000 on an L4 (2.18 steps/s), the rest on an A100 (10.3–10.7 steps/s)", anchor: "36-five-times-the-data-stage-2" },
   { when: "2026-11-14 19:30", kind: "win", area: "Post-training", title: "Preference tuning: it loops less and stops",
     decision: "DPO on the chat model (dpo.py): for 2,000 smol-smoltalk questions, prefer the short reference answer to the model's own greedy answer, against a frozen copy of the chat model, plus a small likelihood term on the preferred answer.",
     why: "The chat model's greedy answers looped (\"A sea of blue, a sea of blue, …\") and 38% were still going at 200 tokens.",

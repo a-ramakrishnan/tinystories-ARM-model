@@ -44,8 +44,9 @@ that are easy to get wrong and rarely explained.
 33. [A second kind of model: masked diffusion](#33-a-second-kind-of-model-masked-diffusion)
 34. [Teaching it to answer: instruction tuning](#34-teaching-it-to-answer-instruction-tuning)
 35. [Teaching it to stop: preference tuning (DPO)](#35-teaching-it-to-stop-preference-tuning-dpo)
-36. [Lessons](#36-lessons)
-37. [What's next](#37-whats-next)
+36. [Five times the data: stage 2](#36-five-times-the-data-stage-2)
+37. [Lessons](#37-lessons)
+38. [What's next](#38-whats-next)
 
 ---
 
@@ -1291,7 +1292,39 @@ after, it preferred the reference on 99%. What matters is how it writes, measure
 **Lesson.** A model's own mistakes make good training data: preferring a reference answer to the model's own greedy
 one halved repetition in 21 minutes on a laptop, with no human labels.
 
-## 36. Lessons
+## 36. Five times the data: stage 2
+
+The base model had seen 500M tokens, about 4 per parameter. Stage 2 (`stage2.py`) carried on from its saved training
+state (weights and optimizer, step 30,500) on the *full* Mini FineWeb-Edu, about six times the small subset, plus the
+same Cosmopedia subsets, to **2.5B tokens**, about 20 per parameter. The schedule was stretched to the new end and the
+learning rate re-warmed onto it. The held-out FineWeb-Edu documents were removed from the training data first.
+
+It took four Colab sessions. Three times the runtime died when the browser tab holding it closed (at steps 61,000,
+79,000 and 121,000); the state saved on Drive every 1,000 steps lost almost nothing, and a full snapshot is now also
+kept every 10,000 steps. Up to step 79,000 it ran on an L4 at 2.18 steps per second; the rest ran on an A100 at
+**10.3–10.7 steps per second, about five times the L4**.
+
+| | Base (500M tokens) | Stage 2 (2.5B tokens) | OpenAI GPT-2 small |
+|---|---|---|---|
+| Held-out Mini FineWeb-Edu (loss) | 3.549 | **3.296** | 3.401 |
+| TinyStories | 2.790 | 2.751 | **2.553** |
+| WikiText-2 | 5.370 | 5.047 | **4.180** |
+| Tiny Shakespeare | 5.614 | 5.446 | **4.807** |
+| HellaSwag | 29.7% | **32.3%** | 31.1% |
+| LAMBADA | 15.7% | 20.3% | **32.6%** |
+| ARC-Easy | 44.0% | **46.8%** | 43.8% |
+| PIQA | 62.6% | 62.4% | **62.9%** |
+| Winogrande | 50.0% | 49.9% | **51.6%** |
+| Benchmark average | 40.4 | 42.3 | **44.4** |
+| Greedy repeated 4-token runs | **25%** | 55% | 66% |
+
+Better than the base everywhere except PIQA and Winogrande (both within noise), and now **better than GPT-2 small on
+the web text it was trained for (3.296 vs 3.401), HellaSwag and ARC-Easy**. GPT-2 still wins on LAMBADA (a long-range
+word prediction), WikiText and Shakespeare: it read 40GB of varied web text, ours read educational text. Greedy
+decoding loops more again (55% of 4-token runs repeated, GPT-2 66%); sampled text doesn't (1%). The validation loss on
+the stage 2 mix ended at 2.963 (it isn't comparable with the base's 2.903, which was measured on the old mix).
+
+## 37. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1355,7 +1388,7 @@ one halved repetition in 21 minutes on a laptop, with no human labels.
     halved repetition with no human labels; DPO lowers the preferred answers' probability a little too, so watch
     the held-out loss.
 
-## 37. What's next
+## 38. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
 - **Quantization with GPTQ** (llm-compressor's `oneshot`) on the new base model, compared with the simple

@@ -183,7 +183,9 @@ def main():
     summary.update({
         "datasets": [s[0] for s in specs], "mix": "size", "steps": steps, "updates": steps,
         "tokens": steps * train_cfg.batch_size * config.block_size, "params": n_params, "param_updates": n_params * steps,
-        "best_val": min(val_losses) if val_losses else None, "seconds": round(secs, 1),
+        # the state's best_val was reset when stage 2 started, so it's stage 2's own best (val_losses also holds
+        # the base run's history, measured on the old mix)
+        "best_val": json.load(open(os.path.join(a.out, STATE_META))).get("best_val"), "seconds": round(secs, 1),
         "trained_at": time.strftime("%Y-%m-%d %H:%M"), "stopped_early": False, "device": dev.device,
         "chip": torch.cuda.get_device_name(0) if dev.device == "cuda" else dev.device,
         "platform": "Colab" if os.path.exists("/content") else "local", "dtype": dev.dtype,
