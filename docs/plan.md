@@ -3,14 +3,56 @@
 The project's roadmap: what's done, what's next and who does it. It's kept up to date as work lands; the results
 of each step are in [Analysis](analysis.md) and the story in [the journey](journey.md).
 
-**Base model** (what new work builds on): *Large 124M best design · FineWeb-Edu + Cosmopedia · 500M tokens ·
+**Base model** (what new work builds on, since 15 Nov): *Large 124M best design · stage 2 · FineWeb-Edu full +
+Cosmopedia · 2.5B tokens · context 512* (`mini-fineweb-edu-ful-202611151103-bb160c`): held-out FineWeb-Edu loss
+**3.296** (GPT-2 small 3.401); HellaSwag 32.3%, LAMBADA 20.3%, ARC-Easy 46.8%, PIQA 62.4%, Winogrande 49.9%, average
+42.3 (GPT-2 small 44.4). Its chat model is `chat-mini-fineweb-ed-202611152150-2746ba` (SFT + DPO).
+
+Before 15 Nov the base was *Large 124M best design · FineWeb-Edu + Cosmopedia · 500M tokens ·
 context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss 3.549; ARC-Easy 44.0%, PIQA 62.6%,
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 16 November 2026, 22:15 IST.*
+*Last updated: 16 November 2026, 22:40 IST.*
 
-## Where things stand (15 November, morning)
+## Final goals (proposed 16 Nov, for the author to confirm)
+
+What "done" looks like for the project; every step below should serve one of these.
+
+1. **A 124M model that matches GPT-2 small across the board, and a chat model built on it.** Already past GPT-2 on
+   held-out web text (3.296 vs 3.401) and on HellaSwag and ARC-Easy; still behind on the benchmark average (42.3 vs
+   44.4), LAMBADA and WikiText. Done when the average reaches 44.4 and the chat model answers short questions with
+   under 5% greedy repetition and ends 90%+ of its answers (today 6.5% and 86%).
+2. **A fair, published head-to-head of autoregressive and masked diffusion models at 124M:** the same size, data, tokens
+   and tokenizer (F6 extended to 2.5B tokens), compared on loss, benchmarks, text quality, speed and checkable
+   reasoning (F4, I7), with the side-by-side visualizations (H1) on a public website (G).
+3. **A small model that visibly reasons:** with thinking (IA, I0–I3), the 124M model solves short checkable tasks
+   (multi-digit arithmetic, countdown) clearly better than without it, and the same for the diffusion model (I4–I6).
+4. **Infrastructure: any number in the README regenerates from a clean clone with one command,** tested in CI, with
+   training jobs that survive a closed browser tab and models that move between Colab and the Mac without manual
+   downloads (J below).
+
+## Where things stand (16 November, night)
+
+Everything below the stage 2 base is done: E2 (stage 2, the base since 15 Nov), D1 and D2 redone on it, H2, the
+prefill vs decode card on Generate, and F6 at 1B tokens (bound 3.923, benchmark average 34.8 against the AR model's
+42.3).
+
+**Pending, in suggested order:**
+
+1. **F6 extension to 2.5B tokens** (~3 h on an A100, `--steps 152600 --resume`; ask first), then re-measure the bound,
+   quality and benchmarks (~3 h on the Mac).
+2. **F4** the diffusion vs autoregressive comparison, and **H1**'s diffusion half (with diffusion in Generate, F3's
+   last piece).
+3. **J1–J3** (tests and CI, a pinned environment, a resilient Colab job runner) before the next long runs.
+4. **D3** GRPO with checkable rewards (needed by I3 and I6).
+5. **I0** the reasoning eval set and longer context; then the author's **IA** (I1–I3), Claude integrates; **I4–I6**
+   for diffusion; **I7** the comparison.
+6. **G** GitHub Pages once F4/H1 are in.
+7. **Any time:** **C1** the author's GPTQ, then **C2**; **E1** an A100 speed note (now measured: 10.3–10.7 steps/s for
+   stage 2), **E3** as needed.
+
+## Earlier status (15 November, morning)
 
 Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everything else waits for it, as the author asked.
 
@@ -99,6 +141,15 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
 | I5 | **Diffusion: thinking.** The same `<think>` traces as I1; the model fills the thought and the answer together and can revise early steps after later ones (diffusion-of-thought), with a semi-autoregressive block order as an option | Claude | after I4 |
 | I6 | **Diffusion: reinforcement learning** (d1 / diffu-GRPO style): the answer's log probability estimated from one masked pass (the likelihood bound used in F5), the same rewards as I3 | Claude | after I5 and I3 |
 | I7 | **Compare the two kinds on reasoning**: accuracy, tokens and time per answer, and how accuracy grows with test-time compute (more samples for AR, more denoising steps for diffusion); planning-style puzzles (sudoku, countdown) are where diffusion models have been reported to do relatively well | Claude | after I3 and I6 |
+| **J** | **Infrastructure** (added 16 Nov at the author's request; proposed, for the author to pick from) | | open |
+| J1 | **Tests and CI.** A `tests/` folder with fast smoke tests on CPU: a tiny model trains 20 steps and its loss falls, generation with and without the KV cache gives the same tokens, a diffusion model trains and samples (`f6-smoke`), the benchmark harness runs with `--limit`, the app's API answers; a GitHub Actions workflow runs them on every push | Claude | open |
+| J2 | **A reproducible environment.** Today the Mac uses the system Python 3.9 and `requirements.txt` has no versions: a `pyproject.toml` with pinned versions (uv lock file), Python 3.11+ in a virtual environment, the same pins in the notebooks | Claude | open |
+| J3 | **A resilient Colab job runner.** One launcher for every long job (pretraining, stage 2, SFT, diffusion) that resumes from Drive by itself and writes a small `status.json` heartbeat (step, loss, tokens/s, ETA) to Drive, so progress can be checked, and a dead runtime noticed, without the browser tab; optionally a cloud GPU with a command-line API (Modal, RunPod, Lambda) so jobs don't depend on a browser at all | Claude | open |
+| J4 | **Model storage and transfer.** Models pushed to a private Hugging Face Hub repo (or synced with rclone) from Colab and pulled by the Mac, with checksums in the model library: no browser downloads, zips or temp files | Claude | open |
+| J5 | **One results store.** Every evaluation (held-out losses, benchmarks, quality, chat evals) appends a record (model, commit, settings, numbers, time) to one file the app, README tables and docs read from, so the numbers are generated rather than copied by hand | Claude | open |
+| J6 | **Evaluation queue on the Mac.** One command evaluates a new model end to end (losses, quality, the five benchmarks), resumable per task, with memory guards (batch size chosen from free GPU memory; today's out-of-memory crashes) and `caffeinate` built in | Claude | open |
+| J7 | **Repository layout.** The training, evaluation and post-training scripts move from the top level into a package (`lm/`, `eval/`, `post/`), with a single command-line entry point; notebooks import from it | Claude | open |
+| J8 | **Serving.** An OpenAI-compatible `/v1/chat/completions` endpoint on the app's server (streaming), so standard clients and evaluation tools can talk to our models; latency numbers feed the prefill vs decode card | Claude | open |
 
 **Open choices**
 
