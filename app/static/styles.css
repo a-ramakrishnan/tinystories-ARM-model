@@ -1044,3 +1044,20 @@ body.tg-wide [data-step=diffusion] .panel-head { max-width: 960px; }
 .da-svg .da-s { font-size: 11px; fill: var(--muted); }
 .da-svg .da-m { font-size: 13px; fill: var(--muted); opacity: .6; }
 .da-grid { width: 160px; height: 160px; display: block; margin: 4px 0 8px; }
+
+/* prefill vs decode */
+.lat-out { border: 1px solid var(--border); border-radius: 14px; background: var(--panel-2); padding: 18px 22px; min-height: 96px;
+  font-family: Georgia, "Iowan Old Style", serif; font-size: 19px; line-height: 1.55; margin: 12px 0 10px; }
+.lat-out .lat-wait { color: var(--muted); font-family: var(--mono); font-size: 13px; }
+.lat-out .lat-caret { display: inline-block; width: 2px; height: 1.1em; background: var(--accent); vertical-align: -0.2em; margin-left: 2px; animation: lat-blink 1s steps(1) infinite; }
+@keyframes lat-blink { 50% { opacity: 0; } }
+.lat-bar { display: flex; height: 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--border); overflow: hidden; }
+.lat-bar > div { height: 100%; width: 0; }
+.lat-pre { background: var(--series-val); }
+.lat-dec { background: var(--accent); }
+.lat-legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 6px 0 14px; align-items: center; }
+.lat-legend #lat-clock { margin-left: auto; }
+.lat-stats { margin-bottom: 12px; }
+.fields.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 640px) { .fields.two { grid-template-columns: minmax(0, 1fr); } }
+#lat-ttft-v, #lat-tps-v { font-family: var(--mono); color: var(--accent); font-weight: 600; margin-left: 4px; }

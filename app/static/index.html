@@ -594,6 +594,24 @@
         </div>
 
         <div class="card">
+          <div class="card-head"><h3>Prefill vs decode: how fast it feels</h3><span class="kind decoder">Decoder inference</span></div>
+          <p class="muted small">Two numbers decide how fast a reply feels. <b>Time to first token</b> is the wait before anything appears: the prompt is processed in one pass (prefill), which is limited by compute and grows with the prompt. <b>Tokens per second</b> is how fast the rest streams in: each token is one more pass that reads every weight from memory (decode), which is limited by memory bandwidth. Move the sliders and press Run to feel the difference.</p>
+          <div id="lat-out" class="lat-out"></div>
+          <div class="lat-bar" aria-hidden="true"><div id="lat-bar-pre" class="lat-pre"></div><div id="lat-bar-dec" class="lat-dec"></div></div>
+          <div class="lat-legend muted small"><span><i class="sw" style="background:var(--series-val)"></i>prefill (waiting)</span><span><i class="sw" style="background:var(--accent)"></i>decode (streaming)</span><span id="lat-clock" class="mono"></span></div>
+          <div id="lat-stats" class="stats lat-stats"></div>
+          <div class="fields two">
+            <label>Time to first token <output id="lat-ttft-v"></output><input id="lat-ttft" type="range" min="0" max="4000" step="50" value="1900"></label>
+            <label>Tokens per second <output id="lat-tps-v"></output><input id="lat-tps" type="range" min="1" max="200" step="1" value="30"><span id="lat-gap" class="muted small mono"></span></label>
+          </div>
+          <div class="actions tight">
+            <button id="lat-run" class="btn">▶ Run</button>
+            <button id="lat-mine" class="btn ghost" title="Fill the sliders with the time to first token and decode speed of your most recent generation above">Use my last generation</button>
+            <span id="lat-note" class="muted small"></span>
+          </div>
+        </div>
+
+        <div class="card">
           <div class="card-head"><h3>KV cache: with vs without</h3><span class="kind decoder">Decoder inference</span></div>
           <p class="muted small">Generates the same tokens twice, with the same random seed: once re-reading the whole context for every token, once with the KV cache. Measured on this machine's <span class="dev-name">GPU</span>.</p>
           <div class="actions tight">
@@ -993,5 +1011,6 @@
   <script src="/static/explorer.js"></script>
   <script src="/static/flow.js"></script>
   <script src="/static/flowplay.js"></script>
+  <script src="/static/latency.js"></script>
 </body>
 </html>

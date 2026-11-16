@@ -1111,6 +1111,7 @@ function syncSliders() {
 const confClass = (p) => (p >= 0.4 ? "hi" : p >= 0.1 ? "mid" : "lo");
 
 function renderGenMetrics(m, live = false) {
+  if (!live && m.ttft_ms != null && m.tokens_per_sec != null) window.lastGenMetrics = m;   // for the prefill vs decode card
   const mem = m.memory;
   $("#g-metrics").innerHTML = [
     stat("Prompt tokens", fmt(m.prompt_tokens), m.prompt_truncated ? "longer than the context window" : "input"),
