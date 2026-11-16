@@ -8,7 +8,7 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 15 November 2026, 22:30 IST.*
+*Last updated: 16 November 2026, 09:15 IST.*
 
 ## Where things stand (15 November, morning)
 
