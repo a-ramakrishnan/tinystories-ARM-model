@@ -82,29 +82,33 @@ def score_requests(model, enc, requests, device, samples=8, batch=64, seed=0):
     return [(ll[r], greedy[r], n_tok[r]) for r in range(len(requests))]
 
 
-def run(run_dir, tasks=B.TASKS, limit=None, samples=8, save=True, device=None):
+def run(run_dir, tasks=B.TASKS, limit=None, samples=8, save=True, device=None, batch=64):
     import tiktoken
     device = device or setup_device().device
     model = load(run_dir, device).eval()
     enc = tiktoken.get_encoding("gpt2")
     old_score = B.score_requests
-    B.score_requests = lambda m, e, reqs, d, batch=16: score_requests(m, e, reqs, d, samples=samples)
+    B.score_requests = lambda m, e, reqs, d, **_: score_requests(m, e, reqs, d, samples=samples, batch=batch)
     results = {}
     try:
         for t in tasks:
             print(f"{os.path.basename(run_dir)}: {t} …", flush=True)
             results[t] = B.run_task(model, enc, device, t, limit)
             print(f"  {json.dumps({k: round(v, 4) if isinstance(v, float) else v for k, v in results[t].items()})}", flush=True)
+            if save and not limit:     # after every task, so a crash later doesn't lose hours of scoring
+                save_results(run_dir, {t: results[t]}, model.cfg.seq_len, samples)
     finally:
         B.score_requests = old_score
-    if save and not limit:
-        path = os.path.join(run_dir, "benchmarks.json")
-        old = json.load(open(path)) if os.path.exists(path) else {}
-        old.update({"results": {**old.get("results", {}), **results}, "context": model.cfg.seq_len,
-                    "measured_at": time.strftime("%Y-%m-%d %H:%M"), "samples": samples,
-                    "harness": "lm-evaluation-harness style, zero-shot; answers scored by the likelihood bound"})
-        json.dump(old, open(path, "w"), indent=1)
     return results
+
+
+def save_results(run_dir, results, context, samples):
+    path = os.path.join(run_dir, "benchmarks.json")
+    old = json.load(open(path)) if os.path.exists(path) else {}
+    old.update({"results": {**old.get("results", {}), **results}, "context": context,
+                "measured_at": time.strftime("%Y-%m-%d %H:%M"), "samples": samples,
+                "harness": "lm-evaluation-harness style, zero-shot; answers scored by the likelihood bound"})
+    json.dump(old, open(path, "w"), indent=1)
 
 
 def load_results(run_dir):
@@ -118,6 +122,7 @@ if __name__ == "__main__":
     ap.add_argument("--tasks", default=",".join(B.TASKS))
     ap.add_argument("--limit", type=int, default=None, help="only the first N questions per task (not saved)")
     ap.add_argument("--samples", type=int, default=8, help="masking draws per answer")
+    ap.add_argument("--batch", type=int, default=64, help="rows per forward pass (lower it if the GPU runs out of memory)")
     a = ap.parse_args()
     for r in a.runs:
-        run(r, [t.strip() for t in a.tasks.split(",") if t.strip()], a.limit, a.samples)
+        run(r, [t.strip() for t in a.tasks.split(",") if t.strip()], a.limit, a.samples, batch=a.batch)

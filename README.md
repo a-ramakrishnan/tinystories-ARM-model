@@ -59,6 +59,7 @@ step by step.
 | Diffusion text without loops: a repetition penalty while denoising | repeated 4-token runs on FineWeb-Edu 43% → **4%** (real text 0%) |
 | The FineWeb-Edu diffusion model trained 3× longer (492M tokens, 145 min on an L4) | likelihood bound 5.269 → **4.729**; more fluent text (judge loss 3.62 → 3.01) |
 | Benchmarks for diffusion models (each choice scored by its likelihood bound) | TinyStories: at chance like the autoregressive model of the same size, but LAMBADA 1.8% vs 8.7%; FineWeb-Edu: ARC-Easy **31.2%** |
+| A diffusion model the size of the base, on the stage 2 data (124M, 1B tokens, 2 h 8 min on an A100) | likelihood bound 4.729 → **3.923** (stage 2 AR model's loss on the same text: 2.963); LAMBADA 2.2% → **11.8%**, benchmark average 32.4 → 34.8 (AR: 42.3) |
 | Instruction tuning on 409K smol-smoltalk conversations (90 min on an L4): a Chat mode | loss on held-out answers 2.437 → **1.548**; it answers instead of writing blog posts, at a cost of 3 benchmark points |
 | DPO against repetition: the reference answer preferred to the chat model's own greedy one, 2,000 pairs (21 min on the Mac) | greedy repetition on held-out questions 20.0% → **11.2%**, answers that end 59% → **84%**; held-out answer loss 1.548 → 1.617 |
 | Instruction tuning redone on the stage 2 base (20 min on an A100) | held-out answer loss **1.390** (was 1.548); greedy repetition on held-out questions **12.4%** (was 20.0%), with no DPO yet |

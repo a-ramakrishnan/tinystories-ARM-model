@@ -1219,6 +1219,25 @@ the autoregressive model of the same size and data (HellaSwag 25.7% vs 26.5%, PI
 chance only on ARC-Easy (31.2%; the bigger autoregressive base: 44.0%); trained 3× longer it gains on LAMBADA
 (0.2% → 2.2%) and HellaSwag (25.3% → 26.6%).
 
+**Scaled up to the base's size (F6, 16 Nov).** A 124M diffusion model with the base's design (12 layers × 768, RoPE,
+SwiGLU, QK-norm, 512 context, attention in both directions) trained from scratch on the stage 2 data: the same token
+files and validation split as the stage 2 autoregressive model, 1.0B tokens in 2 h 8 min on a Colab A100.
+
+| | Likelihood bound | HellaSwag | LAMBADA | ARC-Easy | PIQA | Winogrande | Average |
+|---|---|---|---|---|---|---|---|
+| Diffusion 51M, 492M tokens of FineWeb-Edu small | 4.729 | 26.6 | 2.2 | 29.2 | 52.2 | 51.9 | 32.4 |
+| **Diffusion 124M (F6), 1B tokens of the stage 2 mix** | **3.923** | 27.6 | **11.8** | 30.7 | 54.2 | 49.6 | **34.8** |
+| Autoregressive 124M (stage 2), 2.5B tokens | 2.963 (loss) | 32.3 | 20.3 | 46.8 | 62.4 | 49.9 | 42.3 |
+
+- **The bound is about 1 nat/token behind the autoregressive model** on the same validation text (with 2.5× fewer
+  tokens, and the bound only an upper limit on the diffusion model's real loss). It was still improving when the
+  learning rate reached its floor (3.944 → 3.923 over the last 10,000 updates).
+- **LAMBADA moved most** (2.2% → 11.8%): predicting a whole masked last word from both sides needs a real model of the
+  context, which the small one lacked. ARC-Easy and PIQA barely moved and stay well behind the autoregressive model.
+- **Less repetition from the same sampler**: repeated 4-token runs with confident-first decoding 37.5% → 24.5%, and with
+  the recommended penalty (1.2, blocks of 16) 8.4% → 4.6%. The text stays on topic but drifts between sentences.
+- Scoring the benchmarks on the Mac took about 3 hours (8 maskings per answer); HellaSwag alone took 2 h 10 min.
+
 **Lesson.** With a diffusion model, the sampler is half the model: the same weights produced jumbled text, a loop of one
 word, or readable stories depending only on which positions are revealed when.
 

@@ -4,6 +4,13 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-16 21:45", kind: "win", area: "Diffusion", title: "A diffusion model the size of the base (F6)",
+    decision: "Train a 124M masked diffusion model with the base's design, from scratch, on the same stage 2 token files: 1B tokens in 2 h 8 min on a Colab A100.",
+    why: "To compare the two kinds of model like for like: same size, data and tokenizer, only the objective differs.",
+    result: { label: "likelihood bound · benchmark average", text: "4.729 → 3.923 (AR loss 2.963) · 32.4 → 34.8 (AR 42.3)" },
+    calc: ["LAMBADA 2.2% → 11.8%: the whole masked last word now often comes out right",
+      "repeated 4-token runs with the recommended sampler 8.4% → 4.6%",
+      "still about 1 nat/token and 7.5 benchmark points behind the autoregressive model, with 2.5× fewer tokens"] },
   { when: "2026-11-15 16:35", kind: "win", area: "Data", title: "Stage 2: five times the data, past GPT-2 on web text",
     decision: "Continue the base model's training (weights and optimizer state) on the full Mini FineWeb-Edu plus the same Cosmopedia subsets, to 2.5B tokens (about 20 per parameter), with the held-out documents removed (stage2.py).",
     why: "The base model had seen only 4 tokens per parameter; a 124M model keeps improving well past that.",
