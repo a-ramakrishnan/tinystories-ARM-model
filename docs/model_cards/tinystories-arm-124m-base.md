@@ -16,11 +16,10 @@ datasets:
 
 A 124M-parameter GPT trained from scratch in
 [tinystories-ARM-model](https://github.com/a-ramakrishnan/tinystories-ARM-model): written by hand, improved one
-measured change at a time, trained on a Mac and on Colab GPUs. Part of the
-[tinystories-arm collection](https://huggingface.co/aramkris) with its chat versions
+measured change at a time, trained on a Mac and on Colab GPUs. Related models: its chat versions
 ([SFT](https://huggingface.co/aramkris/tinystories-arm-124m-chat-sft),
 [SFT + DPO](https://huggingface.co/aramkris/tinystories-arm-124m-chat-dpo)) and a masked diffusion model of the same
-size and data.
+size and data ([tinystories-arm-124m-diffusion](https://huggingface.co/aramkris/tinystories-arm-124m-diffusion)).
 
 **Design:** 12 layers × 768, 12 heads, RoPE, SwiGLU, no biases, QK-norm, 512-token context, GPT-2's tokenizer.
 **Data:** 2.5B tokens of Mini FineWeb-Edu (full) plus Cosmopedia subsets (stories, WikiHow, OpenStax, Stanford,
