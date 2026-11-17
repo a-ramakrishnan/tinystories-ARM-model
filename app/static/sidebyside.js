@@ -40,6 +40,11 @@ async function sbsRun() {
       steps: +$("#sbs-steps").value, ar_temperature: +$("#sbs-ardecode").value, sampler: o.sampler,
       repetition_penalty: o.repetition_penalty, block_size: o.block_size, seed: 1 });
   } finally { $("#sbs-busy").classList.add("hidden"); }
+  sbsShowRun();
+}
+
+// draw a result (from the server, or saved: the website replays saved runs with this same code)
+function sbsShowRun() {
   const d = sbs.r.diffusion;
   // each diffusion position: the pass that revealed it (its last change) and the model's confidence then
   d.revealedAt = Array(d.gen_len).fill(null);
@@ -201,8 +206,8 @@ function sbsHow() {
   </table></div>`;
 }
 
-$("#sbs-prompt").addEventListener("change", (e) => $("#sbs-own-wrap").classList.toggle("hidden", e.target.value !== ""));
-$("#sbs-go").addEventListener("click", (e) => action(e.target, sbsRun));
+$("#sbs-prompt")?.addEventListener("change", (e) => $("#sbs-own-wrap").classList.toggle("hidden", e.target.value !== ""));
+$("#sbs-go")?.addEventListener("click", (e) => action(e.target, sbsRun));
 $("#sbs-play").addEventListener("click", () => (sbs.timer ? sbsStop() : sbsPlay()));
 $("#sbs-first").addEventListener("click", () => { sbsStop(); sbsShow(0); });
 $("#sbs-next").addEventListener("click", () => { sbsStop(); sbsShow(sbs.s + 1); });

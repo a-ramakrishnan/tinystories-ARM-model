@@ -440,6 +440,17 @@ repetition. The prompts, tokenizer and length are fixed, so other ways of genera
 the same footing. On the base model: loss 3.481 on the real continuations (GPT-2 small 3.118), and 28% repeated
 4-token runs in greedy text (GPT-2 61%).
 
+## The website
+
+`pages/build.py` builds the project's website into `_site/`. It has the docs as pages, the Journey timeline and a
+Side by side replay, and it runs in the browser from saved data. On every push to `main` that changes the docs,
+`.github/workflows/pages.yml` builds it and deploys it to GitHub Pages.
+
+```bash
+python3 pages/build.py && python3 -m http.server 8090 -d _site       # build, then open http://localhost:8090
+python3 pages/record.py                                              # re-record the side-by-side runs (needs the app running)
+```
+
 ## Generating text from a trained model
 
 The web app's Generate step does this for you. From Python:

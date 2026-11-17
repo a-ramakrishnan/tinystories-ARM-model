@@ -132,3 +132,4 @@ outputs/
 tinystories-run-*.zip
 ab-*.zip
 models/
+_site/

@@ -1,0 +1,44 @@
+# The project's website (plan G): pages/build.py turns the docs, the results store and the saved side-by-side runs
+# into a static site, deployed to GitHub Pages on every push to main that touches them.
+# One-time setup: repository Settings → Pages → Source: GitHub Actions.
+name: website
+
+on:
+  push:
+    branches: [main]
+    paths: ["README.md", "docs/**", "diffusion_models/README.md", "results/**", "pages/**",
+            "app/static/styles.css", "app/static/journey.js", "app/static/sidebyside.js", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install markdown==3.9
+      - run: python pages/build.py --out _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
