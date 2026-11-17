@@ -12,14 +12,14 @@ datasets:
   - HuggingFaceTB/cosmopedia
 ---
 
-# tinystories-arm 124M base (stage 2)
+# FineWeb-Edu 124M base (stage 2)
 
 A 124M-parameter GPT trained from scratch in
 [tinystories-ARM-model](https://github.com/a-ramakrishnan/tinystories-ARM-model): written by hand, improved one
 measured change at a time, trained on a Mac and on Colab GPUs. Related models: its chat versions
-([SFT](https://huggingface.co/aramkris/tinystories-arm-124m-chat-sft),
-[SFT + DPO](https://huggingface.co/aramkris/tinystories-arm-124m-chat-dpo)) and a masked diffusion model of the same
-size and data ([tinystories-arm-124m-diffusion](https://huggingface.co/aramkris/tinystories-arm-124m-diffusion)).
+([SFT](https://huggingface.co/aramkris/fineweb-edu-124m-chat-sft),
+[SFT + DPO](https://huggingface.co/aramkris/fineweb-edu-124m-chat-dpo)) and a masked diffusion model of the same
+size and data ([fineweb-edu-124m-diffusion](https://huggingface.co/aramkris/fineweb-edu-124m-diffusion)).
 
 **Design:** 12 layers × 768, 12 heads, RoPE, SwiGLU, no biases, QK-norm, 512-token context, GPT-2's tokenizer.
 **Data:** 2.5B tokens of Mini FineWeb-Edu (full) plus Cosmopedia subsets (stories, WikiHow, OpenStax, Stanford,
@@ -43,7 +43,7 @@ The architecture is the project's own (`model.py`), so load it with the reposito
 
 ```bash
 git clone https://github.com/a-ramakrishnan/tinystories-ARM-model && cd tinystories-ARM-model
-python3 -m infra.model_store pull tinystories-arm-124m-base     # -> models/mini-fineweb-edu-ful-202611151103-bb160c
+python3 -m infra.model_store pull fineweb-edu-124m-base     # -> models/mini-fineweb-edu-ful-202611151103-bb160c
 ```
 
 ```python

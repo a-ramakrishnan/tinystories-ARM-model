@@ -12,7 +12,7 @@ datasets:
   - HuggingFaceTB/cosmopedia
 ---
 
-# tinystories-arm 124M masked diffusion (F6)
+# FineWeb-Edu 124M masked diffusion (F6)
 
 A 124M-parameter **masked diffusion language model** trained from scratch in
 [tinystories-ARM-model](https://github.com/a-ramakrishnan/tinystories-ARM-model). It writes by denoising: the
@@ -20,24 +20,26 @@ continuation starts as all `[MASK]`, and at each step a transformer that reads i
 masked position, and the ones it is surest of are revealed.
 
 It has the same design, data and tokenizer as the autoregressive
-[tinystories-arm 124M base](https://huggingface.co/aramkris/tinystories-arm-124m-base), so the two differ only in the
+[FineWeb-Edu 124M base](https://huggingface.co/aramkris/fineweb-edu-124m-base), so the two differ only in the
 objective: 12 layers × 768, RoPE, SwiGLU, no biases, QK-norm, 512-token context, 64 noise levels, attention in both
 directions; Mini FineWeb-Edu (full) plus Cosmopedia subsets.
 
 | | Likelihood bound (nats/token) | HellaSwag | LAMBADA | ARC-Easy | PIQA | Winogrande |
 |---|---|---|---|---|---|---|
+| **This model, 2.5B tokens (uploaded)** | **3.830** | to be measured | | | | |
 | This model after 1B tokens | 3.923 | 27.6 | 11.8 | 30.7 | 54.2 | 49.6 |
 | Autoregressive base, 2.5B tokens (same data) | 2.963 (loss) | 32.3 | 20.3 | 46.8 | 62.4 | 49.9 |
 
-The uploaded weights are from **2.5B tokens** (152,600 updates, the same as the autoregressive base); their numbers
-are added once measured. The likelihood bound is an upper bound on the loss per token; the benchmarks score each
+The uploaded weights are from **2.5B tokens** (152,600 updates, the same as the autoregressive base). They're
+the best checkpoint by likelihood bound, from update 120,000; the bound drifted back up to about 3.9 over the last
+30,000 updates. The benchmarks will be added once measured. The likelihood bound is an upper bound on the loss per token; the benchmarks score each
 answer by its likelihood bound (8 maskings per answer).
 
 ## Use
 
 ```bash
 git clone https://github.com/a-ramakrishnan/tinystories-ARM-model && cd tinystories-ARM-model
-python3 -m infra.model_store pull tinystories-arm-124m-diffusion     # -> diffusion_models/runs/f6-124m-stage2
+python3 -m infra.model_store pull fineweb-edu-124m-diffusion     # -> diffusion_models/runs/f6-124m-stage2
 ```
 
 ```python

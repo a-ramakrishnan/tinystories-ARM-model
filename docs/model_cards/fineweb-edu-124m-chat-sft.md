@@ -11,36 +11,36 @@ datasets:
   - BaoMinhTran/mini-fineweb-edu
   - HuggingFaceTB/cosmopedia
   - HuggingFaceTB/smol-smoltalk
-base_model: aramkris/tinystories-arm-124m-chat-sft
+base_model: aramkris/fineweb-edu-124m-base
 ---
 
-# tinystories-arm 124M chat (SFT + DPO)
+# FineWeb-Edu 124M chat (SFT)
 
-A chat version of [tinystories-arm 124M base](https://huggingface.co/aramkris/tinystories-arm-124m-base), a GPT trained
-from scratch in [tinystories-ARM-model](https://github.com/a-ramakrishnan/tinystories-ARM-model). The [SFT model](https://huggingface.co/aramkris/tinystories-arm-124m-chat-sft) plus DPO against repetition: 2,000 smol-smoltalk questions, the reference answer preferred to the SFT model's own greedy one; 19 minutes on an M5 Mac.
+A chat version of [FineWeb-Edu 124M base](https://huggingface.co/aramkris/fineweb-edu-124m-base), a GPT trained
+from scratch in [tinystories-ARM-model](https://github.com/a-ramakrishnan/tinystories-ARM-model). Instruction-tuned (SFT) on 409K smol-smoltalk conversations, loss on the assistant's words only; 11,284 updates, 19 minutes on a Colab A100.
 
 It answers in a plain `User: …` / `Assistant: …` format (no special tokens) and ends its answer with
 `<|endoftext|>`. Measured on 100 held-out questions with greedy decoding:
 
 | Model | Loss on the reference answers | Repeated 4-grams | Answers that end | Benchmark average |
 |---|---|---|---|---|
-| [SFT](https://huggingface.co/aramkris/tinystories-arm-124m-chat-sft) | **1.156** | 12.4% | 70% | 38.5 |
-| this model (SFT + DPO) | 1.196 | **6.5%** | **86%** | 38.4 |
+| this model (SFT) | **1.156** | 12.4% | 70% | 38.5 |
+| [SFT + DPO](https://huggingface.co/aramkris/fineweb-edu-124m-chat-dpo) | 1.196 | **6.5%** | **86%** | 38.4 |
 
-The base model scores 42.3 on the same five benchmarks; instruction tuning costs about 4 points. DPO halves the repetition and lets most answers end by themselves, at a small cost in reference-answer loss.
+The base model scores 42.3 on the same five benchmarks; instruction tuning costs about 4 points. The [DPO version](https://huggingface.co/aramkris/fineweb-edu-124m-chat-dpo) repeats itself about half as often.
 
 ## Use
 
 ```bash
 git clone https://github.com/a-ramakrishnan/tinystories-ARM-model && cd tinystories-ARM-model
-python3 -m infra.model_store pull tinystories-arm-124m-chat-dpo     # -> models/chat-mini-fineweb-ed-202611152150-2746ba
+python3 -m infra.model_store pull fineweb-edu-124m-chat-sft     # -> models/chat-mini-fineweb-ed-202611151211-947df2
 ```
 
 ```python
 import tiktoken
 from inference import load_model, load_model_config
 from sft import answer
-d = "models/chat-mini-fineweb-ed-202611152150-2746ba"
+d = "models/chat-mini-fineweb-ed-202611151211-947df2"
 cfg, _ = load_model_config(f"{d}/model_config.json")
 model = load_model(cfg, f"{d}/best_model_params.pt", "cpu")
 print(answer(model, tiktoken.get_encoding("gpt2"), "Why do leaves change color in autumn?", "cpu"))

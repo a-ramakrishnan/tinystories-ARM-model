@@ -68,15 +68,15 @@ def quiet(*_):
 def test_push_then_pull_round_trip(tmp_path, hub):
     src = str(tmp_path / "f6-124m-stage2")
     make_run(src)
-    man = ms.push("diffusion", src, "tinystories-arm-124m-diffusion", say=quiet)
-    repo_dir = os.path.join(hub.root, "someone", "tinystories-arm-124m-diffusion")
-    assert hub.created == [("someone/tinystories-arm-124m-diffusion", False)]   # public, under the user's name
+    man = ms.push("diffusion", src, "fineweb-edu-124m-diffusion", say=quiet)
+    repo_dir = os.path.join(hub.root, "someone", "fineweb-edu-124m-diffusion")
+    assert hub.created == [("someone/fineweb-edu-124m-diffusion", False)]   # public, under the user's name
     assert set(man["files"]) == {"model.pt", "config.json", "metrics.json"}      # no state.pt, no snapshots
     assert sorted(os.listdir(repo_dir)) == ["README.md", "config.json", "manifest.json", "metrics.json", "model.pt"]
     assert "Diffusion 124M" in open(os.path.join(repo_dir, "README.md")).read()  # card from the folder's metadata
     assert not os.path.exists(os.path.join(src, "manifest.json"))                  # the run folder is left alone
     dest = str(tmp_path / "local")
-    ms.pull("tinystories-arm-124m-diffusion", dest=dest, say=quiet)
+    ms.pull("fineweb-edu-124m-diffusion", dest=dest, say=quiet)
     assert open(os.path.join(dest, "model.pt"), "rb").read() == b"weights" * 1000
     assert ms.verify(dest) == []
 
@@ -85,19 +85,19 @@ def test_pull_puts_it_where_the_kind_says(tmp_path, hub, monkeypatch):
     monkeypatch.setitem(ms.KINDS, "library", str(tmp_path / "models"))
     src = str(tmp_path / "mini-fineweb-edu-ful-x")
     make_run(src)
-    ms.push("library", src, "tinystories-arm-124m-base", say=quiet)
-    assert ms.pull("tinystories-arm-124m-base", say=quiet) == str(tmp_path / "models" / "mini-fineweb-edu-ful-x")
+    ms.push("library", src, "fineweb-edu-124m-base", say=quiet)
+    assert ms.pull("fineweb-edu-124m-base", say=quiet) == str(tmp_path / "models" / "mini-fineweb-edu-ful-x")
 
 
 def test_custom_card_and_list(tmp_path, hub):
     card = tmp_path / "card.md"
     card.write_text("---\ntags:\n  - tinystories-arm\n---\n# The base model\n")
-    for repo in ("tinystories-arm-124m-base", "tinystories-arm-124m-chat-dpo"):
+    for repo in ("fineweb-edu-124m-base", "fineweb-edu-124m-chat-dpo"):
         src = str(tmp_path / repo)
         make_run(src)
         ms.push("library", src, repo, card=str(card), say=quiet)
-    assert open(os.path.join(hub.root, "someone", "tinystories-arm-124m-base", "README.md")).read().startswith("---")
-    assert ms.list_remote() == ["someone/tinystories-arm-124m-base", "someone/tinystories-arm-124m-chat-dpo"]
+    assert open(os.path.join(hub.root, "someone", "fineweb-edu-124m-base", "README.md")).read().startswith("---")
+    assert ms.list_remote() == ["someone/fineweb-edu-124m-base", "someone/fineweb-edu-124m-chat-dpo"]
 
 
 def test_with_state_sends_everything(tmp_path):

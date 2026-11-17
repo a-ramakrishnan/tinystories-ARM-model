@@ -1,9 +1,9 @@
 # J4: move models between Colab and the Mac through Hugging Face Hub, one public repository per model, instead of
 # Drive downloads, zips and browser clicks.
 #
-#   python3 -m infra.model_store push library models/<id> tinystories-arm-124m-base --card card.md
-#   python3 -m infra.model_store push diffusion /content/drive/MyDrive/diffusion-runs/f6-124m-stage2 tinystories-arm-124m-diffusion
-#   python3 -m infra.model_store pull tinystories-arm-124m-base        # -> models/<id>, checked
+#   python3 -m infra.model_store push library models/<id> fineweb-edu-124m-base --card card.md
+#   python3 -m infra.model_store push diffusion /content/drive/MyDrive/diffusion-runs/f6-124m-stage2 fineweb-edu-124m-diffusion
+#   python3 -m infra.model_store pull fineweb-edu-124m-base        # -> models/<id>, checked
 #   python3 -m infra.model_store list                                   # every repository tagged tinystories-arm
 #
 # Kinds and where `pull` puts them (the local folder name travels in manifest.json):

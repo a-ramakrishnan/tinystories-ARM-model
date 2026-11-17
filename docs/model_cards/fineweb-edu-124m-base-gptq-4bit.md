@@ -3,7 +3,7 @@ license: mit
 language: en
 library_name: pytorch
 pipeline_tag: text-generation
-base_model: aramkris/tinystories-arm-124m-base
+base_model: aramkris/fineweb-edu-124m-base
 tags:
   - tinystories-arm
   - gpt
@@ -16,9 +16,9 @@ datasets:
   - HuggingFaceTB/cosmopedia
 ---
 
-# tinystories-arm 124M base, GPTQ 4-bit
+# FineWeb-Edu 124M base, GPTQ 4-bit
 
-The [tinystories-arm 124M base model](https://huggingface.co/aramkris/tinystories-arm-124m-base) with its weights
+The [FineWeb-Edu 124M base model](https://huggingface.co/aramkris/fineweb-edu-124m-base) with its weights
 stored as 4-bit integers, quantized with **GPTQ** through llm-compressor's `oneshot`, in
 [tinystories-ARM-model](https://github.com/a-ramakrishnan/tinystories-ARM-model). **84 MB instead of 494 MB.**
 
@@ -55,7 +55,7 @@ needed to *make* a GPTQ copy, not to run one:
 
 ```bash
 git clone https://github.com/a-ramakrishnan/tinystories-ARM-model && cd tinystories-ARM-model
-python3 -m infra.model_store pull tinystories-arm-124m-base-gptq-4bit
+python3 -m infra.model_store pull fineweb-edu-124m-base-gptq-4bit
 ```
 
 ```python
