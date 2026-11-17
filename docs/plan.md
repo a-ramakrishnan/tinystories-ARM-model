@@ -13,11 +13,12 @@ context 512* (`mini-fineweb-edu-202611130718-14ed26`): held-out FineWeb-Edu loss
 HellaSwag 29.7%, LAMBADA 15.7%. The yardstick is OpenAI's GPT-2 small (3.401; 43.8%, 62.9%, 31.1%, 32.6%). The
 earlier TinyStories and WikiText models are kept as the history of how we got here.
 
-*Last updated: 17 November 2026, 10:39 IST.*
+*Last updated: 17 November 2026, 10:50 IST.*
 
-## Final goals (proposed 16 Nov, for the author to confirm)
+## Final goals (adopted by the author, 17 Nov)
 
-What "done" looks like for the project; every step below should serve one of these.
+What "done" looks like for the project; every step below should serve one of these. On 17 Nov the author confirmed all four and paused new work until F6 reaches 2.5B tokens: then the
+project has two 124M models, autoregressive and diffusion, on the same data, and goal 2's comparison (F4) comes next.
 
 1. **A 124M model that matches GPT-2 small across the board, and a chat model built on it.** Already past GPT-2 on
    held-out web text (3.296 vs 3.401) and on HellaSwag and ARC-Easy; still behind on the benchmark average (42.3 vs
