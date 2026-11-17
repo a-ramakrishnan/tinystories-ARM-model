@@ -1,0 +1,54 @@
+---
+license: mit
+language: en
+library_name: pytorch
+tags:
+  - tinystories-arm
+  - masked-diffusion
+  - diffusion-language-model
+  - from-scratch
+datasets:
+  - BaoMinhTran/mini-fineweb-edu
+  - HuggingFaceTB/cosmopedia
+---
+
+# tinystories-arm 124M masked diffusion (F6)
+
+A 124M-parameter **masked diffusion language model** trained from scratch in
+[tinystories-ARM-model](https://github.com/a-ramakrishnan/tinystories-ARM-model). It writes by denoising: the
+continuation starts as all `[MASK]`, and at each step a transformer that reads in both directions predicts every
+masked position, and the ones it is surest of are revealed.
+
+It has the same design, data and tokenizer as the autoregressive
+[tinystories-arm 124M base](https://huggingface.co/aramkris/tinystories-arm-124m-base), so the two differ only in the
+objective: 12 layers × 768, RoPE, SwiGLU, no biases, QK-norm, 512-token context, 64 noise levels, attention in both
+directions; Mini FineWeb-Edu (full) plus Cosmopedia subsets.
+
+| | Likelihood bound (nats/token) | HellaSwag | LAMBADA | ARC-Easy | PIQA | Winogrande |
+|---|---|---|---|---|---|---|
+| This model after 1B tokens | 3.923 | 27.6 | 11.8 | 30.7 | 54.2 | 49.6 |
+| Autoregressive base, 2.5B tokens (same data) | 2.963 (loss) | 32.3 | 20.3 | 46.8 | 62.4 | 49.9 |
+
+The uploaded weights are from **2.5B tokens** (152,600 updates, the same as the autoregressive base); their numbers
+are added once measured. The likelihood bound is an upper bound on the loss per token; the benchmarks score each
+answer by its likelihood bound (8 maskings per answer).
+
+## Use
+
+```bash
+git clone https://github.com/a-ramakrishnan/tinystories-ARM-model && cd tinystories-ARM-model
+python3 -m infra.model_store pull tinystories-arm-124m-diffusion     # -> diffusion_models/runs/f6-124m-stage2
+```
+
+```python
+from diffusion_models.model import load
+from diffusion_models.sample import diffusion_generate
+model = load("diffusion_models/runs/f6-124m-stage2", "cpu")
+print(diffusion_generate(model, "Photosynthesis is", max_new_tokens=64, block_size=16, repetition_penalty=1.2,
+                         record_steps=False)["text"])
+```
+
+Files: `model.pt` (weights), `config.json`, `metrics.json` (loss history, speed, samples), `loss.png`,
+`manifest.json` (checksums).
+
+A research model: fluent but loosely connected text, few facts, and 64 passes for 64 tokens.
