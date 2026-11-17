@@ -1,41 +1,42 @@
-# J4: move models between Colab and the Mac through a Hugging Face Hub repository (public: the models hold nothing
-# private), instead of Drive
-# downloads, zips and browser clicks.
+# J4: move models between Colab and the Mac through Hugging Face Hub, one public repository per model, instead of
+# Drive downloads, zips and browser clicks.
 #
-#   On Colab (after training):   python3 -m infra.model_store push diffusion /content/drive/MyDrive/diffusion-runs/f6-124m-stage2 --name f6-124m-stage2-2p5b
-#   On the Mac:                  python3 -m infra.model_store pull diffusion f6-124m-stage2-2p5b
-#                                python3 -m infra.model_store list
+#   python3 -m infra.model_store push library models/<id> tinystories-arm-124m-base --card card.md
+#   python3 -m infra.model_store push diffusion /content/drive/MyDrive/diffusion-runs/f6-124m-stage2 tinystories-arm-124m-diffusion
+#   python3 -m infra.model_store pull tinystories-arm-124m-base        # -> models/<id>, checked
+#   python3 -m infra.model_store list                                   # every repository tagged tinystories-arm
 #
-# Kinds and where `pull` puts them:
-#   library    a model library folder (best_model_params.pt, model_config.json, meta.json, ...)  -> models/<name>
+# Kinds and where `pull` puts them (the local folder name travels in manifest.json):
+#   library    a model library folder (best_model_params.pt, model_config.json, meta.json, ...)  -> models/<id>
 #   diffusion  a diffusion run folder (model.pt, config.json, metrics.json, loss.png, ...)       -> diffusion_models/runs/<name>
-#   run        any other folder (e.g. a chat model's outputs)                                     -> outputs/<name>
+#   run        any other folder                                                                   -> outputs/<name>
 #
-# Every push writes manifest.json (size and SHA-256 of each file) next to the files; pull checks every file against
-# it and refuses to overwrite a different local folder unless --force. Training state (state.pt: weights plus the
-# optimizer, 3x the size) and snapshots are left out unless --with-state.
+# Every push writes manifest.json (kind, local folder name, size and SHA-256 of each file) at the top of the
+# repository; pull checks every file against it and refuses to overwrite a different local folder unless --force.
+# Training state (state.pt: weights plus optimizer, 3x the size) and snapshots stay behind unless --with-state.
+# The model card is --card's file, or else a short one written from the folder's metadata; it carries the
+# `tinystories-arm` tag that `list` looks for.
 #
-# Authentication is Hugging Face's own: an access token with write permission, as the HF_TOKEN environment variable
-# or from `hf auth login` (on Colab: a notebook secret named HF_TOKEN). A new repository is created public
-# (--private for a private one; an existing repository keeps its visibility). Diffusion models have their own
-# repository, <your username>/tinystories-arm-diffusion; everything else goes to <your username>/tinystories-arm-models.
-# HF_DIFFUSION_REPO and HF_MODEL_REPO override the two names.
+# Authentication is Hugging Face's own: a token with write permission, as HF_TOKEN or from `hf auth login` (on Colab:
+# the notebook secret HF_TOKEN). New repositories are public (the models hold nothing private); --private otherwise.
 import argparse
 import hashlib
 import json
 import os
 import shutil
 import sys
+import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KINDS = {"library": os.path.join(ROOT, "models"), "diffusion": os.path.join(ROOT, "diffusion_models", "runs"),
          "run": os.path.join(ROOT, "outputs")}
 MANIFEST = "manifest.json"
+CARD = "README.md"
+TAG = "tinystories-arm"
 STATE_FILES = ("state.pt", "state.pt.tmp")
 SKIP_DIRS = ("snapshots", "__pycache__", ".ipynb_checkpoints")
-REPO_NAME = "tinystories-arm-models"          # autoregressive models (library) and other runs
-DIFFUSION_REPO_NAME = "tinystories-arm-diffusion"   # the masked diffusion models
+GITHUB = "https://github.com/a-ramakrishnan/tinystories-ARM-model"
 
 
 def sha256(path, chunk=1 << 22):
@@ -47,22 +48,23 @@ def sha256(path, chunk=1 << 22):
 
 
 def files_to_send(folder, with_state=False):
-    """Relative paths of the files a push sends (no state, snapshots or caches unless with_state)."""
+    """Relative paths of the files a push sends (no state, snapshots, caches or an old card unless with_state)."""
     out = []
     for d, dirs, files in os.walk(folder):
         dirs[:] = sorted(x for x in dirs if with_state or x not in SKIP_DIRS)
         for f in sorted(files):
-            if f == MANIFEST or f.startswith(".") or (not with_state and f in STATE_FILES):
+            rel = os.path.relpath(os.path.join(d, f), folder)
+            if rel in (MANIFEST, CARD) or f.startswith(".") or (not with_state and f in STATE_FILES):
                 continue
-            out.append(os.path.relpath(os.path.join(d, f), folder))
+            out.append(rel)
     return out
 
 
-def make_manifest(folder, kind, name, with_state=False):
+def make_manifest(folder, kind, with_state=False):
     files = {p: {"bytes": os.path.getsize(os.path.join(folder, p)), "sha256": sha256(os.path.join(folder, p))}
              for p in files_to_send(folder, with_state)}
-    return {"kind": kind, "name": name, "files": files, "pushed_at": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
-            "total_bytes": sum(f["bytes"] for f in files.values())}
+    return {"kind": kind, "local_name": os.path.basename(os.path.abspath(folder).rstrip("/")), "files": files,
+            "pushed_at": time.strftime("%Y-%m-%d %H:%M:%S %Z"), "total_bytes": sum(f["bytes"] for f in files.values())}
 
 
 def verify(folder, manifest=None):
@@ -80,60 +82,69 @@ def verify(folder, manifest=None):
     return problems
 
 
-def repo_id(api=None, kind="library"):
-    """The repository a kind of model lives in: diffusion models in their own, the rest together."""
-    env, name = ("HF_DIFFUSION_REPO", DIFFUSION_REPO_NAME) if kind == "diffusion" else ("HF_MODEL_REPO", REPO_NAME)
-    if os.environ.get(env):
-        return os.environ[env]
-    from huggingface_hub import HfApi
-    api = api or HfApi()
-    return f"{api.whoami()['name']}/{name}"
+def full_repo(name, api):
+    """'name' -> '<username>/name'; 'someone/name' stays as it is."""
+    return name if "/" in name else f"{api.whoami()['name']}/{name}"
 
 
-def _check(kind):
+def default_card(folder, kind, repo):
+    """A short model card from the folder's own metadata, for pushes without --card."""
+    meta = {}
+    for f in ("meta.json", "config.json", "model_config.json"):
+        p = os.path.join(folder, f)
+        if os.path.exists(p):
+            meta = json.load(open(p))
+            break
+    title = meta.get("name") or os.path.basename(folder.rstrip("/"))
+    what = "masked diffusion language model" if kind == "diffusion" else "language model"
+    return (f"---\nlicense: mit\nlanguage: en\nlibrary_name: pytorch\ntags:\n  - {TAG}\n  - from-scratch\n---\n\n"
+            f"# {title}\n\nA small {what} trained from scratch in [tinystories-ARM-model]({GITHUB}).\n\n"
+            f"```bash\ngit clone {GITHUB} && cd tinystories-ARM-model\npython3 -m infra.model_store pull {repo}\n```\n")
+
+
+def push(kind, folder, repo, card=None, with_state=False, api=None, say=print, private=False):
+    """Upload a folder to its own repository: the files, manifest.json, and a model card (README.md)."""
     if kind not in KINDS:
         raise SystemExit(f"kind must be one of {', '.join(KINDS)}")
-
-
-def push(kind, folder, name=None, with_state=False, api=None, say=print, private=False):
-    """Upload a folder (plus its manifest) to <repo>/<kind>/<name>/."""
-    _check(kind)
     from huggingface_hub import HfApi
     api = api or HfApi()
     folder = os.path.abspath(folder)
-    name = name or os.path.basename(folder.rstrip("/"))
-    repo = repo_id(api, kind)
-    man = make_manifest(folder, kind, name, with_state)
+    repo = full_repo(repo, api)
+    man = make_manifest(folder, kind, with_state)
     if not man["files"]:
         raise SystemExit(f"nothing to push in {folder}")
-    with open(os.path.join(folder, MANIFEST), "w") as f:
-        json.dump(man, f, indent=1)
     api.create_repo(repo, repo_type="model", private=private, exist_ok=True)
-    say(f"Pushing {len(man['files'])} files ({man['total_bytes'] / 1e6:,.0f} MB) to {repo}/{kind}/{name} …")
-    api.upload_folder(repo_id=repo, folder_path=folder, path_in_repo=f"{kind}/{name}",
-                      allow_patterns=list(man["files"]) + [MANIFEST],
-                      commit_message=f"{kind}/{name}: {len(man['files'])} files, {man['total_bytes'] / 1e6:,.0f} MB")
-    say("Done.")
+    say(f"Pushing {len(man['files'])} files ({man['total_bytes'] / 1e6:,.0f} MB) to {repo} …")
+    with tempfile.TemporaryDirectory() as extra:      # manifest and card go up without touching the run folder
+        with open(os.path.join(extra, MANIFEST), "w") as f:
+            json.dump(man, f, indent=1)
+        text = open(card).read() if card else default_card(folder, kind, repo)
+        if TAG not in text:
+            say(f"note: the card has no '{TAG}' tag, so `list` won't show this repository")
+        with open(os.path.join(extra, CARD), "w") as f:
+            f.write(text)
+        api.upload_folder(repo_id=repo, folder_path=folder, allow_patterns=list(man["files"]),
+                          commit_message=f"{man['local_name']}: {len(man['files'])} files, {man['total_bytes'] / 1e6:,.0f} MB")
+        api.upload_folder(repo_id=repo, folder_path=extra, commit_message="manifest and model card")
+    say(f"Done: https://huggingface.co/{repo}")
     return man
 
 
-def pull(kind, name, dest=None, force=False, api=None, say=print):
-    """Download <repo>/<kind>/<name>/ to its local place, check every file, and move it into place."""
-    _check(kind)
+def pull(repo, dest=None, force=False, api=None, say=print):
+    """Download a repository to its local place (from its manifest), check every file, and move it into place."""
     from huggingface_hub import HfApi, snapshot_download
     api = api or HfApi()
-    repo = repo_id(api, kind)
-    dest = dest or os.path.join(KINDS[kind], name)
-    cache = snapshot_download(repo, repo_type="model", allow_patterns=[f"{kind}/{name}/*"])
-    src = os.path.join(cache, kind, name)
+    repo = full_repo(repo, api)
+    src = snapshot_download(repo, repo_type="model")
     if not os.path.exists(os.path.join(src, MANIFEST)):
-        raise SystemExit(f"{repo} has no {kind}/{name} (see `python3 -m infra.model_store list`)")
+        raise SystemExit(f"{repo} has no {MANIFEST}: it wasn't pushed with this tool")
     man = json.load(open(os.path.join(src, MANIFEST)))
     bad = verify(src, man)
     if bad:
         raise SystemExit("download doesn't match its manifest: " + "; ".join(bad))
+    dest = dest or os.path.join(KINDS[man["kind"]], man["local_name"])
     if os.path.exists(dest) and not force:
-        if os.path.exists(os.path.join(dest, MANIFEST)) and not verify(dest, man):
+        if not verify(dest, man):
             say(f"{dest} is already up to date.")
             return dest
         if os.listdir(dest):
@@ -148,50 +159,39 @@ def pull(kind, name, dest=None, force=False, api=None, say=print):
     return dest
 
 
-def list_remote(api=None):
-    """{kind: [names]} across the repositories (one that doesn't exist yet just has nothing)."""
+def list_remote(api=None, author=None):
+    """Repository ids tagged tinystories-arm (yours, or author's)."""
     from huggingface_hub import HfApi
     api = api or HfApi()
-    out = {}
-    for repo in dict.fromkeys(repo_id(api, k) for k in KINDS):
-        try:
-            paths = api.list_repo_files(repo, repo_type="model")
-        except Exception as e:
-            if "404" in str(e) or "not found" in str(e).lower():
-                continue
-            raise
-        for path in paths:
-            parts = path.split("/")
-            if len(parts) >= 3 and parts[-1] == MANIFEST and parts[0] in KINDS and repo_id(api, parts[0]) == repo:
-                out.setdefault(parts[0], []).append("/".join(parts[1:-1]))
-    return out
+    author = author or api.whoami()["name"]
+    return sorted(m.id for m in api.list_models(author=author, filter=TAG))
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Move models through a Hugging Face Hub repository.")
+    ap = argparse.ArgumentParser(description="Move models through Hugging Face Hub, one repository per model.")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("push", help="upload a folder")
+    p = sub.add_parser("push", help="upload a folder to its own repository")
     p.add_argument("kind", choices=list(KINDS))
     p.add_argument("folder")
-    p.add_argument("--name", default=None, help="name in the repository (default: the folder's name)")
+    p.add_argument("repo", help="repository name (under your account) or user/name")
+    p.add_argument("--card", default=None, help="model card (Markdown) to use as README.md")
     p.add_argument("--with-state", action="store_true", help="also send state.pt and snapshots/")
     p.add_argument("--private", action="store_true", help="create the repository private (if it doesn't exist yet)")
     q = sub.add_parser("pull", help="download into models/, diffusion_models/runs/ or outputs/")
-    q.add_argument("kind", choices=list(KINDS))
-    q.add_argument("name")
+    q.add_argument("repo")
     q.add_argument("--dest", default=None)
     q.add_argument("--force", action="store_true")
-    sub.add_parser("list", help="what the repository holds")
+    li = sub.add_parser("list", help="your repositories tagged tinystories-arm")
+    li.add_argument("--author", default=None)
     v = sub.add_parser("verify", help="check a local folder against its manifest.json")
     v.add_argument("folder")
     a = ap.parse_args(argv)
     if a.cmd == "push":
-        push(a.kind, a.folder, a.name, a.with_state, private=a.private)
+        push(a.kind, a.folder, a.repo, a.card, a.with_state, private=a.private)
     elif a.cmd == "pull":
-        pull(a.kind, a.name, a.dest, a.force)
+        pull(a.repo, a.dest, a.force)
     elif a.cmd == "list":
-        for kind, names in sorted(list_remote().items()):
-            print(f"{kind}: " + ", ".join(sorted(names)))
+        print("\n".join(list_remote(author=a.author)))
     elif a.cmd == "verify":
         bad = verify(a.folder)
         print("\n".join(bad) if bad else "all files match manifest.json")
