@@ -1,6 +1,6 @@
 # Save side-by-side runs for the website (G2). The website can't run models, so it replays runs recorded here:
 # the app must be running (python3 app/server.py); each prompt goes through POST /api/sidebyside as on the
-# Side by side page, with the page's defaults, and the results land in pages/data/sidebyside.json.
+# Side by side page, with the page's defaults, and the results land in pages/recorded/sidebyside.json.
 #
 #   python3 pages/record.py [--server http://localhost:8000] [--per-source 2]
 import argparse
@@ -10,7 +10,7 @@ import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "data", "sidebyside.json")
+OUT = os.path.join(HERE, "recorded", "sidebyside.json")
 
 
 def call(server, path, body=None):

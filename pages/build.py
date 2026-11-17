@@ -5,7 +5,7 @@
 #
 # Inputs: the Markdown docs (README, docs/, diffusion_models/README.md, the model cards), the results store
 # (results/results.jsonl) for the headline numbers, app/static (styles, journey.js, sidebyside.js) and
-# pages/data/sidebyside.json (recorded by pages/record.py). Links between docs become links between pages; links
+# pages/recorded/sidebyside.json (recorded by pages/record.py). Links between docs become links between pages; links
 # to code go to GitHub. .github/workflows/pages.yml builds and deploys it on every push to main.
 import argparse
 import html
@@ -296,7 +296,7 @@ def build(out):
         f.write(page("TinyStories ARM: a GPT and a diffusion model from scratch", "index.html", landing(headline_numbers())))
     with open(os.path.join(out, "journey.html"), "w", encoding="utf-8") as f:
         f.write(journey_page())
-    data_path = os.path.join(HERE, "data", "sidebyside.json")
+    data_path = os.path.join(HERE, "recorded", "sidebyside.json")
     if os.path.exists(data_path):
         shutil.copy(data_path, os.path.join(out, "assets", "sidebyside.json"))
         with open(os.path.join(out, "sidebyside.html"), "w", encoding="utf-8") as f:
