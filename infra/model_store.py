@@ -17,8 +17,9 @@
 #
 # Authentication is Hugging Face's own: an access token with write permission, as the HF_TOKEN environment variable
 # or from `hf auth login` (on Colab: a notebook secret named HF_TOKEN). A new repository is created public
-# (--private for a private one; an existing repository keeps its visibility); HF_MODEL_REPO overrides its name
-# (default: <your username>/tinystories-arm-models).
+# (--private for a private one; an existing repository keeps its visibility). Diffusion models have their own
+# repository, <your username>/tinystories-arm-diffusion; everything else goes to <your username>/tinystories-arm-models.
+# HF_DIFFUSION_REPO and HF_MODEL_REPO override the two names.
 import argparse
 import hashlib
 import json
@@ -33,7 +34,8 @@ KINDS = {"library": os.path.join(ROOT, "models"), "diffusion": os.path.join(ROOT
 MANIFEST = "manifest.json"
 STATE_FILES = ("state.pt", "state.pt.tmp")
 SKIP_DIRS = ("snapshots", "__pycache__", ".ipynb_checkpoints")
-REPO_NAME = "tinystories-arm-models"
+REPO_NAME = "tinystories-arm-models"          # autoregressive models (library) and other runs
+DIFFUSION_REPO_NAME = "tinystories-arm-diffusion"   # the masked diffusion models
 
 
 def sha256(path, chunk=1 << 22):
@@ -78,12 +80,14 @@ def verify(folder, manifest=None):
     return problems
 
 
-def repo_id(api=None):
-    if os.environ.get("HF_MODEL_REPO"):
-        return os.environ["HF_MODEL_REPO"]
+def repo_id(api=None, kind="library"):
+    """The repository a kind of model lives in: diffusion models in their own, the rest together."""
+    env, name = ("HF_DIFFUSION_REPO", DIFFUSION_REPO_NAME) if kind == "diffusion" else ("HF_MODEL_REPO", REPO_NAME)
+    if os.environ.get(env):
+        return os.environ[env]
     from huggingface_hub import HfApi
     api = api or HfApi()
-    return f"{api.whoami()['name']}/{REPO_NAME}"
+    return f"{api.whoami()['name']}/{name}"
 
 
 def _check(kind):
@@ -98,7 +102,7 @@ def push(kind, folder, name=None, with_state=False, api=None, say=print, private
     api = api or HfApi()
     folder = os.path.abspath(folder)
     name = name or os.path.basename(folder.rstrip("/"))
-    repo = repo_id(api)
+    repo = repo_id(api, kind)
     man = make_manifest(folder, kind, name, with_state)
     if not man["files"]:
         raise SystemExit(f"nothing to push in {folder}")
@@ -118,7 +122,7 @@ def pull(kind, name, dest=None, force=False, api=None, say=print):
     _check(kind)
     from huggingface_hub import HfApi, snapshot_download
     api = api or HfApi()
-    repo = repo_id(api)
+    repo = repo_id(api, kind)
     dest = dest or os.path.join(KINDS[kind], name)
     cache = snapshot_download(repo, repo_type="model", allow_patterns=[f"{kind}/{name}/*"])
     src = os.path.join(cache, kind, name)
@@ -145,14 +149,21 @@ def pull(kind, name, dest=None, force=False, api=None, say=print):
 
 
 def list_remote(api=None):
-    """{kind: [names]} in the repository."""
+    """{kind: [names]} across the repositories (one that doesn't exist yet just has nothing)."""
     from huggingface_hub import HfApi
     api = api or HfApi()
     out = {}
-    for path in api.list_repo_files(repo_id(api), repo_type="model"):
-        parts = path.split("/")
-        if len(parts) >= 3 and parts[-1] == MANIFEST and parts[0] in KINDS:
-            out.setdefault(parts[0], []).append("/".join(parts[1:-1]))
+    for repo in dict.fromkeys(repo_id(api, k) for k in KINDS):
+        try:
+            paths = api.list_repo_files(repo, repo_type="model")
+        except Exception as e:
+            if "404" in str(e) or "not found" in str(e).lower():
+                continue
+            raise
+        for path in paths:
+            parts = path.split("/")
+            if len(parts) >= 3 and parts[-1] == MANIFEST and parts[0] in KINDS and repo_id(api, parts[0]) == repo:
+                out.setdefault(parts[0], []).append("/".join(parts[1:-1]))
     return out
 
 
