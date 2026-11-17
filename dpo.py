@@ -272,6 +272,8 @@ def held_out_eval(models, path=PAIRS, held_out=100, out_path=None, say=print):
     if out_path:
         json.dump({"measured_at": time.strftime("%Y-%m-%d %H:%M"), "n": len(test), "results": results},
                   open(out_path, "w"), indent=1)
+        from infra.results import record_file     # J5: the results store
+        record_file(out_path, say=say)
     return results
 
 

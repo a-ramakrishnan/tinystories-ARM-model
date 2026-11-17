@@ -1215,6 +1215,18 @@ def bench_run(req: BenchReq):
     return start_job("benchmarks", job)
 
 
+# ---------- J5: the results store (infra/results.py) ----------
+
+@app.get("/api/results")
+def results_list(model: Optional[str] = None, kind: Optional[str] = None, all: bool = False):
+    """Records from results/results.jsonl: the latest of each measurement, or every one with all=true."""
+    from infra import results
+    recs = results.load()
+    if not all:
+        recs = list(results.latest(recs, kind, model).values())
+    return {"records": [r for r in recs if (not model or r["model"] == model) and (not kind or r["kind"] == kind)]}
+
+
 # ---------- writing text, step by step (textgen.py) ----------
 
 class TextgenTraceReq(BaseModel):

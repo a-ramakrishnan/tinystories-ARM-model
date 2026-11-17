@@ -207,8 +207,12 @@ def delete_model(model_id, root=LIB_ROOT):
 
 
 def save_eval(model_id, results, root=LIB_ROOT):
-    with open(os.path.join(model_dir(model_id, root), EVAL), "w") as f:
+    path = os.path.join(model_dir(model_id, root), EVAL)
+    with open(path, "w") as f:
         json.dump(results, f, indent=2)
+    if root == LIB_ROOT:
+        from infra.results import record_file     # J5: the results store
+        record_file(path, model_id)
 
 
 def training_record(r, title=None, batch=32, block=256, seed=42):

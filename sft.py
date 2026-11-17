@@ -325,6 +325,8 @@ def compare(models, out_path=None, data_dir=DATA_DIR, say=print):
     if out_path:
         json.dump({"measured_at": time.strftime("%Y-%m-%d %H:%M"), "format": CHAT_FORMAT, "results": results},
                   open(out_path, "w"), indent=1)
+        from infra.results import record_file     # J5: the results store
+        record_file(out_path, say=say)
     return results
 
 

@@ -363,6 +363,22 @@ A 124M model takes about 10 minutes for all five on an M5 (HellaSwag is most of 
 the tests from Hugging Face. Models trained only on TinyStories score at chance: these tests need general
 knowledge. At GPT-2 size, scores sit close to chance, so compare them with the ± (one standard error) shown.
 
+### The results store
+
+Every evaluation also adds its numbers to one file, [`results/results.jsonl`](../results/results.jsonl) (committed):
+one record per measurement, with the model, the settings, when it was measured and at which commit. The evaluation
+suite, `benchmarks.py`, `sft.py compare`, `dpo.py eval`, and the diffusion model's `benchmarks.py` and `quality.py`
+do this by themselves, and [docs/results.md](results.md), a page of every model's latest numbers, is regenerated
+from it. Results measured on Colab arrive with the model: `python3 -m infra.model_store pull <repo>` adds them.
+
+```bash
+python3 -m infra.results scan              # add the result files already in models/, diffusion_models/runs/, outputs/
+python3 -m infra.results show <model id>   # the latest numbers of one model
+python3 -m infra.results render            # regenerate docs/results.md (the tests fail if it's out of date)
+```
+
+The app serves the records at `/api/results` (`?model=<id>&kind=benchmark`, or `all=true` for every measurement).
+
 ### Writing text, step by step
 
 The **Writing text** page (under Explore) shows how a model produces a continuation: one token per step, left to

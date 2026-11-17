@@ -156,6 +156,14 @@ def pull(repo, dest=None, force=False, api=None, say=print):
         shutil.copyfile(os.path.join(src, p), tmp)      # the cache holds links; copy real files
         os.replace(tmp, os.path.join(dest, p))
     say(f"Pulled {len(man['files'])} files ({man['total_bytes'] / 1e6:,.0f} MB) into {dest}; checksums match.")
+    try:                                                # J5: its evaluation results go into the results store
+        from infra import results
+        n = results.scan([dest])
+        if n:
+            results.write_doc()
+            say(f"results store: {n} new records")
+    except Exception as e:
+        say(f"results store: not updated ({e})")
     return dest
 
 

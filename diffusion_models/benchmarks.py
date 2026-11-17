@@ -109,6 +109,8 @@ def save_results(run_dir, results, context, samples):
                 "measured_at": time.strftime("%Y-%m-%d %H:%M"), "samples": samples,
                 "harness": "lm-evaluation-harness style, zero-shot; answers scored by the likelihood bound"})
     json.dump(old, open(path, "w"), indent=1)
+    from infra.results import record_file         # J5: the results store
+    record_file(path, "diffusion:" + os.path.basename(os.path.abspath(run_dir)), say=print)
 
 
 def load_results(run_dir):

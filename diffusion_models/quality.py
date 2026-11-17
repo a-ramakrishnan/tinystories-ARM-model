@@ -134,8 +134,12 @@ def main():
     t0 = time.time()
     out = evaluate(a.run_dir, cfgs, a.source, a.tokens, a.steps, reference=not a.no_reference)
     path = a.out or os.path.join(a.run_dir, "quality.json")
+    out["measured_at"] = time.strftime("%Y-%m-%d %H:%M")
     with open(path, "w") as f:
         json.dump(out, f, indent=1)
+    if not a.out:
+        from infra.results import record_file     # J5: the results store
+        record_file(path, "diffusion:" + os.path.basename(os.path.abspath(a.run_dir)), say=print)
     print(table(out))
     print(f"({time.time() - t0:.0f} s; saved {path})")
 

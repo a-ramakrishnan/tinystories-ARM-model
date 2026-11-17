@@ -188,6 +188,8 @@ def run(model_id, tasks=TASKS, limit=None, device=None, save=True, progress=None
         old.update({"results": {**old.get("results", {}), **results}, "context": cfg.block_size,
                     "measured_at": time.strftime("%Y-%m-%d %H:%M"), "harness": "lm-evaluation-harness style, zero-shot"})
         json.dump(old, open(path, "w"), indent=1)
+        from infra.results import record_file     # J5: the results store
+        record_file(path, model_id, say=print)
     return results
 
 

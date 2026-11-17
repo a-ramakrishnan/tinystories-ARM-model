@@ -90,6 +90,7 @@ saved models and every option, see [How to use it](docs/usage.md).
 | [How to use it](docs/usage.md) | The web app, the command line, datasets, the Lab, saved models and evaluation, generating text, resuming runs, configuration, Google Colab and Kaggle |
 | [Understanding the components](docs/components.md) | The pipeline, inside the transformer, parameter counts, training, inference metrics, sampling and the KV cache, project structure |
 | [Analysis](docs/analysis.md) | Measured results: getting better stories, every improvement step with its result, the roadmap, the Colab measurements |
+| [Results](docs/results.md) | Every model's latest numbers (benchmarks, held-out loss, chat, diffusion), generated from the results store |
 | [The journey](docs/journey.md) | The whole story, from the first commit to today, with the lessons learned |
 | [The plan](docs/plan.md) | The roadmap: what's done, what's next, and who does it |
 | [Diffusion models](diffusion_models/README.md) | The masked diffusion language model: its modules, the Colab runs, the sampler and its fixes |
