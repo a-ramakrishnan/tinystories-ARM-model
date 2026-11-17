@@ -12,6 +12,9 @@ next-token probabilities. No cloud, no Nvidia card.
 
 ![Training a language model on an Apple M5 in the TinyStories LM Studio web app](docs/screenshots/train.png)
 
+> **Website:** [a-ramakrishnan.github.io/tinystories-ARM-model](https://a-ramakrishnan.github.io/tinystories-ARM-model/)
+> has the docs, the Journey timeline and a side-by-side replay of the GPT and the diffusion model, in the browser.
+>
 > **New here?** [From a training script to a working language model](docs/journey.md) tells the story of this
 > project: where it started, every change made to the model and the inference, why each one worked, and what
 > it measured. It's the best place to learn from. In the app, the **Journey** page shows the same story as a
