@@ -131,7 +131,7 @@ def score_requests(model, enc, requests, device, batch=16):
     return out
 
 
-def run_task(model, enc, device, name, limit=None, progress=None):
+def run_task(model, enc, device, name, limit=None, progress=None, batch=16):
     items = load_task(name, limit)
     reqs, owner = [], []
     for q, it in enumerate(items):
@@ -140,7 +140,7 @@ def run_task(model, enc, device, name, limit=None, progress=None):
             reqs.append((ctx, ch if name in ("lambada", "winogrande") else " " + ch))
             owner.append((q, c))
     t0 = time.time()
-    res = score_requests(model, enc, reqs, device)
+    res = score_requests(model, enc, reqs, device, batch=batch)
     per = [[None] * len(it["choices"]) for it in items]
     for (q, c), r in zip(owner, res):
         per[q][c] = r
@@ -165,7 +165,7 @@ def run_task(model, enc, device, name, limit=None, progress=None):
     return out
 
 
-def run(model_id, tasks=TASKS, limit=None, device=None, save=True, progress=None):
+def run(model_id, tasks=TASKS, limit=None, device=None, save=True, progress=None, batch=16):
     import tiktoken
     from inference import load_model, load_model_config
     from train_config import setup_device
@@ -180,7 +180,7 @@ def run(model_id, tasks=TASKS, limit=None, device=None, save=True, progress=None
         print(f"{model_id}: {t} …", flush=True)
         if progress:
             progress(t, k, len(tasks))
-        results[t] = run_task(model, enc, device, t, limit)
+        results[t] = run_task(model, enc, device, t, limit, batch=batch)
         print(f"  {json.dumps({k: round(v, 4) if isinstance(v, float) else v for k, v in results[t].items()})}", flush=True)
     if save and not limit:
         path = os.path.join(registry.LIB_ROOT, model_id, "benchmarks.json")

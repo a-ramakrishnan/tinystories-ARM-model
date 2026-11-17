@@ -392,6 +392,23 @@ A 124M model takes about 10 minutes for all five on an M5 (HellaSwag is most of 
 the tests from Hugging Face. Models trained only on TinyStories score at chance: these tests need general
 knowledge. At GPT-2 size, scores sit close to chance, so compare them with the ± (one standard error) shown.
 
+### Everything at once: the evaluation queue
+
+One command evaluates a model end to end. It can be stopped at any point; running it again continues with the
+next task (`infra/eval_queue.py`):
+
+```bash
+python3 -m infra.eval_queue f6-124m-stage2-2p5b          # a diffusion run: bound, quality, the five benchmarks
+python3 -m infra.eval_queue <model id>                   # an autoregressive model: the suite, the five benchmarks
+python3 -m infra.eval_queue <target> --quick             # 20 questions per benchmark, nothing saved: a check
+python3 -m infra.eval_queue <target> --plan              # what's done and what's left
+python3 -m infra.eval_queue <target> --only bench:hellaswag --redo
+```
+
+Each task's state (done, failed, minutes, batch size) is kept in `eval_queue.json` in the model's folder. The scoring
+batch size is chosen from the free GPU memory and halved if a task still runs out of memory. On macOS the queue
+keeps the Mac awake with `caffeinate`. A 124M diffusion model takes about 3 hours, two of them on HellaSwag.
+
 ### The results store
 
 Every evaluation also adds its numbers to one file, [`results/results.jsonl`](../results/results.jsonl) (committed):

@@ -120,6 +120,18 @@ def table(out):
     return "\n".join(lines)
 
 
+def save(run_dir, out, path=None):
+    """Write the result (default <run_dir>/quality.json, which also goes to the results store); returns the path."""
+    out["measured_at"] = time.strftime("%Y-%m-%d %H:%M")
+    target = path or os.path.join(run_dir, "quality.json")
+    with open(target, "w") as f:
+        json.dump(out, f, indent=1)
+    if not path:
+        from infra.results import record_file     # J5: the results store
+        record_file(target, "diffusion:" + os.path.basename(os.path.abspath(run_dir)), say=print)
+    return target
+
+
 def main():
     ap = argparse.ArgumentParser(description="Score a diffusion model's generated text.")
     ap.add_argument("run_dir")
@@ -133,13 +145,7 @@ def main():
     cfgs = CONFIGS if not a.only else {k: v for k, v in CONFIGS.items() if any(s in k for s in a.only.split(","))}
     t0 = time.time()
     out = evaluate(a.run_dir, cfgs, a.source, a.tokens, a.steps, reference=not a.no_reference)
-    path = a.out or os.path.join(a.run_dir, "quality.json")
-    out["measured_at"] = time.strftime("%Y-%m-%d %H:%M")
-    with open(path, "w") as f:
-        json.dump(out, f, indent=1)
-    if not a.out:
-        from infra.results import record_file     # J5: the results store
-        record_file(path, "diffusion:" + os.path.basename(os.path.abspath(a.run_dir)), say=print)
+    path = save(a.run_dir, out, a.out)
     print(table(out))
     print(f"({time.time() - t0:.0f} s; saved {path})")
 
