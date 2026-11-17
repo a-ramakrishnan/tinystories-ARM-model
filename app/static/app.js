@@ -24,6 +24,7 @@ const STEPS = [
   { id: "models", title: "Models", sub: "Save, switch, compare" },
   { id: "lab", title: "Lab", sub: "Design, train, compare", explore: true, icon: "⚗" },
   { id: "benchmarks", title: "Benchmarks", sub: "Standard tests", explore: true, icon: "◎" },
+  { id: "quantize", title: "Quantize", sub: "Smaller weights", explore: true, icon: "◇" },
   { id: "textgen", title: "Writing text", sub: "Step by step", explore: true, icon: "→" },
   { id: "diffusion", title: "Diffusion", sub: "Writing by denoising", explore: true, icon: "◫" },
   { id: "journey", title: "Journey", sub: "How we got here", explore: true, icon: "⏱" },
@@ -98,7 +99,7 @@ function stepDone(id) {
 
 function stepBlocker(id) {
   const s = ui.status, sel = s?.selection;
-  if (["dataset", "models", "lab", "journey", "benchmarks", "textgen", "diffusion"].includes(id)) return null;  // these use saved models only
+  if (["dataset", "models", "lab", "journey", "benchmarks", "quantize", "textgen", "diffusion"].includes(id)) return null;  // these use saved models only
   if (id === "generate" && s.active) return null;
   if (!sel) return ["Add a dataset first, or pick a saved model in the Models step.", "dataset"];
   if (id === "tokenize") return null;
@@ -120,6 +121,7 @@ function go(id) {
   if (id === "generate") loadGenPicker().catch((e) => toast(e.message, true));
   if (id === "lab" && typeof labOpen === "function") labOpen();
   if (id === "journey" && typeof journeyOpen === "function") journeyOpen();
+  if (id === "quantize" && typeof quantOpen === "function") quantOpen().catch((e) => toast(e.message, true));
   if (id === "benchmarks" && typeof benchOpen === "function") benchOpen().catch((e) => toast(e.message, true));
   if (id === "textgen" && typeof textgenOpen === "function") textgenOpen().catch((e) => toast(e.message, true));
   if (id === "diffusion" && typeof diffusionOpen === "function") diffusionOpen().catch((e) => toast(e.message, true));
@@ -1518,9 +1520,9 @@ function renderLibrary() {
     <thead><tr><th><input type="checkbox" id="lib-all" title="Select all"></th><th>Model</th><th>Trained on</th><th class="num">Best val loss</th><th class="num">Evaluated</th><th class="num" title="HellaSwag length-normalized accuracy (chance 25%); see the Benchmarks page">Benchmarks</th></tr></thead>
     <tbody>${models.map((m) => `<tr class="${m.active ? "in-use" : ""}">
       <td><input type="checkbox" data-pick="${esc(m.id)}" ${lib.picked.has(m.id) ? "checked" : ""}></td>
-      <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}</div>
+      <td><div class="lib-name" title="${esc(m.id)}">${esc(m.name)} ${m.active ? '<span class="tag good">in use</span>' : ""}${m.quantized ? ` <span class="tag" title="weights stored as ${m.quantized.bits}-bit integers (embedding ${m.quantized.embed_bits}-bit), turned back into floats when a layer runs">${m.quantized.bits}-bit</span>` : ""}</div>
         <div class="muted small">${short(m.params || 0)} parameters${m.model ? ` · ${m.model.n_layer} layers · ${m.model.n_embd}-dim · context ${m.model.block_size} · ${m.model.pos_encoding === "rope" ? "RoPE" : "learned positions"}${m.model.norm === "rmsnorm" ? " · RMSNorm" : ""}${m.model.mlp === "swiglu" ? " · SwiGLU" : ""}${m.model.bias === false ? " · no biases" : ""}${m.model.qk_norm ? " · QK-norm" : ""}${m.model.n_kv_head && m.model.n_kv_head !== m.model.n_head ? ` · ${m.model.n_kv_head} KV heads` : ""}${(m.model.block_repeat || 1) > 1 ? ` · blocks shared ×${m.model.block_repeat}` : ""}${(m.model.mtp_heads || 1) > 1 ? ` · trained to predict ${m.model.mtp_heads} tokens` : ""}${(m.model.n_experts || 1) > 1 ? ` · ${m.model.n_experts} experts, ${m.model.moe_top_k || 1} per token` : ""}` : ""} · ${bytes(m.bytes || 0)} · ${esc(m.model_type || "autoregressive")} · ${esc(m.source)}</div>
-        <div class="lib-actions">${m.active ? "" : `<button class="btn small" data-use="${esc(m.id)}">Use for generation</button>`}<button class="btn small ghost" data-rename="${esc(m.id)}">Rename</button><button class="btn small ghost danger" data-delete="${esc(m.id)}">Delete</button></div></td>
+        <div class="lib-actions">${m.active ? "" : `<button class="btn small" data-use="${esc(m.id)}">Use for generation</button>`}${m.quantized || (m.model_type && m.model_type !== "autoregressive") ? "" : `<button class="btn small ghost" data-quantize="${esc(m.id)}" title="Store its weights as 8-bit or 4-bit integers (round to nearest or GPTQ) and compare with the original">Quantize…</button>`}<button class="btn small ghost" data-rename="${esc(m.id)}">Rename</button><button class="btn small ghost danger" data-delete="${esc(m.id)}">Delete</button></div></td>
       <td>${esc(shortData(m.datasets))}<div class="muted small">${m.steps ? `${fmt(m.steps)} steps` : ""}${m.chip ? ` · ${esc(m.chip)}` : ""}${m.platform ? ` (${esc(m.platform)})` : ""}</div><div class="muted small">${when(m.trained_at)}</div></td>
       <td class="num">${fmtLoss(m.best_val)}<div class="muted small">on its own data</div></td>
       <td class="num">${m.eval ? `<span class="tag">${when(m.eval.evaluated_at)}</span>` : '<span class="muted small">not yet</span>'}</td>
@@ -1703,6 +1705,8 @@ document.addEventListener("click", (e) => {
     const name = prompt("New name for this model:", m?.name || "");
     if (name && name.trim()) action(rn, () => libAction(() => api("/api/models/rename", { id: rn.dataset.rename, name })));
   }
+  const qz = e.target.closest("[data-quantize]");
+  if (qz) { quant.model = qz.dataset.quantize; go("quantize"); }
   const del = e.target.closest("[data-delete]");
   if (del) {
     const m = lib.data.models.find((x) => x.id === del.dataset.delete);
@@ -1732,6 +1736,7 @@ async function poll() {
     else if (j.kind === "dataset") toast(j.message || "Dataset added.");
     else if (j.kind === "tokenize") toast("Training data tokenized.");
     else if (j.kind === "train") toast(j.message);
+    else if (j.kind === "quantize") { toast(j.message); if (typeof quantJobDone === "function") quantJobDone(j); }
     loadCatalog();  // refresh Downloaded / Tokenized / Trained badges
   }
   ui.prevJob = j;

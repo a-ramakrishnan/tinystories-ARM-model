@@ -1,4 +1,4 @@
-"""Weight quantization for inference (roadmap I3): store the model's matrices in 8 or 4 bits instead of 32.
+"""Round-to-nearest weight quantization (roadmap I3): store the model's matrices in 8 or 4 bits instead of 32.
 
 Each weight matrix is replaced by small integers and a few scales, symmetric around zero:
 - 8 bits: one scale per output row, w ≈ q × scale with q in −127…127;
@@ -45,6 +45,17 @@ class QuantLinear(nn.Module):
         self.register_buffer("scale", scale)
         self.shape, self.bits, self.group = shape, bits, group
         self.bias = linear.bias
+
+    @classmethod
+    def from_ints(cls, q, scale, bias, bits, group):
+        """A layer from integers and scales made elsewhere (GPTQ): q (rows, groups, g) int8, scale (rows, groups, 1)."""
+        self = cls.__new__(cls)
+        nn.Module.__init__(self)
+        self.register_buffer("q", q.to(torch.int8))
+        self.register_buffer("scale", scale.float())
+        self.shape, self.bits, self.group = (q.shape[0], q.shape[1] * q.shape[2]), bits, group
+        self.bias = bias
+        return self
 
     @property
     def weight(self):
@@ -104,3 +115,4 @@ def weight_bytes(model):
             seen.add(id(p))
             total += p.numel() * p.element_size()
     return total
+

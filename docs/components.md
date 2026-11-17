@@ -317,7 +317,9 @@ pretrain.py                Training loop: AdamW, warmup + cosine LR schedule, gr
 plots.py                   Loss curves
 inference.py               Checkpoints, streamed generation, speculative decoding, contrastive and beam search,
                            KV cache benchmark, GPU memory, attention maps
-quantize.py                8-bit and 4-bit weights for inference
+quantization/                weight quantization (rtn: round to nearest 8/4-bit; gptq: GPTQ on our model via
+                           llm-compressor; checkpoint: quantized copies; compare: the Quantize page; llm_compressor:
+                           GPTQ on a stock Hugging Face model)
 train_step_by_step.ipynb   Notebook for training on Google Colab or Kaggle
 import_run.py              Brings a model trained on Colab or Kaggle into data/ (from the notebook's results zip)
 registry.py                Model library: every trained or imported model saved under models/<id>/

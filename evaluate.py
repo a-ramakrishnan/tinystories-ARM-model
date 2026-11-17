@@ -152,7 +152,12 @@ def evaluate_model(model_id, device, datasets=None, progress=None, root=registry
         balanced.append(b)
         samples.append({"prompt": prompt, "greedy": g["text"], "balanced": b["text"]})
 
+    from quantization.checkpoint import quant_info
+    from quantization.rtn import weight_bytes
+    quant = quant_info(model)
     n_params = sum(p.numel() for p in model.parameters())
+    if quant:                                # the integers are buffers, not parameters
+        n_params = registry.get_model(model_id, root).get("params") or n_params
     results = {
         "suite_version": SUITE_VERSION, "evaluated_at": time.strftime("%Y-%m-%d %H:%M"), "device": device,
         "seconds": round(time.time() - t0, 1),
@@ -166,10 +171,12 @@ def evaluate_model(model_id, device, datasets=None, progress=None, root=registry
             "ttft_ms": _mean([b["ttft_ms"] for b in balanced]),
             "settings": {"tokens": GEN_TOKENS, "seed": GEN_SEED, "balanced": BALANCED},
         },
-        "size": {"params": n_params, "weights_bytes": n_params * 4, "kv_bytes_per_token": kv_bytes_per_token(config),
+        "size": {"params": n_params, "weights_bytes": weight_bytes(model) if quant else n_params * 4, "kv_bytes_per_token": kv_bytes_per_token(config),
                  "context_window": config.block_size},
         "samples": samples,
     }
+    if quant:
+        results["size"]["quantized"] = quant
     registry.save_eval(model_id, results, root)
     del model
     if device == "mps":

@@ -1,0 +1,7 @@
+# GPTQ (quantization/gptq.py, quantization/llm_compressor.py) only: llm-compressor pins its own torch and transformers, so it gets its own
+# environment instead of requirements.txt (which Colab and CI install):
+#   uv venv .venv-quant --python 3.11 && VIRTUAL_ENV=.venv-quant uv pip install -r quantization/requirements.txt
+llmcompressor==0.15.0
+compressed-tensors==0.20.1
+datasets
+tiktoken

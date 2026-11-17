@@ -26,8 +26,12 @@ def load_model_config(path):
 
 def load_model(config, weights_path, device):
     """Rebuild the GPT from `config`, load saved weights, and put it in eval mode on `device`."""
+    sd = torch.load(weights_path, map_location="cpu")
+    from quantization.checkpoint import is_quantized_checkpoint, load_quantized
+    if is_quantized_checkpoint(sd):          # a quantized copy saved from the Models step (quantization/checkpoint.py)
+        return load_quantized(config, sd, device)
     model = GPT(config)
-    model.load_state_dict(torch.load(weights_path, map_location=torch.device(device)))
+    model.load_state_dict(sd)
     return model.to(device).eval()
 
 

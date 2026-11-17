@@ -199,3 +199,4 @@ Best likelihood bound on held-out text during training (nats per token, an upper
 | | | | left to right, rep 1.2 | 4.354 | 0.4 | 97.2 |
 | | | | random order, temp 0.8 | 3.418 | 3.7 | 83.9 |
 | | | | random order, temp 1.0 | 3.83 | 0.6 | 91.4 |
+| Diffusion 124M · FineWeb-Edu full + Cosmopedia · 2,500M tokens | 3.830 | 2.5B |  |  |  |  |

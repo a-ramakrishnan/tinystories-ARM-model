@@ -45,8 +45,9 @@ that are easy to get wrong and rarely explained.
 34. [Teaching it to answer: instruction tuning](#34-teaching-it-to-answer-instruction-tuning)
 35. [Teaching it to stop: preference tuning (DPO)](#35-teaching-it-to-stop-preference-tuning-dpo)
 36. [Five times the data: stage 2](#36-five-times-the-data-stage-2)
-37. [Lessons](#37-lessons)
-38. [What's next](#38-whats-next)
+37. [GPTQ, first on a standard model, then on ours; the Quantize page](#37-gptq-first-on-a-standard-model-then-on-ours-the-quantize-page)
+38. [Lessons](#38-lessons)
+39. [What's next](#39-whats-next)
 
 ---
 
@@ -964,7 +965,7 @@ repeated *sequences*. DRY targets exactly that and costs greedy decoding nothing
 
 ## 27. 8-bit and 4-bit weights
 
-A 124M model in 32-bit floats takes 495 MB. `quantize.py` stores each weight matrix as small integers and a few
+A 124M model in 32-bit floats takes 495 MB. `quantize.py` (now `quantization/rtn.py`) stores each weight matrix as small integers and a few
 scales, symmetric around zero: at 8 bits one scale per row (w ≈ q × scale, q in −127…127), at 4 bits one per group
 of 64 weights (q in −7…7). A layer turns its integers back into floats when it runs, so the maths is unchanged and
 only the storage shrinks.
@@ -1354,7 +1355,64 @@ repetition on the held-out questions 12.4% → **6.5%** and answers that end 70%
 (the old DPO model: 11.2%, 84%), for a small rise in the loss on the reference answers (1.156 → 1.196) and no change
 in the benchmarks (38.4).
 
-## 37. Lessons
+## 37. GPTQ, first on a standard model, then on ours; the Quantize page
+
+Section 27 rounded every weight to the nearest level. **GPTQ** (Frantar et al., 2022) quantizes a matrix one input
+column at a time and, after each column, nudges the columns not yet quantized to cancel the error it just made, using
+how the layer's inputs vary on some calibration text. Blocks are done in order, each calibrated on the outputs of the
+blocks already quantized. Everything lives in `quantization/` now, and llm-compressor (which pins its own torch and
+transformers) in its own environment (`quantization/requirements.txt`, `.venv-quant`).
+
+**First, a standard model.** `quantization/llm_compressor.py` (written by the author, then made consistent: one model
+id for quantizing, the tokenizer and the comparison; calibration on 256 packed 512-token windows of WikiText-2 *train*,
+since a third of WikiText's rows are empty; sliding-window perplexity on the *test* split) runs llm-compressor's
+`oneshot` with GPTQ W4A16 (4-bit weights in groups of 128, 16-bit activations) on Qwen3-0.6B:
+
+| Qwen3-0.6B | Original (bf16) | GPTQ W4A16 |
+|---|---|---|
+| Weight files | 1.11 GB | **514 MB** (−55%) |
+| WikiText-2 test perplexity (40K tokens, window 512, stride 256) | 22.48 | 24.51 (+9.0%) |
+| Time to quantize, Mac CPU | | 147 s |
+
+Only 55% smaller, not 75%: Qwen's 152K-token embedding table is 311 MB of the 514 MB and stays in bf16.
+
+**Then our own model in oneshot.** `oneshot` wants a Hugging Face model, so `quantization/hf_wrapper.py` wraps our GPT
+as one (`TinyGPTForCausalLM`: a config holding our `GPTConfig`, forward calling our forward, the shared embedding as
+input and output layer; nothing downloaded or uploaded). Three things had to be right: oneshot reads the config back
+from disk, so the wrapper saves a `config.json` and registers its type; the output layer is `gpt.lm_head`, so
+`ignore=["lm_head"]` missed it and needed `re:.*lm_head`; and GPTQ's groups of 128 need every matrix's input width to
+be a multiple of 128 (true at 768 wide; smaller models round the few that aren't to nearest). After GPTQ every weight
+is exactly an integer from −8 to 7 times its group's scale, so `quantization/gptq.py` reads those integers into our
+own quantized layer and saves an ordinary library model that loads without llm-compressor. The shared embedding is
+rounded to 8 bits, as in the round-to-nearest copies, so the two methods differ only in the 48 block matrices.
+
+| Stage 2 base, 124M | Original | Round to nearest, 4-bit | **GPTQ W4A16** |
+|---|---|---|---|
+| Weight file | 494 MB | 87 MB | **84 MB** |
+| Held-out loss, mean change over 10 sets | | +0.034 | **+0.030** |
+| Mini FineWeb-Edu loss (perplexity) | 3.296 (27.0) | 3.326 (27.8) | **3.319 (27.6)** |
+| TinyStories | 2.751 | 2.793 | **2.774** |
+| Cosmopedia (5 sets) | | +0.035 to +0.041 | **+0.030 to +0.037** |
+| WikiText-2 · Tiny Shakespeare | 5.047 · 5.446 | **5.069** · **5.472** | 5.072 · 5.481 |
+| Time to quantize, Mac CPU | | 1 s | 44 s (256 windows × 512 tokens) |
+
+GPTQ wins on 8 of the 10 held-out sets, and is the smaller file (one scale per 128 weights instead of 64). The margin
+is small: round to nearest was already cheap on this model (section 27), so there was little error left to recover.
+It loses on WikiText and Shakespeare, the two kinds of text furthest from its calibration data (FineWeb-Edu): GPTQ fits
+the layers to the inputs it saw. Both copies generate at about 30 tokens/s against 80–100 for the float model, as
+before: the integers are turned back into floats on every token.
+
+**The Quantize page.** A new page under Explore: pick a saved model (its matrices are listed with their shapes and
+share of the weights), pick a recipe (round to nearest 8- or 4-bit, or GPTQ W4A16, shown as the exact `oneshot`
+call), and **Quantize and compare** saves the copy in the library and measures both: file and memory size, perplexity
+on every held-out set, and the same prompt continued by each. **Generate on both** continues any prompt with both
+models. GPTQ runs in llm-compressor's environment as a subprocess, its progress shown on the page.
+
+**Lesson.** A quantization scheme's saving depends on what it leaves alone (Qwen's embedding kept its file at half
+size), and GPTQ's gain depends on how much error there was to correct: on a model that already rounds well, it buys
+a little, and mostly on text like its calibration data.
+
+## 38. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1417,12 +1475,15 @@ in the benchmarks (38.4).
 34. **A model's own mistakes are free training data.** Preferring a reference answer over the model's own greedy one
     halved repetition with no human labels; DPO lowers the preferred answers' probability a little too, so watch
     the held-out loss.
+35. **What a quantizer leaves alone sets the size; what it can correct sets the gain.** GPTQ at 4 bits halved
+    Qwen3-0.6B's files (its embedding stays in 16 bits), and on our model, which already rounds well, it took the
+    4-bit loss increase from 0.034 to 0.030, mostly on text like its calibration data.
 
-## 38. What's next
+## 39. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
-- **Quantization with GPTQ** (llm-compressor's `oneshot`) on the new base model, compared with the simple
-  round-to-nearest 8- and 4-bit weights of section 27.
+- **Quantization:** GPTQ's calibration data matched to the model's own training mix; benchmarks of the quantized
+  copies; a faster 4-bit matrix multiply so quantized models aren't slower.
 - **Post-training:** reinforcement learning with checkable rewards (GRPO); instruction tuning and DPO again on the
   stage 2 model.
 - **More data:** stage 2 is training: the base model continued to 2.5B tokens on FineWeb-Edu *full* plus Cosmopedia

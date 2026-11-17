@@ -281,12 +281,41 @@ own name, and is never overwritten. The app's **Models** step (step 8) lists the
   made. **Save the current datasets' model** saves the one you're working with; training also saves the
   current model before replacing it.
 - **Rename** and **Delete** (which removes only the library copy; `data/` isn't touched).
+- **Quantize…** opens the Quantize page for that model.
 
 On the command line:
 
 ```bash
 python3 registry.py scan        # add every model under data/ to the library
 python3 registry.py list        # show the library
+python3 -m quantization.checkpoint <model id> --bits 4   # save a round-to-nearest 4-bit copy in the library
+```
+
+### Quantization: the Quantize page
+
+The **Quantize** page (under Explore) stores a saved model's weights as small integers and compares the result with
+the original. Pick the model (its weight matrices are listed with their shapes), pick a recipe, and press **Quantize
+and compare**:
+
+- **Round to nearest, 8-bit or 4-bit** (`quantization/rtn.py`): every weight w ≈ q × scale; no data needed. The shared
+  embedding / output layer stays at 8 bits.
+- **GPTQ W4A16** (`quantization/gptq.py`): llm-compressor's `oneshot` on our own model, wrapped as a Hugging Face model
+  (`quantization/hf_wrapper.py`), calibrated on windows of a training-token file. The integers are read back into our
+  own format, so the copy loads without llm-compressor.
+
+The copy is saved in the model library (marked *8-bit*, *4-bit* or *GPTQ 4-bit*; use it on Generate, evaluate or
+benchmark it like any other), and the page shows both models' file and memory size, perplexity on every held-out set,
+and the same prompt continued by each (**Generate on both** for your own prompts). The 124M base model is 494 MB,
+125 MB at 8 bits and 84–87 MB at 4 bits.
+
+GPTQ needs llm-compressor, which pins its own torch and transformers, so it has its own environment; the app runs GPTQ
+there. Set it up once:
+
+```bash
+uv venv .venv-quant --python 3.11
+VIRTUAL_ENV=.venv-quant uv pip install -r quantization/requirements.txt
+.venv-quant/bin/python -m quantization.gptq <model id>          # GPTQ from the command line
+.venv-quant/bin/python -m quantization.llm_compressor           # GPTQ on a stock Hugging Face model (Qwen3-0.6B)
 ```
 
 ### The evaluation suite

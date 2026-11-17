@@ -848,6 +848,12 @@ def train_stop():
 
 # ---------- generation ----------
 
+def model_params(config):
+    """Parameter count from the config (a quantized model keeps its integers as buffers, not parameters)."""
+    from model import param_breakdown
+    return param_breakdown(config)["total"]
+
+
 @app.post("/api/generate/stream")
 def generate_stream_endpoint(req: GenerateReq):
     """Stream generated tokens as newline-delimited JSON: a 'start' line, one 'token' line each, then 'done'."""
@@ -868,7 +874,11 @@ def generate_stream_endpoint(req: GenerateReq):
         return json.dumps(obj) + "\n"
 
     def gen():
-        n_params = sum(p.numel() for p in model.parameters())
+        from quantization.checkpoint import quant_info
+        from quantization.rtn import weight_bytes
+        quant = quant_info(model)
+        n_params = (model_params(model.config) if quant else sum(p.numel() for p in model.parameters()))
+        w_bytes = weight_bytes(model) if quant else n_params * 4
         yield line({"type": "start", "prompt_tokens": len(ids), "context_window": block,
                     "prompt_truncated": len(ids) > block, "params": n_params, "device": S.dev.device,
                     "use_kv_cache": req.use_kv_cache})
@@ -901,7 +911,7 @@ def generate_stream_endpoint(req: GenerateReq):
                     "avg_kept": round(sum(kept) / len(kept), 1), **repetition_stats(out),
                     "use_kv_cache": req.use_kv_cache, "kv_cache_bytes": stats.get("kv_cache_bytes", 0),
                     "kv_bytes_per_token": kv_bytes_per_token(model.config), "recomputes": stats.get("recomputes", 0),
-                    "weights_bytes": n_params * 4, "memory": device_memory(S.dev.device),
+                    "weights_bytes": w_bytes, "quantized": quant, "memory": device_memory(S.dev.device),
                     "stopped": stats.get("stopped", False)})
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
@@ -1072,7 +1082,7 @@ def training_summary(m):
 def _model_row(m):
     return {k: m.get(k) for k in ("id", "name", "source", "origin", "added_at", "model_type", "model", "params",
                                   "datasets", "steps", "updates", "tokens", "best_val", "seconds", "trained_at", "chip",
-                                  "platform", "bytes", "chat", "base_model", "tuning")} | {"eval": m.get("eval"), "training": training_summary(m),
+                                  "platform", "bytes", "chat", "base_model", "tuning", "quantized", "quantized_from", "recipe")} | {"eval": m.get("eval"), "training": training_summary(m),
                                                            "benchmarks": benchmarks.load_results(m["id"]),
                                                            "active": m["id"] == S.active_model}
 
@@ -1133,6 +1143,183 @@ def models_delete(req: ModelIdReq):
     if S.inference_cache and f"{os.sep}{req.id}{os.sep}" in S.inference_cache[0]:
         S.inference_cache = None
     return {"ok": True}
+
+
+# ---------- Quantize page: a library model, a recipe, the quantized copy, both compared ----------
+
+QUANT_PY = os.path.join(PROJECT_DIR, ".venv-quant", "bin", "python")    # llm-compressor's own environment
+QUANT_METHODS = {
+    "rtn8": {"title": "Round to nearest, 8-bit", "bits": 8},
+    "rtn4": {"title": "Round to nearest, 4-bit", "bits": 4},
+    "gptq4": {"title": "GPTQ W4A16 (llm-compressor)", "bits": 4, "scheme": "W4A16"},
+}
+
+
+def _quant_layers(m):
+    """The matrices a quantizer touches, from the config: name, shape, how many, and which recipe touches them."""
+    from model import swiglu_hidden
+    c = m["model"]
+    d, L = c["n_embd"], c["n_layer"]
+    kv = c.get("n_kv_head") or c["n_head"]
+    qkv = d + 2 * kv * (d // c["n_head"])
+    hidden = swiglu_hidden(d) if c.get("mlp") == "swiglu" else 4 * d
+    up = 2 * hidden if c.get("mlp") == "swiglu" else hidden
+    experts = c.get("n_experts") or 1
+    rows = [{"name": "attn.c_attn", "what": "queries, keys and values", "shape": [qkv, d], "count": L},
+            {"name": "attn.c_proj", "what": "attention output", "shape": [d, d], "count": L},
+            {"name": "mlp.c_fc", "what": "feed-forward in" + (" (gate and up)" if c.get("mlp") == "swiglu" else ""),
+             "shape": [up, d], "count": L * experts},
+            {"name": "mlp.c_proj", "what": "feed-forward out", "shape": [d, hidden], "count": L * experts}]
+    for r in rows:
+        r["params"] = r["shape"][0] * r["shape"][1] * r["count"]
+        r["gptq"] = r["shape"][1] % 128 == 0
+    emb = {"name": "lm_head = wte", "what": "shared embedding / output layer", "shape": [c["vocab_size"], d],
+           "count": 1, "params": c["vocab_size"] * d}
+    return rows, emb
+
+
+def _recipe_text(method, samples, seq_len):
+    if method.startswith("rtn"):
+        bits = QUANT_METHODS[method]["bits"]
+        return (f"quantize_model(model, bits={bits}, group=64, embed_bits=8)\n"
+                f"# every weight w ≈ q × scale, q in −{2 ** (bits - 1) - 1}…{2 ** (bits - 1) - 1}, "
+                f"{'one scale per row' if bits == 8 else 'one scale per 64 weights'}; no calibration data")
+    return ("oneshot(\n"
+            "    model=TinyGPTForCausalLM.from_gpt(gpt),          # our GPT, wrapped for Hugging Face\n"
+            f"    dataset=<{samples} windows × {seq_len} tokens of train.bin>,\n"
+            '    recipe=GPTQModifier(scheme="W4A16", targets="Linear", ignore=["re:.*lm_head"]),\n'
+            '    pipeline="sequential", sequential_targets=["Block"],\n'
+            ")\n# then: the shared embedding / output layer rounded to 8 bits, as in the round-to-nearest copies")
+
+
+@app.get("/api/quantize")
+def quantize_info(model: Optional[str] = None, samples: int = 256, seq_len: int = 512):
+    from quantization.compare import load_result
+    from quantization.gptq import DEFAULT_DATA
+    lib = registry.list_models()
+    originals = [m for m in lib if not m.get("quantized") and m.get("model_type", "autoregressive") == "autoregressive"]
+    if not originals:
+        return {"models": [], "model": None}
+    mid = model if any(m["id"] == model for m in originals) else (
+        S.active_model if any(m["id"] == S.active_model for m in originals) else originals[0]["id"])
+    m = next(x for x in originals if x["id"] == mid)
+    rows, emb = _quant_layers(m)
+    copies = [{k: c.get(k) for k in ("id", "name", "bytes", "quantized", "recipe", "added_at")}
+              | {"comparison": load_result(c["id"])} for c in lib if c.get("quantized_from") == mid]
+    return {"models": [{"id": x["id"], "name": x["name"], "params": x.get("params"), "bytes": x.get("bytes"),
+                        "active": x["id"] == S.active_model} for x in originals],
+            "model": {k: m.get(k) for k in ("id", "name", "params", "bytes", "model", "datasets", "tokens", "chat")}
+                     | {"layers": rows, "embedding": emb},
+            "methods": [{"key": k, **v, "recipe": _recipe_text(k, samples, seq_len),
+                         "available": k.startswith("rtn") or os.path.exists(QUANT_PY)} for k, v in QUANT_METHODS.items()],
+            "gptq_setup": None if os.path.exists(QUANT_PY) else
+                "uv venv .venv-quant --python 3.11 && VIRTUAL_ENV=.venv-quant uv pip install -r quantization/requirements.txt",
+            "calibration_data": DEFAULT_DATA if os.path.exists(os.path.join(DATA_ROOT, DEFAULT_DATA, "train.bin")) else None,
+            "copies": sorted(copies, key=lambda c: c.get("added_at") or "", reverse=True)}
+
+
+class QuantizeReq(BaseModel):
+    id: str
+    method: str = "rtn8"           # rtn8 | rtn4 | gptq4
+    samples: int = 256             # GPTQ calibration windows
+    seq_len: int = 512
+
+
+def _run_gptq(req, name):
+    """GPTQ in llm-compressor's environment (a subprocess), its progress lines shown as the job's message."""
+    cmd = [QUANT_PY, "-u", "-m", "quantization.gptq", req.id, "--samples", str(req.samples), "--seq-len", str(req.seq_len)]
+    proc = subprocess.Popen(cmd, cwd=PROJECT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    result, tail = None, []
+    for line in proc.stdout:
+        line = line.rstrip()
+        tail = (tail + [line])[-15:]
+        if line.startswith("@@RESULT "):
+            result = json.loads(line[9:])
+        elif line.startswith("@@ "):
+            S.job["message"] = f"{name}: {line[3:]}…"
+        elif "Quantizing" in line and "module(s)" in line:      # llm-compressor: one line per matrix
+            layer = line.split("module(s): ")[-1].strip("[]'")
+            S.job["message"] = f"{name}: GPTQ on {layer}…"
+    proc.wait()
+    if proc.returncode or not result:
+        raise RuntimeError("GPTQ failed: " + " | ".join(l for l in tail if l.strip())[-600:])
+    return result
+
+
+@app.post("/api/quantize/run")
+def quantize_run(req: QuantizeReq):
+    if req.method not in QUANT_METHODS:
+        raise HTTPException(400, "Unknown method.")
+    if req.method == "gptq4" and not os.path.exists(QUANT_PY):
+        raise HTTPException(400, "GPTQ needs llm-compressor's environment (.venv-quant): see the setup line on the page.")
+    if not (16 <= req.samples <= 1024 and 64 <= req.seq_len <= 2048):
+        raise HTTPException(400, "Calibration: 16–1024 windows of 64–2048 tokens.")
+    try:
+        from quantization.checkpoint import original_of
+        meta = original_of(req.id)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(400, str(e))
+
+    def job():
+        from quantization import checkpoint, compare
+        name = meta["name"].split(" · ")[0]
+        S.inference_cache = None                       # make room
+        if req.method == "gptq4":
+            new = _run_gptq(req, name)
+        else:
+            new = checkpoint.quantize_library_model(req.id, QUANT_METHODS[req.method]["bits"],
+                                                    say=lambda msg: S.job.update(message=f"{name}: {msg}…"))
+        compare.compare(req.id, new["id"], S.dev.device, say=lambda msg: S.job.update(message=f"{msg}…"))
+        S.job.update(message=f"Saved \"{new['name']}\" ({new['bytes'] / 1e6:.0f} MB) and compared it with the original.",
+                     result={"copy": new["id"]})
+
+    return start_job("quantize", job)
+
+
+class QuantGenReq(BaseModel):
+    ids: List[str]                 # the original and the quantized copy
+    prompt: str
+    tokens: int = 80
+    temperature: float = 0.0
+
+
+@app.post("/api/quantize/generate")
+def quantize_generate(req: QuantGenReq):
+    """The same prompt continued by each model (loaded one at a time)."""
+    require_idle("generate")
+    from quantization import compare
+    if not req.prompt.strip():
+        raise HTTPException(400, "Type a prompt first.")
+    out = []
+    S.inference_cache = None
+    for mid in req.ids[:2]:
+        try:
+            model = compare.load(mid, S.dev.device)
+        except (KeyError, ValueError) as e:
+            raise HTTPException(404, str(e))
+        out.append({"id": mid, **compare.generate(model, req.prompt[:2000], S.dev.device, max(1, min(req.tokens, 300)),
+                                                 max(0.0, min(req.temperature, 2.0)))})
+        del model
+    return {"results": out}
+
+
+@app.post("/api/quantize/measure")
+def quantize_measure(req: ModelIdReq):
+    """Measure a quantized copy against its original again (sizes, perplexity, a sample)."""
+    try:
+        meta = registry.get_model(req.id)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(404, str(e))
+    if not meta.get("quantized_from"):
+        raise HTTPException(400, "Not a quantized copy.")
+
+    def job():
+        from quantization import compare
+        S.inference_cache = None
+        compare.compare(meta["quantized_from"], req.id, S.dev.device, say=lambda msg: S.job.update(message=f"{msg}…"))
+        S.job["message"] = "Measured."
+
+    return start_job("quantize", job)
 
 
 @app.post("/api/eval/run")

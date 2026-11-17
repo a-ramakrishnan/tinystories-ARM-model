@@ -705,6 +705,57 @@
         </div>
       </section>
 
+      <!-- ============ Quantize ============ -->
+      <section class="panel" data-step="quantize">
+        <header class="panel-head">
+          <span class="eyebrow">Explore</span>
+          <h1>Quantize</h1>
+          <p>Store a model's weights as small integers instead of 32-bit floats: a quarter or less of the memory. Pick a saved model and a recipe, then compare the quantized copy with the original: its size, its perplexity on held-out text, and what it writes for the same prompt. The copy is saved in the model library, so it can also be used on Generate.</p>
+        </header>
+
+        <div class="card">
+          <div class="card-head"><h3>1. The model to quantize</h3><span id="qz-model-sum" class="muted small"></span></div>
+          <div class="fields prompt-row"><label>Saved model<select id="qz-model" class="select"></select></label></div>
+          <div id="qz-model-info"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>2. The recipe</h3></div>
+          <div id="qz-methods" class="seg qz-methods"></div>
+          <p id="qz-method-what" class="hint"></p>
+          <div id="qz-calib" class="fields three hidden">
+            <label>Calibration windows<input id="qz-samples" class="num-input" type="number" min="16" max="1024" step="16" value="256"></label>
+            <label>Tokens per window<input id="qz-seqlen" class="num-input" type="number" min="64" max="2048" step="64" value="512"></label>
+            <span id="qz-calib-data" class="muted small"></span>
+          </div>
+          <pre id="qz-recipe" class="qz-recipe"></pre>
+          <div id="qz-setup" class="note hidden"></div>
+          <div class="actions tight"><button id="qz-run" class="btn primary">Quantize and compare</button>
+            <span class="muted small">Saves a copy in the library; the original is kept.</span></div>
+          <div class="job" data-job="quantize"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>3. Original and quantized: sizes</h3>
+            <label class="inline muted small">Quantized copy <select id="qz-copy" class="select"></select></label></div>
+          <div id="qz-sizes"><p class="muted">No quantized copy of this model yet: pick a recipe above and press <b>Quantize and compare</b>.</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>4. Perplexity on held-out text</h3><span id="qz-ppl-when" class="muted small"></span></div>
+          <div id="qz-ppl"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>5. Generate on both</h3><span class="muted small">the same prompt and settings; greedy unless you raise the temperature</span></div>
+          <label class="qz-prompt-l">Prompt<input id="qz-prompt" class="select" value="The water cycle is the process by which"></label>
+          <div class="actions tight"><label class="inline muted small">Tokens <select id="qz-tokens" class="select"><option>40</option><option selected>80</option><option>160</option></select></label>
+              <label class="inline muted small">Temperature <select id="qz-temp" class="select"><option value="0" selected>0 (greedy)</option><option value="0.8">0.8</option></select></label>
+              <button id="qz-gen" class="btn">Generate on both</button></div>
+          <div id="qz-gen-out" class="two-col"></div>
+        </div>
+      </section>
+
       <!-- ============ Benchmarks ============ -->
       <section class="panel" data-step="benchmarks">
         <header class="panel-head">
@@ -1006,6 +1057,7 @@
   <script src="/static/lab.js"></script>
   <script src="/static/journey.js"></script>
   <script src="/static/bench.js"></script>
+  <script src="/static/quantize.js"></script>
   <script src="/static/textgen.js"></script>
   <script src="/static/diffusion.js"></script>
   <script src="/static/explorer.js"></script>

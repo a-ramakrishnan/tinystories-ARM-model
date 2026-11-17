@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-17 18:00", kind: "tool", area: "Inference", title: "GPTQ on our own model, and a Quantize page",
+    decision: "Run GPTQ (llm-compressor's oneshot, 4-bit weights in groups of 128) first on Qwen3-0.6B, then on our model through a local Hugging Face wrapper; read the integers back into our own quantized layers; add a Quantize page that saves and compares copies.",
+    why: "GPTQ corrects each column's rounding error in the columns still to come, using calibration text; round to nearest doesn't look at data at all.",
+    result: { label: "124M base, 4-bit: file · held-out loss change (10 sets)", text: "round to nearest 87 MB · +0.034; GPTQ 84 MB · +0.030" },
+    calc: ["GPTQ better on 8 of 10 held-out sets; worse on WikiText and Shakespeare, furthest from its FineWeb-Edu calibration",
+      "Qwen3-0.6B: 1.11 GB → 514 MB, perplexity +9% (its 311 MB embedding stays in bf16)",
+      "both quantized copies decode at ~30 tokens/s vs 80–100 for floats: weights are rebuilt every token"],
+    cost: "44 s of GPTQ on the Mac's CPU (256 windows × 512 tokens)", anchor: "37-gptq-first-on-a-standard-model-then-on-ours-the-quantize-page" },
   { when: "2026-11-16 21:45", kind: "win", area: "Diffusion", title: "A diffusion model the size of the base (F6)",
     decision: "Train a 124M masked diffusion model with the base's design, from scratch, on the same stage 2 token files: 1B tokens in 2 h 8 min on a Colab A100.",
     why: "To compare the two kinds of model like for like: same size, data and tokenizer, only the objective differs.",
@@ -112,7 +120,7 @@ const JOURNEY = [
       "sampling (Balanced) is 10–25% slower than greedy, measured side by side"],
     cost: "no training: benchmarks on the Mac", anchor: "28-batched-generation-and-prefix-caching" },
   { when: "2026-11-12 15:10", kind: "tie", area: "Inference", title: "8-bit and 4-bit weights",
-    decision: "Store each weight matrix as small integers and scales (quantize.py); keep the shared embedding at 8 bits.",
+    decision: "Store each weight matrix as small integers and scales (quantization/rtn.py); keep the shared embedding at 8 bits.",
     why: "A 124M model takes 495 MB in 32-bit floats; most of that precision isn't needed to run it.",
     result: { label: "Our Large 124M: held-out loss · weight memory", text: "32-bit 3.7345 · 495 MB → 8-bit 3.7353 · 125 MB → 4-bit 3.7490 · 88 MB; but 1.3–3.5× slower on the Mac" },
     calc: ["OpenAI GPT-2 at 4 bits: 3.40 → 7.03 from the embedding alone (row outliers up to 1.8 vs a typical 0.09); 3.56 with it at 8 bits",

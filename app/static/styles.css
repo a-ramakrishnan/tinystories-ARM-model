@@ -1061,3 +1061,15 @@ body.tg-wide [data-step=diffusion] .panel-head { max-width: 960px; }
 .fields.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 640px) { .fields.two { grid-template-columns: minmax(0, 1fr); } }
 #lat-ttft-v, #lat-tps-v { font-family: var(--mono); color: var(--accent); font-weight: 600; margin-left: 4px; }
+
+/* Quantize page */
+.qz-methods { flex-wrap: wrap; margin-bottom: 4px; }
+.qz-recipe { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; overflow-x: auto; margin: 10px 0; }
+.qz-delta.up { color: var(--bad); }
+.qz-delta.down { color: var(--good); }
+.qz-bars .kvm-row { grid-template-columns: 150px 1fr 90px; }
+@media (max-width: 720px) { .qz-bars .kvm-row { grid-template-columns: 90px 1fr 70px; } }
+.qz-table th + th, .qz-table td + td { padding-left: 16px; }
+.qz-table td .tag { white-space: nowrap; }
+.qz-prompt-l { display: grid; gap: 6px; font-weight: 550; font-size: 13px; }
+.qz-prompt-l input { width: 100%; }
