@@ -1073,3 +1073,15 @@ body.tg-wide [data-step=diffusion] .panel-head { max-width: 960px; }
 .qz-table td .tag { white-space: nowrap; }
 .qz-prompt-l { display: grid; gap: 6px; font-weight: 550; font-size: 13px; }
 .qz-prompt-l input { width: 100%; }
+
+/* Side by side (H1) */
+body.tg-wide [data-step=sidebyside] .panel-head { max-width: 960px; }
+.sbs-lanes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-bottom: 8px; }
+.sbs-lane { min-width: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.sbs-lane .tg-text { min-height: 9em; }
+.sbs-lane .chart svg { max-height: 340px; }
+.ptable td.sbs-win { font-weight: 700; color: var(--accent); }
+.ptable td.sbs-sec { font-weight: 600; color: var(--muted); padding-top: 14px; border-bottom: 1px solid var(--border); }
+.sbs-how td { vertical-align: top; }
+.sbs-attn { width: 96px; height: 96px; display: block; margin-bottom: 4px; }
+@media (max-width: 800px) { .sbs-lanes { grid-template-columns: 1fr; } }

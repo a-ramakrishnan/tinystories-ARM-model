@@ -27,6 +27,7 @@ const STEPS = [
   { id: "quantize", title: "Quantize", sub: "Smaller weights", explore: true, icon: "◇" },
   { id: "textgen", title: "Writing text", sub: "Step by step", explore: true, icon: "→" },
   { id: "diffusion", title: "Diffusion", sub: "Writing by denoising", explore: true, icon: "◫" },
+  { id: "sidebyside", title: "Side by side", sub: "Left to right vs denoising", explore: true, icon: "⇄" },
   { id: "journey", title: "Journey", sub: "How we got here", explore: true, icon: "⏱" },
 ];
 
@@ -99,7 +100,7 @@ function stepDone(id) {
 
 function stepBlocker(id) {
   const s = ui.status, sel = s?.selection;
-  if (["dataset", "models", "lab", "journey", "benchmarks", "quantize", "textgen", "diffusion"].includes(id)) return null;  // these use saved models only
+  if (["dataset", "models", "lab", "journey", "benchmarks", "quantize", "textgen", "diffusion", "sidebyside"].includes(id)) return null;  // these use saved models only
   if (id === "generate" && s.active) return null;
   if (!sel) return ["Add a dataset first, or pick a saved model in the Models step.", "dataset"];
   if (id === "tokenize") return null;
@@ -125,8 +126,9 @@ function go(id) {
   if (id === "benchmarks" && typeof benchOpen === "function") benchOpen().catch((e) => toast(e.message, true));
   if (id === "textgen" && typeof textgenOpen === "function") textgenOpen().catch((e) => toast(e.message, true));
   if (id === "diffusion" && typeof diffusionOpen === "function") diffusionOpen().catch((e) => toast(e.message, true));
+  if (id === "sidebyside" && typeof sbsOpen === "function") sbsOpen().catch((e) => toast(e.message, true));
   document.body.classList.toggle("ex-wide", id === "attention" && typeof exActive === "function" && exActive());
-  document.body.classList.toggle("tg-wide", id === "textgen" || id === "diffusion");
+  document.body.classList.toggle("tg-wide", id === "textgen" || id === "diffusion" || id === "sidebyside");
   render();
   if (id === "batches") renderBatchExample();
   if (id === "tokenize") renderTokenExamples();

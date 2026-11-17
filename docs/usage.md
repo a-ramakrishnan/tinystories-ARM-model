@@ -509,6 +509,17 @@ shows when each position was revealed: scattered clusters instead of the left-to
 compares the trained runs: size, training tokens and time, the likelihood bound, and the scores from
 `python3 -m diffusion_models.quality <run>` (the base model's loss on the generated text, and repetition).
 
+### Side by side: autoregressive vs diffusion
+
+The **Side by side** page (under Explore) gives one prompt to an autoregressive model (the base model by default)
+and a diffusion run (by default the 124M one trained on the same data and number of tokens). It replays both
+together, lined up by model pass or by clock time. Each lane has its own grid of which position each pass writes:
+a staircase for the autoregressive model, blocks or scattered clusters for diffusion, with the same row height so the
+heights compare the number of passes. Both texts are scored the same way: passes, time, tokens per second, the base
+model's loss on the text, repetition, and the loss on the real continuation (exact for the autoregressive model, the
+likelihood bound for diffusion). Below, a table sets out what differs: attention, the training objective, the cost
+of a pass.
+
 ### Model size: `full-model.py`
 
 ```python

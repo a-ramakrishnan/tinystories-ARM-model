@@ -888,6 +888,69 @@
         </div>
       </section>
 
+      <section class="panel" data-step="sidebyside">
+        <header class="panel-head">
+          <span class="eyebrow">Explore</span>
+          <h1>Side by side: left to right, or all at once</h1>
+          <p>The same prompt written by the two kinds of model. The <b>autoregressive</b> model writes one token per pass through the network, left to right. The <b>masked diffusion</b> model starts from a continuation that is all [MASK] (█) and, at every pass, predicts every masked position at once and reveals a few. Both are replayed together and scored the same way. The default pair has the same size, data, tokens and tokenizer: only the training objective differs.</p>
+        </header>
+
+        <div id="sbs-empty" class="card hidden"><p class="muted">This page needs a saved autoregressive model (the Models step) and a trained diffusion run in <code>diffusion_models/runs/</code> (see the Diffusion page).</p></div>
+        <div id="sbs-main">
+          <div class="card">
+            <div class="card-head"><h3>One prompt, two models</h3><span id="sbs-note" class="muted small"></span></div>
+            <div class="fields three">
+              <label>Autoregressive model <select id="sbs-ar" class="select"></select></label>
+              <label>Diffusion model <select id="sbs-run" class="select"></select></label>
+              <label>Prompt <select id="sbs-prompt" class="select"></select></label>
+            </div>
+            <label id="sbs-own-wrap" class="block hidden">Your prompt <textarea id="sbs-own" rows="2" spellcheck="false">The water cycle is the process by which</textarea></label>
+            <div class="fields four">
+              <label>Tokens <select id="sbs-tokens" class="select"><option value="32">32</option><option value="64" selected>64</option><option value="128">128</option></select></label>
+              <label>Diffusion passes <select id="sbs-steps" class="select"><option value="8">8</option><option value="16">16</option><option value="32" selected>32</option><option value="64">64</option></select></label>
+              <label>Diffusion order <select id="sbs-order" class="select"></select></label>
+              <label>Autoregressive choice <select id="sbs-ardecode" class="select"><option value="1" selected>sampled, top-k 50 (as the diffusion model)</option><option value="0">greedy (most likely)</option></select></label>
+            </div>
+            <div class="actions tight"><button id="sbs-go" class="btn primary">Write with both</button>
+              <span id="sbs-busy" class="muted small hidden"><span class="spinner"></span> Writing with both models and scoring them…</span></div>
+            <div id="sbs-out" class="hidden">
+              <div class="tg-player">
+                <button id="sbs-first" class="icon-btn" title="Back to the start">⏮</button>
+                <button id="sbs-play" class="icon-btn" title="Play">▶</button>
+                <button id="sbs-next" class="icon-btn" title="One step">⏭</button>
+                <input id="sbs-step" type="range" min="0" max="1" value="0">
+                <span id="sbs-step-label" class="muted small mono"></span>
+                <select id="sbs-align" class="select"><option value="pass">line up by model pass</option><option value="time">line up by clock time</option></select>
+                <select id="sbs-speed" class="select"><option value="250">slow</option><option value="90" selected>medium</option><option value="30">fast</option></select>
+              </div>
+              <div class="sbs-lanes">
+                <div class="sbs-lane">
+                  <div class="card-head"><h4>Autoregressive: one token per pass</h4><span id="sbs-ar-state" class="muted small"></span></div>
+                  <div id="sbs-ar-text" class="tg-text"></div>
+                  <div class="card-head"><h4>Which position each pass writes</h4><span class="muted small">rows: passes · columns: positions</span></div>
+                  <div id="sbs-ar-grid" class="chart"></div>
+                </div>
+                <div class="sbs-lane">
+                  <div class="card-head"><h4>Diffusion: every position, every pass</h4><span id="sbs-df-state" class="muted small"></span></div>
+                  <div id="sbs-df-text" class="tg-text"></div>
+                  <div class="card-head"><h4>When each position is revealed</h4><span class="muted small">rows: passes · columns: positions</span></div>
+                  <div id="sbs-df-grid" class="chart"></div>
+                </div>
+              </div>
+              <p class="hint">Both grids use the same height per pass, so the taller one took more passes. Left to right draws a staircase; the diffusion model fills its positions in the order the sampler picks (block by block with the recommended order). The colour is the model's probability for the token it chose. Lined up by clock time, each lane moves at its real speed on this Mac.</p>
+              <div class="card-head"><h4>The numbers</h4><span class="muted small">the better of the two in bold where lower or higher is better</span></div>
+              <div id="sbs-numbers"></div>
+              <div id="sbs-ref"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>What differs, and what doesn't</h3><span class="muted small">same tokenizer, same kind of transformer blocks</span></div>
+            <div id="sbs-how"></div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel" data-step="textgen">
         <header class="panel-head">
           <span class="eyebrow">Explore</span>
@@ -1060,6 +1123,7 @@
   <script src="/static/quantize.js"></script>
   <script src="/static/textgen.js"></script>
   <script src="/static/diffusion.js"></script>
+  <script src="/static/sidebyside.js"></script>
   <script src="/static/explorer.js"></script>
   <script src="/static/flow.js"></script>
   <script src="/static/flowplay.js"></script>

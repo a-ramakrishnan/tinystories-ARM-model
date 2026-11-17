@@ -1531,7 +1531,8 @@ def lab_datasets():
 
 # ---------- diffusion models (diffusion_models/: trained on Colab, unpacked in diffusion_models/runs/<run>) ----------
 DIFFUSION_RUNS = os.path.join(PROJECT_DIR, "diffusion_models", "runs")
-DIFFUSION_SOURCES = {"roneneldan/TinyStories": "TinyStories", "BaoMinhTran/mini-fineweb-edu@small": "Mini FineWeb-Edu"}
+DIFFUSION_SOURCES = {"roneneldan/TinyStories": "TinyStories", "BaoMinhTran/mini-fineweb-edu@small": "Mini FineWeb-Edu",
+                     "BaoMinhTran/mini-fineweb-edu@full": "FineWeb-Edu full + Cosmopedia"}
 _diffusion_cache = {}
 
 
@@ -1561,7 +1562,7 @@ def diffusion_runs():
         tokens = m.get("tokens")
         params = m.get("params")
         title = (f"Diffusion {round(params / 1e6)}M" if params else "Diffusion") + f" · {source}" + \
-            (f" · {round(tokens / 1e6)}M tokens" if tokens else "")
+            (f" · {tokens / 1e9:.1f}B tokens" if tokens and tokens >= 1e9 else f" · {round(tokens / 1e6)}M tokens" if tokens else "")
         out.append({"id": name, "name": title, "source": source, "params": params, "tokens": tokens,
                     "best_bound": m.get("best_bound"), "seconds": m.get("seconds"), "gpu": m.get("gpu"),
                     "tokens_per_sec": m.get("tokens_per_sec"), "finished_at": m.get("finished_at"),
@@ -1741,6 +1742,130 @@ def diffusion_steps(req: DiffusionStepsReq):
         ref = {"completion": S.enc.decode(ref_ids[:n]),
                "judge_loss": textgen.continuation_loss(judge, ids, ref_ids[:n], S.dev.device)[0]}
     return {"run": req.run, "prompt": S.enc.decode(ids), "tokens": n, "judge": textgen.BASE_MODEL, "rows": rows, "reference": ref}
+
+
+# ---------- H1: one prompt, an autoregressive model and a diffusion model side by side ----------
+SBS_DIFFUSION_DEFAULT = "f6-124m-stage2-2p5b"      # the 124M diffusion model on the base model's data and tokens
+
+
+class SideBySideReq(BaseModel):
+    ar_model: Optional[str] = None
+    run: Optional[str] = None
+    prompt_key: Optional[str] = None
+    prompt: str = ""
+    tokens: int = 64
+    steps: int = 32
+    ar_temperature: float = 0.0
+    sampler: str = "keep"
+    repetition_penalty: float = 1.2
+    block_size: int = 16
+    seed: int = 1
+
+
+def _sbs_pick_run(run):
+    runs = diffusion_runs()
+    if not runs:
+        raise HTTPException(400, "No diffusion run in diffusion_models/runs/ (see the Diffusion page).")
+    if run and any(r["id"] == run for r in runs):
+        return next(r for r in runs if r["id"] == run)
+    return next((r for r in runs if r["id"] == SBS_DIFFUSION_DEFAULT), None) or \
+        max(runs, key=lambda r: ((r["params"] or 0), (r["tokens"] or 0)))
+
+
+@app.get("/api/sidebyside")
+def sidebyside_info():
+    """What the side-by-side page can pick: autoregressive models (base first), diffusion runs (the 124M one on the
+    base's data first) and the held-out prompts."""
+    models = [m for m in registry.list_models() if not m.get("chat") and not m.get("quantized")]
+    models.sort(key=lambda m: m["id"] != textgen.BASE_MODEL)
+    runs = diffusion_runs()
+    runs.sort(key=lambda r: r["id"] != SBS_DIFFUSION_DEFAULT)
+    return {"base": textgen.BASE_MODEL, "default_run": runs[0]["id"] if runs else None,
+            "models": [{k: m.get(k) for k in ("id", "name", "params", "tokens")} for m in models],
+            "runs": [{k: r[k] for k in ("id", "name", "params", "tokens", "best_bound")} for r in runs],
+            "prompts": [{k: p[k] for k in ("key", "source", "prompt", "reference")} for p in textgen.heldout_prompts()]}
+
+
+@app.post("/api/sidebyside")
+def sidebyside(req: SideBySideReq):
+    """The same prompt continued by both kinds of model, every step recorded, and scored the same way: the loss on
+    the real continuation (exact for the autoregressive model, the likelihood bound for the diffusion model), the
+    base model's loss on each generated text (judge loss), speed and repetition."""
+    if training_running():
+        raise HTTPException(409, "Training is running. Wait for it to finish, or stop it.")
+    from diffusion_models.benchmarks import score_requests as diffusion_scores
+    if req.sampler not in ("keep", "random"):
+        raise HTTPException(400, "sampler must be keep or random")
+    mid = textgen_model_id(req.ar_model)
+    run = _sbs_pick_run(req.run)
+    if req.prompt_key:
+        p = next((p for p in textgen.heldout_prompts() if p["key"] == req.prompt_key), None)
+        if not p:
+            raise HTTPException(400, f"Unknown prompt: {req.prompt_key}")
+    else:
+        ids = S.enc.encode_ordinary(req.prompt[:2000])[-120:]
+        if not ids:
+            raise HTTPException(400, "Pick a prompt or type one.")
+        p = {"key": None, "source": "your prompt", "prompt": S.enc.decode(ids), "prompt_ids": ids, "ref_ids": None,
+             "reference": None}
+    n = max(16, min(req.tokens, 128))
+    steps = max(1, min(req.steps, 256))
+    ref_ids = (p.get("ref_ids") or [])[:n] or None
+    dev = S.dev.device
+
+    # autoregressive: one token per pass, left to right
+    meta = registry.get_model(mid)
+    ar = _load_cached(*registry.paths_of(mid))
+    textgen.warm_up(ar, dev)
+    t = 0.0 if req.ar_temperature <= 0.001 else max(0.05, min(req.ar_temperature, 2.0))
+    a = textgen.run_prompt(ar, {**p, "ref_ids": ref_ids}, dev, n, t, 50 if t else None, req.seed)
+    ar_ids = [s["id"] for s in a["steps"]]
+    ar_cfg = ar.config
+
+    # diffusion: all positions at once, a few revealed per pass
+    dm = _diffusion_model(run["id"])
+    diffusion_generate(dm, max_new_tokens=8, diffusion_steps=2, prompt_ids=p["prompt_ids"][:8], record_steps=False)  # warm up
+    d = diffusion_generate(dm, max_new_tokens=n, diffusion_steps=steps, top_k=50, seed=req.seed, sampler=req.sampler,
+                           repetition_penalty=max(1.0, min(req.repetition_penalty, 3.0)),
+                           block_size=max(0, req.block_size), prompt_ids=p["prompt_ids"], record_steps=True)
+    bound = None
+    if ref_ids:
+        ll, _, k = diffusion_scores(dm, S.enc, [(S.enc.decode(p["prompt_ids"]), S.enc.decode(ref_ids))], dev,
+                                    samples=32, batch=33)[0]
+        bound = round(-ll / max(1, k), 4)
+
+    # the same judge for both texts: the base autoregressive model
+    judge = _judge()
+    jl = lambda gen: round(textgen.continuation_loss(judge, p["prompt_ids"], gen, dev)[0], 4) if len(gen) > 1 else None
+    vocab = sorted({i for st in d["trace"] for i in st["ids"]})
+    dcfg = dm.cfg
+    dmeta = _read_json(os.path.join(DIFFUSION_RUNS, run["id"], "metrics.json")) or {}
+    same_data = sorted(dmeta.get("datasets") or []) == sorted(meta.get("datasets") or [])
+    return {
+        "prompt": p["prompt"], "prompt_tokens": len(p["prompt_ids"]), "source": p["source"], "tokens": n,
+        "reference": S.enc.decode(ref_ids) if ref_ids else None, "device": dev, "judge": textgen.BASE_MODEL,
+        "same_data": same_data,
+        "ar": {"id": mid, "name": meta["name"], "params": meta.get("params"), "tokens_trained": meta.get("tokens"),
+               "best_val": meta.get("best_val"), "layers": ar_cfg.n_layer, "width": ar_cfg.n_embd,
+               "context": ar_cfg.block_size, "decoding": "greedy" if not t else f"temperature {t}, top-k 50",
+               "steps": [{"pos": s["pos"], "text": s["text"], "prob": s["prob"], "ms": s["ms"]} for s in a["steps"]],
+               "text": a["text"], "passes": a["model_passes"], "ms": a["total_ms"], "tokens_per_sec": a["tokens_per_sec"],
+               "ref_loss": a["ref_loss"], "judge_loss": jl(ar_ids), "distinct_2": a["distinct_2"],
+               "repeated_4grams": a["repeated_4grams"]},
+        "diffusion": {"id": run["id"], "name": run["name"], "params": run["params"], "tokens_trained": run["tokens"],
+                      "best_bound": run["best_bound"], "layers": dcfg.n_layers, "width": dcfg.d_model,
+                      "context": dcfg.seq_len, "diffusion_steps": dcfg.diffusion_steps,
+                      "decoding": f"{'confident first' if req.sampler == 'keep' else 'random order'}, top-k 50"
+                                  + (f", repetition penalty {req.repetition_penalty}" if req.repetition_penalty > 1 else "")
+                                  + (f", blocks of {req.block_size}" if 0 < req.block_size < d["gen_len"] else ""),
+                      "mask_id": DIFFUSION_MASK_ID, "text_of": {str(i): ("█" if i == DIFFUSION_MASK_ID else S.enc.decode([i])) for i in vocab},
+                      "trace": [{"ids": st["ids"], "conf": st["conf"], "ms": st["ms"]} for st in d["trace"]],
+                      "gen_len": d["gen_len"], "length": len(d["ids"]), "text": d["completion"], "passes": d["steps"],
+                      "ms": round(d["seconds"] * 1000, 1),
+                      "tokens_per_sec": round(d["gen_len"] / d["seconds"], 1) if d["seconds"] else None,
+                      "ref_bound": bound, "judge_loss": jl(d["ids"]), **textgen.repetition(d["ids"])},
+        "reference_judge_loss": jl(ref_ids) if ref_ids else None,
+    }
 
 
 @app.get("/api/lab/datasets")
