@@ -1,0 +1,23 @@
+# J1: the smoke tests (tests/test_smoke.py) on every push and pull request, on a CPU runner: tiny models only,
+# a few seconds of testing after the install.
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install (CPU PyTorch and what the tests import)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy tiktoken tqdm pytest
+      - name: Smoke tests
+        run: python -m pytest -q tests
