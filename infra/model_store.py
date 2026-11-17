@@ -1,4 +1,5 @@
-# J4: move models between Colab and the Mac through a private Hugging Face Hub repository, instead of Drive
+# J4: move models between Colab and the Mac through a Hugging Face Hub repository (public: the models hold nothing
+# private), instead of Drive
 # downloads, zips and browser clicks.
 #
 #   On Colab (after training):   python3 -m infra.model_store push diffusion /content/drive/MyDrive/diffusion-runs/f6-124m-stage2 --name f6-124m-stage2-2p5b
@@ -15,8 +16,9 @@
 # optimizer, 3x the size) and snapshots are left out unless --with-state.
 #
 # Authentication is Hugging Face's own: an access token with write permission, as the HF_TOKEN environment variable
-# or from `hf auth login` (on Colab: a notebook secret named HF_TOKEN). The repository is private;
-# HF_MODEL_REPO overrides its name (default: <your username>/tinystories-arm-models).
+# or from `hf auth login` (on Colab: a notebook secret named HF_TOKEN). A new repository is created public
+# (--private for a private one; an existing repository keeps its visibility); HF_MODEL_REPO overrides its name
+# (default: <your username>/tinystories-arm-models).
 import argparse
 import hashlib
 import json
@@ -89,7 +91,7 @@ def _check(kind):
         raise SystemExit(f"kind must be one of {', '.join(KINDS)}")
 
 
-def push(kind, folder, name=None, with_state=False, api=None, say=print):
+def push(kind, folder, name=None, with_state=False, api=None, say=print, private=False):
     """Upload a folder (plus its manifest) to <repo>/<kind>/<name>/."""
     _check(kind)
     from huggingface_hub import HfApi
@@ -102,7 +104,7 @@ def push(kind, folder, name=None, with_state=False, api=None, say=print):
         raise SystemExit(f"nothing to push in {folder}")
     with open(os.path.join(folder, MANIFEST), "w") as f:
         json.dump(man, f, indent=1)
-    api.create_repo(repo, repo_type="model", private=True, exist_ok=True)
+    api.create_repo(repo, repo_type="model", private=private, exist_ok=True)
     say(f"Pushing {len(man['files'])} files ({man['total_bytes'] / 1e6:,.0f} MB) to {repo}/{kind}/{name} …")
     api.upload_folder(repo_id=repo, folder_path=folder, path_in_repo=f"{kind}/{name}",
                       allow_patterns=list(man["files"]) + [MANIFEST],
@@ -155,13 +157,14 @@ def list_remote(api=None):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Move models through a private Hugging Face Hub repository.")
+    ap = argparse.ArgumentParser(description="Move models through a Hugging Face Hub repository.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("push", help="upload a folder")
     p.add_argument("kind", choices=list(KINDS))
     p.add_argument("folder")
     p.add_argument("--name", default=None, help="name in the repository (default: the folder's name)")
     p.add_argument("--with-state", action="store_true", help="also send state.pt and snapshots/")
+    p.add_argument("--private", action="store_true", help="create the repository private (if it doesn't exist yet)")
     q = sub.add_parser("pull", help="download into models/, diffusion_models/runs/ or outputs/")
     q.add_argument("kind", choices=list(KINDS))
     q.add_argument("name")
@@ -172,7 +175,7 @@ def main(argv=None):
     v.add_argument("folder")
     a = ap.parse_args(argv)
     if a.cmd == "push":
-        push(a.kind, a.folder, a.name, a.with_state)
+        push(a.kind, a.folder, a.name, a.with_state, private=a.private)
     elif a.cmd == "pull":
         pull(a.kind, a.name, a.dest, a.force)
     elif a.cmd == "list":

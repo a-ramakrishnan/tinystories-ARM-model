@@ -55,7 +55,7 @@ def test_push_then_pull_round_trip(tmp_path, hub):
     src = str(tmp_path / "f6")
     make_run(src)
     man = ms.push("diffusion", src, name="f6-2p5b", say=lambda *_: None)
-    assert hub.created == [("someone/tinystories-arm-models", True)]           # private, under the user's name
+    assert hub.created == [("someone/tinystories-arm-models", False)]          # public, under the user's name
     assert set(man["files"]) == {"model.pt", "config.json", "metrics.json"}     # no state.pt, no snapshots
     dest = str(tmp_path / "local" / "f6-2p5b")
     ms.pull("diffusion", "f6-2p5b", dest=dest, say=lambda *_: None)
