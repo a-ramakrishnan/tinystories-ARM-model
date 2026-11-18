@@ -442,18 +442,22 @@ the same footing. On the base model: loss 3.481 on the real continuations (GPT-2
 
 ## The website
 
-`pages/build.py` builds the project's website into `_site/`. It has the docs as pages, the Journey timeline and a
-Side by side replay, and it runs in the browser from saved data. On every push to `main` that changes the docs,
+`pages/build.py` builds the project's website into `_site/`. It has the docs as pages, the Journey timeline, the
+Explorer (the base model's real numbers for three saved prompts) and a Side by side replay, and it runs in the browser
+from saved data. On every push to `main` that changes the docs,
 `.github/workflows/pages.yml` builds it and deploys it to GitHub Pages.
 
 ```bash
 python3 pages/build.py && python3 -m http.server 8090 -d _site       # build, then open http://localhost:8090
-python3 pages/record.py                                              # re-record the side-by-side runs (needs the app running)
+python3 pages/record.py                                              # re-record the Explorer and side-by-side runs (needs the app running)
+python3 pages/record.py --only explorer                              # just the Explorer, on the model in use (pick the base model first)
 ```
 
 ## Generating text from a trained model
 
-The web app's Generate step does this for you. From Python:
+The web app's Generate step does this for you. Its model list also has the masked diffusion runs: pick one and the
+page writes the whole continuation at once, replaying the denoising passes (choose 16 to 128 passes, which tokens stay
+and the block size). From Python:
 
 ```python
 from data import dataset_paths

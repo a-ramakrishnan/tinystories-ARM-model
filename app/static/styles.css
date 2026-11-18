@@ -1085,3 +1085,11 @@ body.tg-wide [data-step=sidebyside] .panel-head { max-width: 960px; }
 .sbs-how td { vertical-align: top; }
 .sbs-attn { width: 96px; height: 96px; display: block; margin-bottom: 4px; }
 @media (max-width: 800px) { .sbs-lanes { grid-template-columns: 1fr; } }
+
+/* Generate with a diffusion model (F3): the autoregressive-only controls step aside */
+.diff-only { display: none; }
+.diff-mode .diff-only { display: block; }
+.diff-mode .ar-only { display: none !important; }
+#g-diff { margin-top: 10px; }
+#g-text .df-mask { color: var(--muted); opacity: .55; }
+.diff-mode .diff-only.diff-inline { display: inline; }

@@ -1630,11 +1630,22 @@ def diffusion_run(req: DiffusionReq):
     text_of = {str(i): ("█" if i == DIFFUSION_MASK_ID else S.enc.decode([i])) for i in vocab}
     final = r["trace"][-1]["ids"] if r["trace"] else []
     rep = textgen.repetition(r["ids"])
+    # the final text per position, with characters split across tokens (curly quotes, accents) put back together:
+    # the bytes of a split character go on the position where it completes
+    pieces, pending = [], b""
+    for i in final:
+        pending += S.enc.decode_single_token_bytes(i)
+        try:
+            pieces.append(pending.decode("utf-8")); pending = b""
+        except UnicodeDecodeError:
+            pieces.append("")
+    if pending:
+        pieces[-1] = pending.decode("utf-8", errors="replace")
     return {"run": req.run, "device": S.dev.device, "source": source, "prompt": S.enc.decode(ids), "prompt_tokens": len(ids),
             "reference": S.enc.decode(ref_ids[:n]) if ref_ids else None, "completion": r["completion"],
             "gen_len": r["gen_len"], "length": len(r["ids"]), "steps": r["steps"], "seconds": r["seconds"],
             "tokens_per_sec": round(r["gen_len"] / r["seconds"], 1) if r["seconds"] else None, "repetition": rep,
-            "mask_id": DIFFUSION_MASK_ID, "text_of": text_of, "final": final,
+            "mask_id": DIFFUSION_MASK_ID, "text_of": text_of, "final": final, "pieces": pieces,
             "trace": [{"t": st["t"], "ids": st["ids"], "conf": st["conf"], "ms": st["ms"]} for st in r["trace"]]}
 
 

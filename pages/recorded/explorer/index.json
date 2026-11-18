@@ -1,0 +1,21 @@
+{
+ "recorded_at": "2026-11-18 07:03",
+ "model": "Large 124M best design \u00b7 stage 2 \u00b7 FineWeb-Edu full + Cosmopedia \u00b7 2.5B tokens \u00b7 context 512",
+ "prompts": [
+  {
+   "prompt": "The capital of France is Paris, and the capital of Italy is",
+   "tokens": 13,
+   "passes": 12
+  },
+  {
+   "prompt": "The water cycle is the process by which water moves",
+   "tokens": 10,
+   "passes": 12
+  },
+  {
+   "prompt": "Anna gave the book to Ben because Ben wanted to",
+   "tokens": 10,
+   "passes": 12
+  }
+ ]
+}

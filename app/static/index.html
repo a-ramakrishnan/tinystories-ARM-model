@@ -485,8 +485,8 @@
             <div id="g-pick-note" class="muted small"></div>
           </div>
         </div>
-        <div id="g-model" class="note"></div>
-        <details id="g-params-wrap" class="card details hidden">
+        <div id="g-model" class="note ar-only"></div>
+        <details id="g-params-wrap" class="card details hidden ar-only">
           <summary><span>Trained model: <b id="g-params-total"></b> parameters</span><span class="muted small">How is this calculated?</span></summary>
           <div id="g-params"></div>
         </details>
@@ -498,23 +498,23 @@
             <label>Top-k <output id="g-topk-v"></output><input id="g-topk" type="range" min="0" max="200" step="5" value="0"></label>
             <label>Length <output id="g-len-v"></output><input id="g-len" type="range" min="20" max="500" step="10" value="200"></label>
           </div>
-          <div class="fields three sliders">
+          <div class="fields three sliders ar-only">
             <label>Top-p <output id="g-topp-v"></output><input id="g-topp" type="range" min="0.05" max="1" step="0.05" value="0.9"></label>
             <label>Min-p <output id="g-minp-v"></output><input id="g-minp" type="range" min="0" max="0.3" step="0.01" value="0"></label>
             <label>Repetition penalty <output id="g-rep-v"></output><input id="g-rep" type="range" min="1" max="2" step="0.05" value="1"></label>
           </div>
-          <div class="fields three sliders">
+          <div class="fields three sliders ar-only">
             <label>Frequency penalty <output id="g-freq-v"></output><input id="g-freq" type="range" min="0" max="2" step="0.1" value="0"></label>
             <label>Presence penalty <output id="g-pres-v"></output><input id="g-pres" type="range" min="0" max="2" step="0.1" value="0"></label>
             <label>Typical-p <output id="g-typ-v"></output><input id="g-typ" type="range" min="0.2" max="1" step="0.05" value="1"></label>
           </div>
-          <div class="fields three sliders">
+          <div class="fields three sliders ar-only">
             <label>DRY (repeated sequences) <output id="g-dry-v"></output><input id="g-dry" type="range" min="0" max="2" step="0.1" value="0.8"></label>
             <div class="preset-chips"><span class="muted small">Presets (Balanced is the default)</span>
               <button class="chip-btn" data-spreset="greedy">Greedy</button><button class="chip-btn" data-spreset="greedydry" title="Greedy with the DRY penalty: the same text every time, without loops">Greedy + DRY</button><button class="chip-btn" data-spreset="balanced">Balanced</button><button class="chip-btn" data-spreset="creative">Creative</button><button class="chip-btn" data-spreset="reset" title="Temperature 0.8, top-k 50, no penalty: the default before Balanced">Old default</button>
             </div>
           </div>
-          <details class="hint sampling-help"><summary>What do these do?</summary>
+          <details class="hint sampling-help ar-only"><summary>What do these do?</summary>
             <ul>
               <li><b>Temperature</b> sharpens (below 1) or flattens (above 1) the model's probabilities before picking. At <b>0</b> it's <b>greedy</b>: always the single most likely token, so the same prompt always gives the same text.</li>
               <li><b>Top-k</b> keeps only the k most likely tokens (0 = off).</li>
@@ -525,14 +525,22 @@
               <li><b>DRY</b> ("don't repeat yourself") penalizes only tokens that would continue a sequence already in the text, more the longer the repeat would get; single words can come back freely. It stops greedy decoding from looping without making it random (0 = off).</li>
             </ul>
           </details>
+          <div id="g-diff" class="diff-only">
+            <div class="fields three">
+              <label>Denoising passes <select id="g-diff-steps" class="select"><option>16</option><option>32</option><option selected>64</option><option>128</option></select></label>
+              <label>Which tokens stay <select id="g-diff-sampler" class="select"><option value="keep" selected>the most confident (keep)</option><option value="random">random ones (random)</option></select></label>
+              <label>Blocks <select id="g-diff-block" class="select"><option value="0">the whole text at once</option><option value="16" selected>16 tokens at a time, left to right</option><option value="32">32 tokens at a time</option></select></label>
+            </div>
+            <p class="muted small">A diffusion model starts from a row of masks (█) as long as the text it will write and fills them in over a fixed number of passes, a few positions each pass, wherever it is most sure. Fewer passes is faster but rougher (F4: 16 passes ran at about 113 tokens/s but wrote much worse text than 64). Temperature, top-k and the repetition penalty above apply to every pass (they start at the settings F4 measured: temperature 1, top-k 50, penalty 1.2); the length is capped at 192 tokens. The <a href="#" data-go="sidebyside">Side by side</a> page runs a prompt on both kinds of model at once.</p>
+          </div>
           <div class="actions">
             <button id="g-run" class="btn primary">Generate</button>
-            <label class="switch"><input type="checkbox" id="g-kv" checked> Use KV cache</label>
+            <label class="switch ar-only"><input type="checkbox" id="g-kv" checked> Use KV cache</label>
             <label class="switch"><input type="checkbox" id="g-color" checked> Color tokens by confidence</label>
           </div>
         </div>
 
-        <div class="card">
+        <div class="card ar-only">
           <div class="card-head"><h3>How the next token is picked</h3><span id="sd-summary" class="muted small"></span></div>
           <p class="muted small">The model's top candidates for the token after your prompt. The light bar is the model's own probability; the dark bar is the probability after the penalties, temperature and filters above, which is what the next token is actually drawn from. It updates as you move the sliders.</p>
           <div id="sd-chart" class="sd-chart"></div>
@@ -543,14 +551,22 @@
           <div class="card">
             <div class="card-head"><h3>Output</h3><span class="legend conf-legend"><span><i class="sw conf-hi"></i>likely (40%+)</span><span><i class="sw conf-mid"></i>plausible (10–40%)</span><span><i class="sw conf-lo"></i>unlikely (under 10%)</span></span></div>
             <div id="g-text" class="doc gen-out"></div>
-            <p class="hint">Hover a generated token to see the model's top alternatives at that point.</p>
+            <p class="hint ar-only">Hover a generated token to see the model's top alternatives at that point.</p><p class="hint diff-only">Hover a token to see its position and how confident the model was when it revealed it. Color is that confidence.</p>
           </div>
           <div class="two-col">
             <div class="card">
-              <div class="card-head"><h3>Time per token</h3><span id="g-lat-note" class="muted small"></span></div>
+              <div class="card-head"><h3><span class="ar-only">Time per token</span><span class="diff-only diff-inline">Time per denoising pass</span></h3><span id="g-lat-note" class="muted small"></span></div>
               <div id="g-latency" class="chart"></div>
             </div>
-            <div class="card learn">
+            <div class="card learn diff-only">
+              <div class="card-head"><h3>What happens in a diffusion model</h3></div>
+              <ol class="flow small-flow">
+                <li><b>Masks.</b> The prompt is followed by one mask token for every position to write.</li>
+                <li><b>Passes.</b> Each pass reads the whole text, prompt and masks, and guesses every masked position at once. The guesses it is most confident about are kept; the rest stay masked for the next pass.</li>
+                <li><b>No KV cache.</b> Every pass re-reads everything, so a pass costs more than an autoregressive step (about 36 ms against 10 ms at 124M), but it can reveal several tokens.</li>
+              </ol>
+            </div>
+            <div class="card learn ar-only">
               <div class="card-head"><h3>What happens during inference</h3></div>
               <ol class="flow small-flow">
                 <li><b>Prefill.</b> The prompt's tokens go through the model in one pass. That, plus picking the first token, is the <b>time to first token</b>.</li>
@@ -561,7 +577,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card ar-only">
           <div class="card-head"><h3>Compare sampling settings</h3><span class="muted small">same prompt, same random seed</span></div>
           <p class="muted small">Continue the prompt with up to three settings side by side. Watch for repetition (low <i>distinct pairs</i>, high <i>repeated 4-grams</i>) with greedy decoding, and for drifting off topic at high temperature.</p>
           <div class="cmp-pick">
@@ -577,7 +593,7 @@
           <div id="cmp-out" class="cmp-out"></div>
         </div>
 
-        <div class="card">
+        <div class="card ar-only">
           <div class="card-head"><h3>Other ways to generate</h3><span class="kind decoder">Decoder inference</span></div>
           <p class="muted small"><b>Contrastive search</b> is deterministic like greedy but doesn't loop: of the k most likely tokens it prefers the one least like anything already written. <b>Beam search</b> keeps the most probable few continuations at every step (optionally never repeating a 3-token sequence). <b>Several samples at once</b> draws many continuations in one batch, almost as fast as one, using the temperature, top-k and top-p above (penalties aren't applied).</p>
           <div class="actions tight">
@@ -593,7 +609,7 @@
           <div id="dec-out" class="cmp-out"></div>
         </div>
 
-        <div class="card">
+        <div class="card ar-only">
           <div class="card-head"><h3>Prefill vs decode: how fast it feels</h3><span class="kind decoder">Decoder inference</span></div>
           <p class="muted small">Two numbers decide how fast a reply feels. <b>Time to first token</b> is the wait before anything appears: the prompt is processed in one pass (prefill), which is limited by compute and grows with the prompt. <b>Tokens per second</b> is how fast the rest streams in: each token is one more pass that reads every weight from memory (decode), which is limited by memory bandwidth. Move the sliders and press Run to feel the difference.</p>
           <div id="lat-out" class="lat-out"></div>
@@ -611,7 +627,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card ar-only">
           <div class="card-head"><h3>KV cache: with vs without</h3><span class="kind decoder">Decoder inference</span></div>
           <p class="muted small">Generates the same tokens twice, with the same random seed: once re-reading the whole context for every token, once with the KV cache. Measured on this machine's <span class="dev-name">GPU</span>.</p>
           <div class="actions tight">
@@ -634,7 +650,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card ar-only">
           <div class="card-head"><h3>How the KV cache works</h3><span class="kind decoder">Decoder inference</span></div>
           <p class="muted small">Every layer turns each token into a <b>key</b> (what this token offers to later tokens) and a <b>value</b> (what it passes on when attended to). A new token's query is compared with the keys of every earlier token. Those keys and values never change, so they can be kept instead of recomputed.</p>
           <div class="actions tight">
@@ -646,7 +662,7 @@
           <div id="kv-explain" class="stats"></div>
         </div>
 
-        <div class="card">
+        <div class="card ar-only">
           <div class="card-head"><h3>KV cache memory</h3><span class="muted small">2 × layers × KV width × bytes × tokens × sequences</span></div>
           <div class="fields three">
             <label>Model <select id="kvm-model" class="select"></select></label>

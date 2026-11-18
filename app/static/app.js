@@ -1016,6 +1016,12 @@ function genLabel(m, best) {
 }
 async function loadGenPicker() {
   const d = await (await fetch("/api/models")).json();
+  if (!ui.genDiffRuns) {
+    try {   // newest first, and only runs whose weights are on this Mac
+      const r = await (await fetch("/api/diffusion")).json();
+      ui.genDiffRuns = (r.runs || []).filter((x) => x.params).sort((a, b) => (b.finished_at || "").localeCompare(a.finished_at || ""));
+    } catch { ui.genDiffRuns = []; }
+  }
   const groups = new Map();
   for (const m of d.models) {
     const g = genGroup(m).title;
@@ -1035,8 +1041,13 @@ async function loadGenPicker() {
   sel.innerHTML = order.map((g) => opt(groups.get(g)[0], `★ ${g}: ${genLabel(groups.get(g)[0], false)}`)).join("") +
     // a model chosen on the Models page that isn't one of the best stays listed while it's in use
     (a0 && !bestIds.has(a0.id) ? `<option value="${esc(a0.id)}">In use: ${esc(genLabel(a0, false))}</option>` : "") +
-    '<option value="">The model trained on the current datasets (Train step)</option>';
-  sel.value = d.active || "";
+    '<option value="">The model trained on the current datasets (Train step)</option>' +
+    // F3: the masked diffusion models, which write by denoising instead of one token at a time
+    (ui.genDiffRuns?.length ? `<optgroup label="Diffusion models (fill in the whole text over several passes)">${ui.genDiffRuns.map((r) =>
+      `<option value="diff:${esc(r.id)}">${esc(r.name)}${r.best_bound != null ? ` · bound ${(+r.best_bound).toFixed(3)}` : ""}</option>`).join("")}</optgroup>` : "");
+  sel.value = ui.genDiff ? `diff:${ui.genDiff}` : d.active || "";
+  genMode();
+  if (ui.genDiff) { genDiffNote(); return; }
   const a = d.models.find((m) => m.id === d.active);
   const g = a ? genGroup(a) : null;
   $("#g-pick-note").innerHTML = (a?.chat
@@ -1047,7 +1058,32 @@ async function loadGenPicker() {
     (a?.chat ? `<b>Chat mode:</b> type a question as the prompt; the model answers and stops at the end of its answer (a chat model's loss counts only its answers, so it isn't comparable with the others). ` : "") +
     `The list has the best model (lowest validation loss; for chat, the furthest post-trained) for each kind of training data; every saved model is on the <a href="#" data-go="models">Models</a> page. The diffusion models write differently: see the <a href="#" data-go="diffusion">Diffusion</a> page.`;
 }
+// the Generate page in diffusion mode: hide the autoregressive-only controls, show the diffusion ones
+// the diffusion models were measured (F4) at temperature 1, top-k 50, repetition penalty 1.2; the sliders move there
+// in diffusion mode and back to the autoregressive settings afterwards
+const DIFF_SAMPLING = { temperature: 1, top_k: 50, repetition_penalty: 1.2 };
+function genMode() {
+  const sec = $('section[data-step="generate"]'), was = sec.classList.contains("diff-mode");
+  sec.classList.toggle("diff-mode", !!ui.genDiff);
+  if (!!ui.genDiff === was) return;
+  if (ui.genDiff) {
+    ui.genArSampling = samplingBody();
+    $("#g-temp").value = DIFF_SAMPLING.temperature; $("#g-topk").value = DIFF_SAMPLING.top_k; $("#g-rep").value = DIFF_SAMPLING.repetition_penalty;
+    syncSliders();
+  } else if (ui.genArSampling) setSampling(ui.genArSampling);
+}
+function genDiffNote() {
+  const r = ui.genDiffRuns.find((x) => x.id === ui.genDiff);
+  $("#g-pick-note").innerHTML = `A <b>masked diffusion</b> model${r ? ` (${esc(r.name)}${r.gpu ? `, trained on ${esc(r.gpu)}` : ""})` : ""}: it writes the whole continuation at once, starting from masks and filling them in over the passes you choose. Its <b>bound</b> is an upper limit on its loss, so it isn't directly comparable with the autoregressive models' validation loss (F4 measured both on the same text: the diffusion model is about 0.85 nats behind at 124M). More on the <a href="#" data-go="diffusion">Diffusion</a> page.`;
+}
 $("#g-model-pick").addEventListener("change", (e) => action(e.target, async () => {
+  if (e.target.value.startsWith("diff:")) {
+    ui.genDiff = e.target.value.slice(5);
+    genMode(); genDiffNote();
+    toast("Generate now uses this diffusion model.");
+    return;
+  }
+  ui.genDiff = null;
   await api("/api/models/use", { id: e.target.value || null });
   await poll();
   await loadGenPicker();
@@ -1434,7 +1470,7 @@ async function generate() {
   ui.genAbort?.abort();
   const ctrl = new AbortController();
   ui.genAbort = ctrl;
-  try { await generateRun(ctrl); }
+  try { await (ui.genDiff ? generateDiffusion(ctrl) : generateRun(ctrl)); }
   catch (e) { if (e.name !== "AbortError") throw e; }
   finally { if (ui.genAbort === ctrl) ui.genAbort = null; }
 }
@@ -1493,6 +1529,73 @@ async function generateRun(ctrl) {
     }
   }
   render();
+}
+
+// F3: generate with a diffusion model. The server denoises and returns every pass; the page replays them.
+function genKeepHistory() {
+  if ($("#g-text").innerHTML && ui.lastGen) {
+    const item = document.createElement("div");
+    item.className = "card gen-item";
+    item.innerHTML = `<div class="doc">${ui.lastGen}</div>`;
+    $("#g-history").prepend(item);
+    while ($("#g-history").children.length > 4) $("#g-history").lastChild.remove();
+  }
+}
+async function generateDiffusion(ctrl) {
+  const body = { run: ui.genDiff, prompt: $("#g-prompt").value, tokens: Math.min(192, +$("#g-len").value),
+    steps: +$("#g-diff-steps").value, sampler: $("#g-diff-sampler").value, block_size: +$("#g-diff-block").value,
+    temperature: Math.max(0.05, +$("#g-temp").value), top_k: +$("#g-topk").value, repetition_penalty: +$("#g-rep").value, seed: null };
+  const out = $("#g-text");
+  genKeepHistory();
+  $("#g-live").classList.remove("hidden");
+  out.classList.toggle("plain", !$("#g-color").checked);
+  out.innerHTML = `<span class="prompt">${esc(body.prompt)}</span><span class="muted"> <span class="spinner"></span> denoising ${body.tokens} positions in ${body.steps} passes…</span>`;
+  $("#g-metrics").innerHTML = "";
+  const res = await fetch("/api/diffusion/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctrl.signal });
+  const r = await res.json().catch(() => ({}));
+  if (!res.ok) { out.innerHTML = ""; throw new Error(r.detail || res.statusText); }
+  // each position: the pass that revealed it and the model's confidence then
+  const revealConf = Array(r.gen_len).fill(0);
+  r.trace.forEach((st, k) => st.ids.forEach((id, i) => {
+    const before = k ? r.trace[k - 1].ids[i] : r.mask_id;
+    if (id !== r.mask_id && id !== before) revealConf[i] = st.conf[i];
+  }));
+  const show = (k) => {
+    const st = r.trace[k], prev = k ? r.trace[k - 1].ids : [];
+    const left = st.ids.filter((x) => x === r.mask_id).length;
+    out.innerHTML = `<span class="prompt">${esc(r.prompt)}</span>` + st.ids.map((id, i) => {
+      if (id === r.mask_id) return '<span class="df-mask">█</span>';
+      const c = id !== prev[i] ? st.conf[i] : revealConf[i];
+      // the last pass shows the text with split characters (curly quotes, accents) joined back up
+      const text = k === r.trace.length - 1 && r.pieces ? r.pieces[i] : r.text_of[id] ?? "";
+      return `<span class="gt ${confClass(c)}" title="position ${i + 1} · confidence ${(c * 100).toFixed(1)}% when revealed">${esc(text)}</span>`;
+    }).join("");
+    genDiffMetrics(r, k + 1, r.gen_len - left, revealConf);
+  };
+  // replay: about 3 seconds whatever the number of passes, then the final text
+  const wait = Math.max(15, Math.min(120, 3000 / r.trace.length));
+  for (let k = 0; k < r.trace.length; k++) {
+    if (ctrl.signal.aborted) return;
+    show(k);
+    await new Promise((ok) => setTimeout(ok, wait));
+  }
+  const ms = r.trace.map((st, k) => Math.round(st.ms - (k ? r.trace[k - 1].ms : 0)));
+  drawLatency(ms);
+  $("#g-lat-note").textContent = `time per denoising pass: about ${Math.round(ms.reduce((a, b) => a + b, 0) / ms.length)} ms each (every pass reads the whole text)`;
+  ui.lastGen = out.innerHTML;
+  ui.generated = true;
+  render();
+}
+function genDiffMetrics(r, pass, revealed, confs) {
+  $("#g-metrics").innerHTML = [
+    stat("Prompt tokens", fmt(r.prompt_tokens), "input"),
+    stat("Positions revealed", `${fmt(revealed)} / ${fmt(r.gen_len)}`, `after pass ${pass} of ${r.trace.length}`),
+    stat("Denoising passes", fmt(r.steps), "each reads prompt + every position"),
+    stat("Total time", `${r.seconds.toFixed(2)} s`, `on ${esc(r.device)}`),
+    stat("Speed", r.tokens_per_sec != null ? `${r.tokens_per_sec} tok/s` : "–", `${(r.gen_len / r.steps).toFixed(1)} tokens revealed per pass`),
+    stat("Average confidence", confs.length ? `${Math.round((confs.reduce((a, b) => a + b, 0) / confs.length) * 100)}%` : "–", "of the final tokens, when each was revealed"),
+    stat("Repetition", r.repetition?.repeated_4grams != null ? `${Math.round(r.repetition.repeated_4grams * 100)}%` : "–", "of 4-token runs repeat earlier ones"),
+  ].join("");
 }
 
 // ---------- 8. models & evaluation ----------

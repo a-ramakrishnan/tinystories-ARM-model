@@ -38,7 +38,7 @@ DOCS = [
     ("docs/model_cards/fineweb-edu-124m-diffusion.md", "card-diffusion.html", "Diffusion model (124M)", "Models"),
     ("docs/model_cards/fineweb-edu-124m-base-gptq-4bit.md", "card-gptq.html", "Base model, GPTQ 4-bit", "Models"),
 ]
-APPS = [("journey.html", "Journey"), ("sidebyside.html", "Side by side")]
+APPS = [("journey.html", "Journey"), ("explorer.html", "Explorer"), ("sidebyside.html", "Side by side")]
 PAGE_OF = {src: page for src, page, _, _ in DOCS}
 TASKS = [("hellaswag", "HellaSwag", "acc_norm"), ("lambada", "LAMBADA", "acc"), ("arc_easy", "ARC-Easy", "acc"),
          ("piqa", "PIQA", "acc"), ("winogrande", "Winogrande", "acc")]
@@ -207,6 +207,7 @@ def landing(numbers):
 our models have the same size. Scored the way EleutherAI's lm-evaluation-harness scores them; the diffusion models score each answer by its likelihood bound.
 All of it: <a href="results.html">Results</a>.</p></div>'''
     tiles = [("journey.html", "Journey", "Every decision from the first commit to today: what changed, why, what it measured and what it cost."),
+             ("explorer.html", "Explorer", "One prompt through the real 124M model: every block's attention, the feed-forward layer and the logit lens."),
              ("sidebyside.html", "Side by side", "The same prompt written left to right by the GPT and all at once by the diffusion model, replayed in your browser."),
              ("story.html", "The story", "From a 356-line training script to a 124M model that beats GPT-2 small on held-out web text."),
              ("usage.html", "How to use it", "Install, run the local web app, train on your Mac's GPU or on Colab, evaluate and compare."),
@@ -305,6 +306,53 @@ fetch("assets/sidebyside.json").then((r) => r.json()).then((data) => {
                 description="A GPT and a masked diffusion model of the same size writing the same prompt, replayed side by side.")
 
 
+def explorer_markup():
+    """The app's Explorer (Inside the transformer → Explorer), taken from app/static/index.html so the two stay the same."""
+    text = open(os.path.join(ROOT, "app", "static", "index.html"), encoding="utf-8").read()
+    start = text.index('<div id="a-explorer-view"')
+    end = text.index('<footer class="panel-foot">', start)
+    return text[start:end].replace('<div id="a-explorer-view" class="hidden">', '<div id="a-explorer-view">', 1)
+
+
+def explorer_page(index):
+    options = "".join(f'<option value="{i}">{html.escape(p["prompt"])}</option>' for i, p in enumerate(index["prompts"]))
+    body = f'''<header class="panel-head"><span class="eyebrow">Explore</span><h1>Explorer: one prompt through the real model</h1>
+<p>Every number below is the real model's: <b>{html.escape(index["model"])}</b>, the project's base model. A prompt's tokens become
+vectors, go through every transformer block (attention mixes the tokens, the feed-forward layer refines each one) and come out as a
+probability for every token in the vocabulary. Hover a row to follow a token, click a part for its explanation, press
+<b>▶ Play the data flow</b> to watch one token go through a block stage by stage, or switch to <b>Diagram</b> for the queries, keys
+and values. Recorded on an Apple M5 ({html.escape(index["recorded_at"])}); the app explores any prompt live.</p></header>
+<div class="card"><label>Recorded prompt <select id="ex-saved" class="select">{options}</select></label>
+<input id="a-prompt" type="hidden"></div>
+{explorer_markup()}'''
+    scripts = SHIM + '''<script>
+// what explorer.js needs from the app (app.js), and /api/explain answered from the recorded files
+const fmt = (n) => Number(n).toLocaleString();
+const toast = (m) => console.warn(m);
+const action = async (el, fn) => { try { await fn(); } catch (e) { console.error(e); } };
+const ui = { status: { active: { name: EX_MODEL } } };
+const exCache = {};
+let exPick = 0;
+async function api(path, body) {
+  const get = async (k, f) => (exCache[k] ??= await (await fetch(`assets/explorer/${f}`)).json());
+  const base = await get(exPick, `p${exPick}.json`);
+  const L = Math.max(0, Math.min(body.layer || 0, base.config.passes - 1));
+  const d = structuredClone(base);
+  d.layers[L].detail = await get(`${exPick}-${L}`, `p${exPick}-block${L}.json`);
+  d.layer = L;
+  return d;
+}
+</script><script src="assets/explorer.js"></script><script src="assets/flow.js"></script><script src="assets/flowplay.js"></script><script>
+document.body.classList.add("ex-wide");
+const exShow = (i) => { exPick = i; $("#a-prompt").value = EX_PROMPTS[i]; ex.tok = null; exRun(); };
+$("#ex-saved").addEventListener("change", (e) => exShow(+e.target.value));
+exShow(0);
+</script>'''
+    scripts = scripts.replace("EX_MODEL", json.dumps(index["model"])).replace("EX_PROMPTS", json.dumps([p["prompt"] for p in index["prompts"]]))
+    return page("Explorer · TinyStories ARM", "explorer.html", body, scripts=scripts, wide=True,
+                description="One prompt through the real 124M model: embeddings, attention, feed-forward and the logit lens, in the browser.")
+
+
 # ---------- build ----------
 
 def build(out):
@@ -326,7 +374,7 @@ def build(out):
     for a in sorted(assets):
         if os.path.exists(os.path.join(ROOT, a)):
             shutil.copy(os.path.join(ROOT, a), os.path.join(out, "assets", a.replace("/", "_")))
-    for name in ("styles.css", "journey.js", "sidebyside.js"):
+    for name in ("styles.css", "journey.js", "sidebyside.js", "explorer.js", "flow.js", "flowplay.js"):
         shutil.copy(os.path.join(ROOT, "app", "static", name), os.path.join(out, "assets", name))
     j = os.path.join(out, "assets", "journey.js")          # its "full story" links: the site's own page
     text = open(j, encoding="utf-8").read()
@@ -342,6 +390,11 @@ def build(out):
         shutil.copy(data_path, os.path.join(out, "assets", "sidebyside.json"))
         with open(os.path.join(out, "sidebyside.html"), "w", encoding="utf-8") as f:
             f.write(sidebyside_page(json.load(open(data_path))))
+    ex_dir = os.path.join(HERE, "recorded", "explorer")
+    if os.path.exists(os.path.join(ex_dir, "index.json")):
+        shutil.copytree(ex_dir, os.path.join(out, "assets", "explorer"))
+        with open(os.path.join(out, "explorer.html"), "w", encoding="utf-8") as f:
+            f.write(explorer_page(json.load(open(os.path.join(ex_dir, "index.json")))))
     open(os.path.join(out, ".nojekyll"), "w").close()
     n = sum(len(fs) for _, _, fs in os.walk(out))
     size = sum(os.path.getsize(os.path.join(d, x)) for d, _, fs in os.walk(out) for x in fs)
