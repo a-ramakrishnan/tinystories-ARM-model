@@ -23,6 +23,7 @@ Zero-shot, lm-evaluation-harness style, in percent: HellaSwag acc_norm, LAMBADA 
 | Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk · 11.284k steps | 30.1 | 13.5 | 41.8 | 59.1 | 47.9 | 38.5 | 2026-11-15 |
 | Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk + DPO against repetition | 30.1 | 12.9 | 42.0 | 59.0 | 47.9 | 38.4 | 2026-11-15 |
 | Diffusion 124M · FineWeb-Edu full + Cosmopedia · 999M tokens | 27.6 | 11.8 | 30.7 | 54.2 | 49.6 | 34.8 | 2026-11-16 |
+| Diffusion 124M · FineWeb-Edu full + Cosmopedia · 2,500M tokens | 28.0 | 14.4 | 30.1 | 55.4 | 49.1 | 35.4 | 2026-11-17 |
 
 ## Held-out loss
 
@@ -199,4 +200,36 @@ Best likelihood bound on held-out text during training (nats per token, an upper
 | | | | left to right, rep 1.2 | 4.354 | 0.4 | 97.2 |
 | | | | random order, temp 0.8 | 3.418 | 3.7 | 83.9 |
 | | | | random order, temp 1.0 | 3.83 | 0.6 | 91.4 |
-| Diffusion 124M · FineWeb-Edu full + Cosmopedia · 2,500M tokens | 3.830 | 2.5B |  |  |  |  |
+| Diffusion 124M · FineWeb-Edu full + Cosmopedia · 2,500M tokens | 3.830 | 2.5B | base AR model, top-k 50 (judge's own text) | 2.073 | 1.2 | 93.4 |
+| | | | real continuation | 3.063 | 0.4 | 95.5 |
+| | | | keep (confident first), top-k 50 | 1.604 | 47.1 | 41.9 |
+| | | | keep, 16 steps | 2.184 | 53.1 | 32.0 |
+| | | | keep, blocks of 16 | 1.964 | 34.4 | 51.7 |
+| | | | keep, blocks of 4 | 2.411 | 24.4 | 63.1 |
+| | | | keep, blocks of 4, rep 1.2 | 3.109 | 3.0 | 90.9 |
+| | | | keep, blocks of 8, rep 1.2 | 2.878 | 6.7 | 84.2 |
+| | | | keep, blocks of 8, rep 1.3 | 3.012 | 5.3 | 88.1 |
+| | | | keep, distinct | 1.604 | 47.1 | 41.9 |
+| | | | keep, distinct, 16 steps | 2.525 | 17.7 | 62.8 |
+| | | | keep, distinct, blocks of 16 | 1.964 | 34.4 | 51.7 |
+| | | | keep, distinct, rep 1.1 | 2.12 | 27.4 | 59.4 |
+| | | | keep, distinct, rep 1.2 | 2.269 | 18.7 | 71.3 |
+| | | | keep, distinct, rep 1.2, blocks of 16 | 2.584 | 11.5 | 77.5 |
+| | | | keep, noise level from masks | 1.625 | 45.2 | 43.3 |
+| | | | keep, remask 0.1 | 1.846 | 45.1 | 42.8 |
+| | | | keep, rep 1.15 | 2.232 | 25.3 | 62.5 |
+| | | | keep, rep 1.2 | 2.269 | 18.7 | 71.3 |
+| | | | keep, rep 1.2, 128 steps | 2.298 | 19.1 | 70.3 |
+| | | | keep, rep 1.2, blocks of 16 | 2.584 | 11.5 | 77.5 |
+| | | | keep, rep 1.2, blocks of 32 | 2.298 | 19.2 | 69.7 |
+| | | | keep, rep 1.2, noise from masks | 2.252 | 21.1 | 65.8 |
+| | | | keep, rep 1.2, remask 0.1 | 2.868 | 20.4 | 70.8 |
+| | | | keep, rep 1.2, temp 0.8 | 2.302 | 15.6 | 73.9 |
+| | | | keep, rep 1.2, top-p 0.9 | 2.245 | 20.5 | 69.3 |
+| | | | keep, rep 1.5 | 3.106 | 2.7 | 92.6 |
+| | | | keep, repetition 1.3 | 2.551 | 10.1 | 82.8 |
+| | | | left to right (blocks of 1) | 3.419 | 7.0 | 85.6 |
+| | | | left to right, rep 1.1 | 3.834 | 2.5 | 91.8 |
+| | | | left to right, rep 1.2 | 4.08 | 1.2 | 96.0 |
+| | | | random order, temp 0.8 | 3.393 | 2.6 | 84.2 |
+| | | | random order, temp 1.0 | 3.882 | 1.6 | 90.3 |

@@ -4,6 +4,14 @@ const J_DOC = "https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main
 
 // kind: win | tie | loss | fix | tool. best: part of today's best model.
 const JOURNEY = [
+  { when: "2026-11-17 23:58", kind: "tie", area: "Diffusion", title: "Two ways to write, compared like for like (F4)",
+    decision: "Extend the 124M diffusion model to 2.5B tokens, then compare it with the base model, the same size, data, tokens and tokenizer, on the same held-out windows, the benchmarks, and writing judged by GPT-2 small.",
+    why: "Only the training objective differs, so the gap between them is the cost (or gain) of masked diffusion itself.",
+    result: { label: "held-out web text · benchmark average", text: "AR loss 3.296 vs diffusion bound 4.148 (+0.85) · 42.3 vs 35.4" },
+    calc: ["the gap is about the same for the 51M TinyStories pair (+0.95): scale didn't close it",
+      "largest on Cosmopedia (+1.15), smallest on Shakespeare (+0.52): left-to-right pays most on predictable text",
+      "at equal speed (16 passes, ~110 tokens/s) GPT-2 judges the diffusion text 4.48 vs 2.98; it catches up only at 64 passes, 3.6× slower, with 7× the repetition"],
+    cost: "2.5B-token extension: 98 min on an A100; evaluation 2 h 40 min and the comparison 10 min on the Mac", anchor: "38-two-ways-to-write-compared-f4" },
   { when: "2026-11-17 18:00", kind: "tool", area: "Inference", title: "GPTQ on our own model, and a Quantize page",
     decision: "Run GPTQ (llm-compressor's oneshot, 4-bit weights in groups of 128) first on Qwen3-0.6B, then on our model through a local Hugging Face wrapper; read the integers back into our own quantized layers; add a Quantize page that saves and compares copies.",
     why: "GPTQ corrects each column's rounding error in the columns still to come, using calibration text; round to nearest doesn't look at data at all.",

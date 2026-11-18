@@ -1,0 +1,495 @@
+{
+ "pair": {
+  "title": "124M, FineWeb-Edu full + Cosmopedia, 2.5B tokens",
+  "ar": "mini-fineweb-edu-ful-202611151103-bb160c",
+  "diffusion": "f6-124m-stage2-2p5b"
+ },
+ "device": "mps",
+ "measured_at": "2026-11-17 23:48",
+ "benchmarks": {
+  "hellaswag": {
+   "title": "HellaSwag",
+   "metric": "acc_norm",
+   "ar": 0.32264489145588526,
+   "diffusion": 0.2804222266480781,
+   "chance": 0.25,
+   "gpt2": 0.3114
+  },
+  "lambada": {
+   "title": "LAMBADA",
+   "metric": "acc",
+   "ar": 0.20337667378226276,
+   "diffusion": 0.14360566660197943,
+   "chance": 0.0,
+   "gpt2": 0.3256
+  },
+  "arc_easy": {
+   "title": "ARC-Easy",
+   "metric": "acc",
+   "ar": 0.4684343434343434,
+   "diffusion": 0.30092592592592593,
+   "chance": 0.25,
+   "gpt2": 0.4381
+  },
+  "piqa": {
+   "title": "PIQA",
+   "metric": "acc",
+   "ar": 0.6240478781284005,
+   "diffusion": 0.5544069640914037,
+   "chance": 0.5,
+   "gpt2": 0.6289
+  },
+  "winogrande": {
+   "title": "Winogrande",
+   "metric": "acc",
+   "ar": 0.4988161010260458,
+   "diffusion": 0.4909234411996843,
+   "chance": 0.5,
+   "gpt2": 0.5162
+  }
+ },
+ "heldout": {
+  "baominhtran__mini-fineweb-edu-small": {
+   "title": "Mini FineWeb-Edu",
+   "ar_loss": 3.2957,
+   "diffusion_bound": 4.1483,
+   "gap": 0.8526
+  },
+  "baominhtran__mini-fineweb-edu-tiny": {
+   "title": "baominhtran__mini-fineweb-edu-tiny",
+   "ar_loss": 3.3099,
+   "diffusion_bound": 4.1771,
+   "gap": 0.8672
+  },
+  "huggingfacetb__cosmopedia-khanacademy": {
+   "title": "huggingfacetb__cosmopedia-khanacademy",
+   "ar_loss": 2.3359,
+   "diffusion_bound": 3.4907,
+   "gap": 1.1548
+  },
+  "huggingfacetb__cosmopedia-openstax": {
+   "title": "huggingfacetb__cosmopedia-openstax",
+   "ar_loss": 2.7173,
+   "diffusion_bound": 3.8757,
+   "gap": 1.1584
+  },
+  "huggingfacetb__cosmopedia-stanford-first100000": {
+   "title": "huggingfacetb__cosmopedia-stanford-first100000",
+   "ar_loss": 2.6407,
+   "diffusion_bound": 3.7932,
+   "gap": 1.1525
+  },
+  "huggingfacetb__cosmopedia-stories-first300000": {
+   "title": "huggingfacetb__cosmopedia-stories-first300000",
+   "ar_loss": 2.7846,
+   "diffusion_bound": 3.9777,
+   "gap": 1.1931
+  },
+  "huggingfacetb__cosmopedia-wikihow": {
+   "title": "huggingfacetb__cosmopedia-wikihow",
+   "ar_loss": 2.3425,
+   "diffusion_bound": 3.4696,
+   "gap": 1.1271
+  },
+  "roneneldan__tinystories": {
+   "title": "TinyStories",
+   "ar_loss": 2.7507,
+   "diffusion_bound": 3.5251,
+   "gap": 0.7744
+  },
+  "salesforce__wikitext-wikitext-2-raw-v1": {
+   "title": "WikiText-2",
+   "ar_loss": 5.0468,
+   "diffusion_bound": 5.6812,
+   "gap": 0.6344
+  },
+  "url-raw.githubusercontent.com-input.txt-4c649141": {
+   "title": "Tiny Shakespeare",
+   "ar_loss": 5.4461,
+   "diffusion_bound": 5.9662,
+   "gap": 0.5201
+  }
+ },
+ "writing": {
+  "judge": "webtext-openai-201902140000-f3da9f",
+  "tokens": 64,
+  "seeds": [
+   1,
+   2
+  ],
+  "prompts": 8,
+  "settings": {
+   "AR, sampled (top-k 50)": {
+    "passes": 64,
+    "judge_loss": 2.9815,
+    "repeated_4grams": 0.0144,
+    "distinct_2": 0.9355,
+    "length": 64.0,
+    "seconds": 0.6317,
+    "tokens_per_sec": 101.3,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 2.9569,
+      "repeated_4grams": 0.0288,
+      "distinct_2": 0.9009,
+      "length": 64.0,
+      "seconds": 0.6373,
+      "tokens_per_sec": 100.4
+     },
+     "TinyStories": {
+      "judge_loss": 3.006,
+      "repeated_4grams": 0.0,
+      "distinct_2": 0.9701,
+      "length": 64.0,
+      "seconds": 0.626,
+      "tokens_per_sec": 102.2
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " Object is a static entity defined in its class-is-object property, which is the class description in which it is called as object. Object-->> Object, now, to be considered as object, is an object with a class description in which it is known as a class. Object-->> Object, now class"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": " of this rights, and they must remain intact today. The promise of equality and representation is not just a promise; it is a fundamental human right.\nIn the US, the right to vote was officially established in 1847 by the Framers, beginning with Congress in 1851. This was followed by the passage of"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": " in 1787, and a perfect marriage of the colonies.\nAdCOLOR holds three official regions in the United States, including Arizona, California, and Oregon. This territory is a prime example of how important it is to protect our diversity and national interests.\nAnd in 1869, the first US president, George Washington"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": ", Raman spectroscopy is used to determine the properties of the molecular structure when the molecule is in equilibrium. This can be used to identify the molecular weight, structure, and charge.\n- Raman spectroscopy is used to determine the molecular structure of moles of solid and non-solid.\n-"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": " and even tried to fly from one of the giant trees to another. One day, she noticed these trees were growing really big and strong! That\u2019s when Roxy started wondering why it was called big trees.\n\nRoxy had an idea. She suggested, \"Maybe it's because of the way the"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " loved all sorts of things, like fish and plants. They were also very healthy when they ran healthy, eating all sorts of stuff.\n\nOne day, Bob found out that his friend Tim was having big trouble getting enough sunlight to survive. They decided to figure out how to find a solution. There were four solutions"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " loved painting all around the house using bright colors and vibrant patterns. When he finished he went outside to show it off to everyone else. That idea fascinated him. So he set to work on another big project: making a video of the perfect family dinner.\n\nOne evening, after many weeks of hard work, Josh"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " newspaper read 'Women' from the left of the page. She asked her mommy, \"Wow, look at all these changes happening here!\" Her mommy, who always knew very well about science, knew that this news was bad news for Lily.\n\nSo, she wanted to share this information with the other"
+     }
+    ]
+   },
+   "AR, greedy": {
+    "passes": 64,
+    "judge_loss": 1.6266,
+    "repeated_4grams": 0.2726,
+    "distinct_2": 0.6546,
+    "length": 64.0,
+    "seconds": 0.5826,
+    "tokens_per_sec": 109.9,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 1.3151,
+      "repeated_4grams": 0.4917,
+      "distinct_2": 0.4285,
+      "length": 64.0,
+      "seconds": 0.5822,
+      "tokens_per_sec": 109.9
+     },
+     "TinyStories": {
+      "judge_loss": 1.9381,
+      "repeated_4grams": 0.0535,
+      "distinct_2": 0.8808,
+      "length": 64.0,
+      "seconds": 0.583,
+      "tokens_per_sec": 109.8
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " object is a class that is a class that is a class that is a class that is a class that is a class that is a class that is a class that is a class that is a class that is a class that is a class that is a class that is a class that is a class that is a class"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": " of the law, and the current system is no exception.\nThe current system is a result of a lack of transparency and accountability. The government has been forced to take on the responsibility for the implementation of the law, which has led to a lack of accountability.\nThe current system is a result of a lack of"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": " in 1807. The first settlers were the settlers of the area of the Great Lakes. The first settlers were the settlers of the Great Lakes. The first settlers were the settlers of the Great Lakes. The first settlers were the settlers of the Great Lakes. The first settlers were the settlers of the Great Lakes. The first"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": ", the Raman spectrograph is used to analyze the chemical properties of compounds, such as the reactivity of a compound, and to determine the molecular structure of a compound.\nIn the field of medicine, the Raman spectrograph is used to analyze the molecular structure of drugs, such as the structure of"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": ", and even made her own food! But one day, she noticed something strange - she couldn't climb because she couldn't see the sky.\n\nRoxy asked her friend, \"Why do we need to climb so much?\" With a twinkle in her eye, Roxy replied, \"It's because we"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " loved fishing. They would spend their days together, fishing, and playing.\n\nOne day, while they were fishing, Bob noticed something strange. The fish seemed to be moving in a different direction than before. It was like they were moving in a different direction than before!\n\n\"Wow, I never thought"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " loved playing with his friends and family. But when he got older, he started to lose interest in things he once enjoyed. His parents noticed his decline and decided to take him to the doctor.\n\nDuring their visit, Josh learned that his parents had noticed his poor health. They wanted to see him more often and"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " newspaper that said, \"The National Park Service is working hard to protect our beautiful national park.\"\n\nLily asked, \"What kind of work do you think the National Park Service is doing?\" Her mommy replied, \"Well, Lily, the National Park Service is working hard to protect our national park.\"\n"
+     }
+    ]
+   },
+   "diffusion, 16 passes": {
+    "passes": 16,
+    "judge_loss": 4.4801,
+    "repeated_4grams": 0.0318,
+    "distinct_2": 0.8661,
+    "length": 64.0,
+    "seconds": 0.5664,
+    "tokens_per_sec": 113.0,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 4.2573,
+      "repeated_4grams": 0.0451,
+      "distinct_2": 0.8294,
+      "length": 64.0,
+      "seconds": 0.5443,
+      "tokens_per_sec": 117.6
+     },
+     "TinyStories": {
+      "judge_loss": 4.7029,
+      "repeated_4grams": 0.0185,
+      "distinct_2": 0.9028,
+      "length": 64.0,
+      "seconds": 0.5886,
+      "tokens_per_sec": 108.7
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " object, object, or object type within a class in the class, class, and type is called refernce type.\n3) Type Objects\u2013 Go by type type type, type type type, type type, type type of type type, type type, information type type type, type type type, type type"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": " online, with some are not equal, and. are not. In effect, many Americans have asked freedom to consider voting., who are trying to vote their own state and come to vote they're facing a dangerous violation of voting rights and privacy. The right to take check for voting means freedom to vote or voting."
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": " independence, but had freedom to control, and. The became independent by independence, independence, and power. When we came on government, it was nationalism that was free from ideas ofism. It was a important city of which was not a capital city, independence, powers. It offered independence.Sala was a big"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": " medicine, the is used in both biology and other fields In medicine, physics, and, to, it, which determine biology, physics, biology, etc., by analyzing the of the atomic number, the greater the sum of the the beam, the stronger the the number the the value..\nIt measures the atomic"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": " up, and had made rocks move up and let up the ground. Similarly, when it was climbing, plants were down. It did became tall as fast.\nAs big plants grew, lots more trees growing. Plants grew stronger and plants began strong enough to grew bigger strong. But- Each atom had strong strong roots"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " is, he, how love little, and he wanted the lake around him, which it looked to be water for him.\nKe gave his to to the story of the lake, who chose that - but still wanted the type of water they they them used,, always wanted a third. His also back to the"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " playing, played sports, and showed like others. As the weeks went on, he found something big. It met Mr. Wise, who helped him him. They explained that even the best, Harrison gave his mother money to keep going.\n\nOne sunny afternoon, they met Mr.. Wise, whose child of"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " picture, but noticed how it looked look and. The they marveled up, she felt a strange bleeding in the eyes.\n\n---:\nIYou know I can so playing with this friends!\nSo I \"Oh! Let me tell you know,, can's together!\". Lily and her were big"
+     }
+    ]
+   },
+   "diffusion, 32 passes": {
+    "passes": 32,
+    "judge_loss": 3.6217,
+    "repeated_4grams": 0.0481,
+    "distinct_2": 0.8442,
+    "length": 64.0,
+    "seconds": 1.1584,
+    "tokens_per_sec": 55.2,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 3.3601,
+      "repeated_4grams": 0.086,
+      "distinct_2": 0.7659,
+      "length": 64.0,
+      "seconds": 1.1605,
+      "tokens_per_sec": 55.1
+     },
+     "TinyStories": {
+      "judge_loss": 3.8834,
+      "repeated_4grams": 0.0103,
+      "distinct_2": 0.9226,
+      "length": 64.0,
+      "seconds": 1.1562,
+      "tokens_per_sec": 55.4
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " object, an example, A class, a class, A, A class, A class etc.\n3) Subject: Classifying Generation in A Class\n4) Classifying Generation In Class A Class\n1) Actation For All (i(c) The principle of all (b) the all (a"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": " together, but there are still what they can go access today. In fact, some states restrict their right to vote, while others give them a right to vote. Still, many people still need to force their right to vote.\nIn America United States, having a right to vote for its right to vote is important"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": " independence, and built independence. Australia was the first free nation in the world, which the first developed to the world. The United Kingdom of Australia was the second largest in in world, which at the 12th its early 20th century.\nThe United States of America (US)) first developed to the 26th"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": ", the light beam can measure various physical properties, such as pressure, temperature, pressure, and energy.\nIn physics, the light beam can measure the vibrational state of molecules. It takes light, time, and effort. For example, the light beam can measure the vibrational state of molecules. Generally: the"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": " up, and rocks down. The two them stand to the ground. They stood tall on ground. Some stood so strong. Roxy was tall, so fast it came so climb!\nThese three friends were very hard, because they were moving very hard. But how did one do? These things were getting tough because"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " worked, he loves water, and he loves swimming all the lake. \nWhen he was very old, Tim had why He wanted water and came to him because he knew about groundwater, Water really him how He wanted water, so it made them happy.  So when he got a lake, he gave His name"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " played, at the right in his hands, but by the end, he couldn't get into the. It had fun, enjoyable, and, he course. As he started playing together, they learned about time, play, and,. They, if not, were, kids, and then forget!!\n\n"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " letter, and it was her face! It was full of names, colors, colors, and more.\nThe name in the letter came coming from - for instance, \"...\" \", \", \"\", \"....\" Then, she found the letter that included all the letters. The letters in the name came"
+     }
+    ]
+   },
+   "diffusion, 64 passes": {
+    "passes": 64,
+    "judge_loss": 2.8277,
+    "repeated_4grams": 0.0973,
+    "distinct_2": 0.8096,
+    "length": 64.0,
+    "seconds": 2.3298,
+    "tokens_per_sec": 27.5,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 2.5343,
+      "repeated_4grams": 0.1455,
+      "distinct_2": 0.762,
+      "length": 64.0,
+      "seconds": 2.3409,
+      "tokens_per_sec": 27.3
+     },
+     "TinyStories": {
+      "judge_loss": 3.1212,
+      "repeated_4grams": 0.0491,
+      "distinct_2": 0.8573,
+      "length": 64.0,
+      "seconds": 2.3188,
+      "tokens_per_sec": 27.6
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " example, a Class is an intermediate class based on the class of a class as shown in Figure 1.\n3) Yes, a Class refers to the class of the class of the class of the class of the class of the class of the class of the class of the class of the class of the sub class of"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": " of politics, including Amendment, civil rights, and voting rights. In fact, many people are not willing to make hard decisions about their right to vote.\nIn the United States, many Americans had big decisions about their right to vote. For example, most Americans were asked to make big decisions about their right to vote"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": " independence, created new people, and used it to improve its culture. It was the first city in the world that we live in the world today. The town was once known as a capital during the 19th century. When trade started in Europe, they became part of the community. They had to be successful in helping"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": ", Raman scattering is used in many fields including biology, science, and physics.\n- Electron Spectrometry (EMO) Spectrometer (EDO) Spectrometer (EMO) Spectrometer (EMO) Spectrometer (EDO) Spectrometer (EMO) Spect"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": ", and rocks. It was lift at the top of the big tree.\nRoxy went on climbing and moving her friends. When she could climb, she saw at the bottom of the big trees. He then pushed up the big trees. This made him push down the big trees. As he could climb, he"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " wanted to eat more food and Lucy, who live near the lake. Little Tim, Bob and his best friends were in the water!\nIn a river, Bob had a lot of food and Lucy, who ate fresh seafood. There also had a lot of food for Lucy, who grew up in a lake. His"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " loved playing with his little mom. When he got to the ground, he had to make big changes around him. But every day, he made a big change in his baby's life.\n\nOne day, they noticed a reduction in their behavior. Then, they noticed significant changes in their behavior. So, they"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " letter, broke it out, and then it seemed almost strange! It was like this tiny dots that looked different from each other in time.\n\nOne sunny afternoon, Lily and Lily decided to go back to find the pattern of letters. Every week, they noticed something unusual happening \u2013 red, green, silver, yellow"
+     }
+    ]
+   }
+  },
+  "real continuation": {
+   "judge_loss": 3.1177,
+   "repeated_4grams": 0.0,
+   "distinct_2": 0.9565,
+   "length": 64.0,
+   "seconds": null,
+   "tokens_per_sec": null
+  },
+  "real continuation by source": {
+   "Mini FineWeb-Edu": {
+    "judge_loss": 3.7517,
+    "repeated_4grams": 0.0,
+    "distinct_2": 0.9565,
+    "length": 64.0,
+    "seconds": null,
+    "tokens_per_sec": null
+   },
+   "TinyStories": {
+    "judge_loss": 2.4838,
+    "repeated_4grams": 0.0,
+    "distinct_2": 0.9565,
+    "length": 64.0,
+    "seconds": null,
+    "tokens_per_sec": null
+   }
+  }
+ }
+}

@@ -26,13 +26,15 @@ directions; Mini FineWeb-Edu (full) plus Cosmopedia subsets.
 
 | | Likelihood bound (nats/token) | HellaSwag | LAMBADA | ARC-Easy | PIQA | Winogrande |
 |---|---|---|---|---|---|---|
-| **This model, 2.5B tokens (uploaded)** | **3.830** | to be measured | | | | |
+| **This model, 2.5B tokens (uploaded)** | **3.830** | 28.0 | 14.4 | 30.1 | 55.4 | 49.1 |
 | This model after 1B tokens | 3.923 | 27.6 | 11.8 | 30.7 | 54.2 | 49.6 |
 | Autoregressive base, 2.5B tokens (same data) | 2.963 (loss) | 32.3 | 20.3 | 46.8 | 62.4 | 49.9 |
 
 The uploaded weights are from **2.5B tokens** (152,600 updates, the same as the autoregressive base). They're
 the best checkpoint by likelihood bound, from update 120,000; the bound drifted back up to about 3.9 over the last
-30,000 updates. The benchmarks will be added once measured. The likelihood bound is an upper bound on the loss per token; the benchmarks score each
+30,000 updates. Benchmark average 35.4 (after 1B tokens: 34.8; the autoregressive base: 42.3). On the same held-out
+FineWeb-Edu windows, its bound is 4.148 against the base's loss of 3.296. The full comparison is in
+[the project's story, section 38](https://a-ramakrishnan.github.io/tinystories-ARM-model/story.html#38-two-ways-to-write-compared-f4). The likelihood bound is an upper bound on the loss per token; the benchmarks score each
 answer by its likelihood bound (8 maskings per answer).
 
 ## Use

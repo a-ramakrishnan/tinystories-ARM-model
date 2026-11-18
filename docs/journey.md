@@ -46,8 +46,9 @@ that are easy to get wrong and rarely explained.
 35. [Teaching it to stop: preference tuning (DPO)](#35-teaching-it-to-stop-preference-tuning-dpo)
 36. [Five times the data: stage 2](#36-five-times-the-data-stage-2)
 37. [GPTQ, first on a standard model, then on ours; the Quantize page](#37-gptq-first-on-a-standard-model-then-on-ours-the-quantize-page)
-38. [Lessons](#38-lessons)
-39. [What's next](#39-whats-next)
+38. [Two ways to write, compared (F4)](#38-two-ways-to-write-compared-f4)
+39. [Lessons](#39-lessons)
+40. [What's next](#40-whats-next)
 
 ---
 
@@ -1412,7 +1413,77 @@ models. GPTQ runs in llm-compressor's environment as a subprocess, its progress 
 size), and GPTQ's gain depends on how much error there was to correct: on a model that already rounds well, it buys
 a little, and mostly on text like its calibration data.
 
-## 38. Lessons
+## 38. Two ways to write, compared (F4)
+
+The diffusion model trained to 2.5B tokens (F6, extended from 1B on 17 Nov). It now matches the base model in size
+(124M), data (the stage 2 mix), number of training tokens (2.5B), tokenizer and blocks. Only the objective differs:
+next token against masked tokens. `diffusion_models/compare.py` measures the two side by side, together with the
+older 51M TinyStories pair (164M tokens each). The diffusion model was evaluated with one command
+(`python3 -m infra.eval_queue f6-124m-stage2-2p5b`, 2 h 40 min on the Mac).
+
+**Extending to 2.5B tokens helped a little.** The training bound went from 3.923 to **3.830**, LAMBADA from 11.8% to
+**14.4%**, and the benchmark average from 34.8 to **35.4**. Repetition went up, as it did for the autoregressive model
+after stage 2: with the recommended sampler, repeated 4-token runs rose from 4.6% to 11.5%.
+
+**The same held-out windows** (64 windows of 256 tokens per set, as in the evaluation suite). The autoregressive
+loss is exact; the diffusion number is its likelihood bound (16 masking levels per window), an upper limit on its
+real loss:
+
+| Held-out text (nats/token) | Autoregressive loss | Diffusion bound | Gap |
+|---|---|---|---|
+| Mini FineWeb-Edu | 3.296 | 4.148 | +0.85 |
+| Cosmopedia (5 subsets) | 2.34–2.79 | 3.47–3.98 | +1.13 to +1.19 |
+| TinyStories | 2.751 | 3.525 | +0.77 |
+| WikiText-2 | 5.047 | 5.681 | +0.63 |
+| Tiny Shakespeare | 5.446 | 5.966 | +0.52 |
+| *51M pair:* TinyStories | 1.561 | 2.506 | +0.95 |
+
+| Benchmark | Autoregressive 124M | Diffusion 124M | GPT-2 small |
+|---|---|---|---|
+| HellaSwag | 32.3 | 28.0 | 31.1 |
+| LAMBADA | 20.3 | 14.4 | 32.6 |
+| ARC-Easy | 46.8 | 30.1 | 43.8 |
+| PIQA | 62.4 | 55.4 | 62.9 |
+| Winogrande | 49.9 | 49.1 | 51.6 |
+| **Average** | **42.3** | **35.4** | 44.4 |
+
+**Writing.** Each model continued the 8 held-out prompts with 2 seeds, 64 new tokens each. The judge is OpenAI's GPT-2
+small, which neither model was trained on; lower means more like text it would write. The real continuations score
+3.118.
+
+| 124M, 64 tokens | Passes | GPT-2 judge loss | Repeated 4-token runs | Tokens/s on the M5 |
+|---|---|---|---|---|
+| Autoregressive, sampled (top-k 50) | 64 | 2.982 | 1.4% | 101 |
+| Autoregressive, greedy | 64 | 1.627 | 27.3% | 110 |
+| Diffusion, 16 passes | 16 | 4.480 | 3.2% | 113 |
+| Diffusion, 32 passes | 32 | 3.622 | 4.8% | 55 |
+| Diffusion, 64 passes | 64 | 2.828 | 9.7% | 28 |
+
+- **The gap is about 0.85 nats on web text, at both sizes.** Going from 51M to 124M parameters and from 164M to 2.5B
+  tokens lowered both models' numbers, but the difference between them stayed about the same (0.95 on TinyStories
+  for the 51M pair, 0.85 on FineWeb-Edu for the 124M pair). The bound is an upper limit, so the real gap may be
+  smaller, but not by enough to change the picture.
+- **The gap depends on the text.** It's largest on Cosmopedia (+1.15), synthetic textbook prose that is very
+  predictable from the left, and smallest on text far from the training data (WikiText +0.63, Shakespeare +0.52),
+  where both models are unsure anyway. Reading left to right pays off most when the next word follows from the
+  previous ones.
+- **Benchmarks: furthest behind on knowledge, close on Winogrande.** ARC-Easy (science facts) is barely above chance
+  (30.1% against 46.8%); Winogrande is at chance for both.
+- **At the same speed, the autoregressive model writes far better text.** With 16 passes, the diffusion model writes
+  as fast as the autoregressive one (113 against 101 tokens/s), but GPT-2 finds its text much less likely (4.48
+  against 2.98). It reaches the autoregressive model's judge loss only with 64 passes, one per token. Then it is 3.6×
+  slower, because each pass re-reads every position (36 ms) where the autoregressive model, with its KV cache, reads
+  one new token (10 ms). Its text also repeats 7× more (9.7% against 1.4%). Fewer passes means fewer, but less
+  careful, decisions.
+- **Greedy autoregressive text scores best and reads worst.** Its 27% repetition is the loops that DPO targets in the
+  chat model. A judge loss on its own rewards repetition: always read it next to repetition.
+
+**Lesson.** At this size and budget, the masked diffusion objective costs about 0.85 nats per token and 7 benchmark
+points against next-token prediction, whatever the scale. Its promised speed (many tokens per pass) costs text
+quality. Where it could still win is tasks that need the right side of the text, such as filling gaps, planning or
+constraints (I7 tests that).
+
+## 39. Lessons
 
 1. **Most of the early gains were training hygiene, not architecture.** Document separators, enough weight
    updates and a sensible learning rate took validation loss from 4.5 to 2.2 at a smaller size.
@@ -1478,19 +1549,20 @@ a little, and mostly on text like its calibration data.
 35. **What a quantizer leaves alone sets the size; what it can correct sets the gain.** GPTQ at 4 bits halved
     Qwen3-0.6B's files (its embedding stays in 16 bits), and on our model, which already rounds well, it took the
     4-bit loss increase from 0.034 to 0.030, mostly on text like its calibration data.
+36. **Compare like for like, then measure on the same windows.** Only with the same size, data, tokens and held-out
+    windows did the AR–diffusion gap show up as a constant (~0.85 nats) rather than a moving target; and a judge
+    model that wrote neither text is the only fair judge of both.
 
-## 39. What's next
+## 40. What's next
 
 The [roadmap in the analysis](analysis.md#improving-the-model-step-by-step) lists the next steps.
 - **Quantization:** GPTQ's calibration data matched to the model's own training mix; benchmarks of the quantized
   copies; a faster 4-bit matrix multiply so quantized models aren't slower.
 - **Post-training:** reinforcement learning with checkable rewards (GRPO); instruction tuning and DPO again on the
   stage 2 model.
-- **More data:** stage 2 is training: the base model continued to 2.5B tokens on FineWeb-Edu *full* plus Cosmopedia
-  (the held-out documents removed from the training data first).
 - **Reasoning:** thinking before answering, for both the autoregressive and the diffusion model (phase I of the plan).
-- **Diffusion:** the longer FineWeb-Edu run, generation from the Generate page, and the side-by-side page with the
-  autoregressive model.
+- **Diffusion:** where the objective could win (filling gaps, planning, constraints; I7), and turning the
+  autoregressive model into a diffusion model instead of training one from scratch.
 - **Later:** re-testing depth and layer sharing with longer runs.
 
 Every step will be added here with what it measured.

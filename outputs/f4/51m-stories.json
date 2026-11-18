@@ -1,0 +1,453 @@
+{
+ "pair": {
+  "title": "51M, TinyStories, 164M tokens",
+  "ar": "tinystories-202611100814-5da893",
+  "diffusion": "tinystories-colab"
+ },
+ "device": "mps",
+ "measured_at": "2026-11-17 23:56",
+ "benchmarks": {
+  "hellaswag": {
+   "title": "HellaSwag",
+   "metric": "acc_norm",
+   "ar": 0.2650866361282613,
+   "diffusion": 0.2570205138418642,
+   "chance": 0.25,
+   "gpt2": 0.3114
+  },
+  "lambada": {
+   "title": "LAMBADA",
+   "metric": "acc",
+   "ar": 0.08693964680768484,
+   "diffusion": 0.017465554046186688,
+   "chance": 0.0,
+   "gpt2": 0.3256
+  },
+  "arc_easy": {
+   "title": "ARC-Easy",
+   "metric": "acc",
+   "ar": 0.25925925925925924,
+   "diffusion": 0.25673400673400676,
+   "chance": 0.25,
+   "gpt2": 0.4381
+  },
+  "piqa": {
+   "title": "PIQA",
+   "metric": "acc",
+   "ar": 0.5408052230685527,
+   "diffusion": 0.5190424374319913,
+   "chance": 0.5,
+   "gpt2": 0.6289
+  },
+  "winogrande": {
+   "title": "Winogrande",
+   "metric": "acc",
+   "ar": 0.516179952644041,
+   "diffusion": 0.48382004735595896,
+   "chance": 0.5,
+   "gpt2": 0.5162
+  }
+ },
+ "heldout": {
+  "roneneldan__tinystories": {
+   "title": "TinyStories",
+   "ar_loss": 1.5607,
+   "diffusion_bound": 2.5064,
+   "gap": 0.9457
+  },
+  "salesforce__wikitext-wikitext-2-raw-v1": {
+   "title": "WikiText-2",
+   "ar_loss": 8.6926,
+   "diffusion_bound": 9.6539,
+   "gap": 0.9613
+  },
+  "url-raw.githubusercontent.com-input.txt-4c649141": {
+   "title": "Tiny Shakespeare",
+   "ar_loss": 7.6323,
+   "diffusion_bound": 8.1075,
+   "gap": 0.4752
+  }
+ },
+ "writing": {
+  "judge": "webtext-openai-201902140000-f3da9f",
+  "tokens": 64,
+  "seeds": [
+   1,
+   2
+  ],
+  "prompts": 8,
+  "settings": {
+   "AR, sampled (top-k 50)": {
+    "passes": 64,
+    "judge_loss": 3.1448,
+    "repeated_4grams": 0.001,
+    "distinct_2": 0.9504,
+    "length": 64.0,
+    "seconds": 0.3385,
+    "tokens_per_sec": 189.1,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 3.5534,
+      "repeated_4grams": 0.002,
+      "distinct_2": 0.9564,
+      "length": 64.0,
+      "seconds": 0.3413,
+      "tokens_per_sec": 187.5
+     },
+     "TinyStories": {
+      "judge_loss": 2.7362,
+      "repeated_4grams": 0.0,
+      "distinct_2": 0.9445,
+      "length": 64.0,
+      "seconds": 0.3356,
+      "tokens_per_sec": 190.7
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " apple tree! Do you know what it is today?\". Jodie was so happy to finally find the answer.\n\nJodie said, \"Oh, now I have a secret! I have won an adventure with my family.\" Jodade smiled and said, \"That sounds great. You are the queen"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": " of a friend who she couldn't help but be welcomed enough to meet in his neighbourhood.<|endoftext|>Once upon a time, there was a very big garden. Inside, there lived a little girl called Sarah. Every day, Sarah would go to the garden to play. She would fill the buckets with things she found like stones"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": " and we should be welcomed from all of us!<|endoftext|>Once upon a time there was a big cat. It was furry and soft. Every day, the cat would go outside to play.\n\nOne day, the cat was running around in the yard. But then, it saw a cat. The cat recognized the"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": " and a wide-pitched rainbow of light! The birds flew around in surprise when the pecked it.\n\nRuthie said, \"Oh, now I have to find it! Would you like this one of the lightning?\"\n\nThe birds were surprised by the power of the lightning. They said"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": ", and even birds. One day, R Molly met a little bird named Chirp.\n\n\"Hello, RufJo!\" said the bird. \"I want to marry you! You are big, I can fly fast too!\"\n\n\"Wow, you are big and strong!\" said Roxy."
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " was a tiny fish. Tim was very happy today. They liked to swim and play games together.\n\nOne day, Tim and Tim came to a special place called a war. They were scared of big, loud noise. A big, mean fox came and shouted at them. The cat was very scared and didn"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " loved to explore the world around him.\n\nOne day, Josh saw some white clouds in the sky. He wanted to climb down and play with the white clouds.\n\nHe thought it was a great idea. He ran outside and started climbing. When he reached the white clouds, he was so happy that he"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " big dog outside her window. The dog was very loud and Lily laughed at him. \n\nLily's mommy gave her a big hug and asked, \"What time is it, Lily?\" \n\n\"In the mail,\" Lily proudly said. \"Let's go inside and see what we can find"
+     }
+    ]
+   },
+   "AR, greedy": {
+    "passes": 64,
+    "judge_loss": 2.2068,
+    "repeated_4grams": 0.0041,
+    "distinct_2": 0.9345,
+    "length": 64.0,
+    "seconds": 0.2781,
+    "tokens_per_sec": 230.1,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 2.4833,
+      "repeated_4grams": 0.0083,
+      "distinct_2": 0.9443,
+      "length": 64.0,
+      "seconds": 0.2776,
+      "tokens_per_sec": 230.5
+     },
+     "TinyStories": {
+      "judge_loss": 1.9302,
+      "repeated_4grams": 0.0,
+      "distinct_2": 0.9247,
+      "length": 64.0,
+      "seconds": 0.2787,
+      "tokens_per_sec": 229.6
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " elephant, a giraffe, a giraffe, and a giraffe. They are all very happy and proud of their work.\n\nOne day, they decide to have a race. They each pick a banana and a banana. They say, \"Ready, set, go!\" and start to run. They run"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": " of the world and it's important to be prepared for the future.<|endoftext|>Once upon a time, there was a little girl named Lucy. She was three years old and loved to explore. One day, she decided to go for a walk in the park.\n\nAs she walked, she saw a big tree with"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": ", and we were all so happy.<|endoftext|>Once upon a time, there was a little girl named Lucy. She was three years old and loved to explore. One day, she decided to go for a walk in the park.\n\nAs she walked, she saw a big tree with a hole in it. She"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": ", the two of them were having a great time.\n\nThe moral of the story is that it is important to be careful and think before you act.<|endoftext|>Once upon a time, there was a little girl named Lucy. She was three years old and loved to explore. One day, she decided to go for"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": ", and even the birds. One day, Roxy saw a big tree with a hole in it. She wanted to see what was inside.\n\nRoxy climbed the tree and saw a little bird. The bird was sad because it could not find a home. Roxy wanted to help the bird. She thought"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " was a small fish. They liked to play together every day.\n\nOne day, Bob and Tim were playing near a big rock. Bob said, \"I want to go to the big rock, but I am scared.\" Tim said, \"Don't worry, Bob. I will help you.\" So, Bob"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " would run around and play with his toys. He was so successful!\n\nOne day, Josh was playing in the garden when he saw a big, red ball. He wanted to play with it, so he ran over to it.\n\nJosh was so excited. He grabbed the ball and started to play."
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " big, scary monster in the woods. She was scared and didn't know what to do.\n\nHer mommy told her to stay calm and not to be afraid. She said, \"Don't worry, I will protect you.\" Lily felt better and went back to reading her newspaper.\n\nLater that day"
+     }
+    ]
+   },
+   "diffusion, 16 passes": {
+    "passes": 16,
+    "judge_loss": 4.9991,
+    "repeated_4grams": 0.0,
+    "distinct_2": 0.9542,
+    "length": 63.6875,
+    "seconds": 0.4866,
+    "tokens_per_sec": 130.9,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 5.3151,
+      "repeated_4grams": 0.0,
+      "distinct_2": 0.9326,
+      "length": 64.0,
+      "seconds": 0.4602,
+      "tokens_per_sec": 139.1
+     },
+     "TinyStories": {
+      "judge_loss": 4.6831,
+      "repeated_4grams": 0.0,
+      "distinct_2": 0.9758,
+      "length": 63.375,
+      "seconds": 0.513,
+      "tokens_per_sec": 123.5
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " orange!\" he. Ben says, \",oo-ac-,, I teach you how to.-t like you the and can for you. He will make the other again..\".\"\n\nAnna says, \"Yes, I want to play too! You are your you. You are right. R"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": ". \n\nHer and nodded, and. \" he is a idea and happy. a plan. Let's go see the day,\" she said. \"It does!\" and I can proud.\"\n\n\"Wow, \"! a very good with her little mom.\nMom smiled. She felt off a of"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": ",, five-go-old. and the, high- year-looking little girl walked by. He wrote \"\n\n\"I like to give the sign,\" the asked one. the girl girl\".\n\nI think and smiled. She pointed to the ladder.\n\nThe lady then looked scared a \""
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": ",, five,, six, nine, look at! !\"\n\nMolly was very excited and said \"Yes, that can that! I are you of the race?\"\nShe smiled said: \"Wow! please! Let's go on an adventure?\"\n\nAt!\"\nPolly laughed and \""
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": " and and down rocks up and laughed. Together. At the top end of the mountain they saw that it was very tall for him.\n\nL owl and her at the rabbit, asked and said, bird, I \" do you climb this ladder first?\" The bird replied, \"I can help strong.\" But\n"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " loved to swim on the swim to. One. He swam very far and fast as he could.\n\nOne day\nThe day day Bob saw him again. She was scared and sad. They knew not like to hurt Sam and make them better. But sometimesSam felt feel idea. So told Sam had to"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " wanted't give it some things to. Mrs. Lee went closer to see the person. They smiled. They were amazed.\n\nBut then, a little boy named Toby came by. His name said The person told him \"Be you,\". This is,, but. I cannot take friend.\".\"His friend"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " big bone with sharp teeth and looked. and.  wanted to know and remembered what it was for. She felt scared\n\n\"Lily asked's mommy called the sound playing took the bone. Her mother told, \" the bone is a bone! It smells scary!\"\n\n\"Thank no.\" Lily said"
+     }
+    ]
+   },
+   "diffusion, 32 passes": {
+    "passes": 32,
+    "judge_loss": 3.8531,
+    "repeated_4grams": 0.0174,
+    "distinct_2": 0.9221,
+    "length": 62.0,
+    "seconds": 1.0047,
+    "tokens_per_sec": 61.7,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 4.1453,
+      "repeated_4grams": 0.0205,
+      "distinct_2": 0.9111,
+      "length": 62.0,
+      "seconds": 1.0039,
+      "tokens_per_sec": 61.8
+     },
+     "TinyStories": {
+      "judge_loss": 3.5609,
+      "repeated_4grams": 0.0143,
+      "distinct_2": 0.9331,
+      "length": 62.0,
+      "seconds": 1.0055,
+      "tokens_per_sec": 61.7
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " thing, he was?\" Anna says. \"I'm, Ben,, Ben. I know\" is Anna,\" Ben says.Ben smiles. He likes to play. He sees something sun on the grass. But his sun is too.\n\nAnna looks \"A flower is outside. It has bright flowers and red"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": ". \n\nSo the bear stopped and started to eat. He smiled and said, \"No, I can sorry. I wanted to stop you! Please don't be angry.\"\n\n\nThe bear said, \"No, I didn't want. Don't be careful about my me?\" The voice replied,"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": "!\" he says. He takes the car and the other grown-cream-aid.\n\n\"Thank you and dad, too.\n\n\"It for listening to, dad,\" his dad says, smiling.\n\n\"I want to go on the side of the road,\" his mom says.\n\n\""
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": ",, it was very curious and said, \"Hello, How?\"\n\nThe swan replied, \"I'm making this power! I am going to show you something special!\"\n\nSo, the swam out to the pond and waved the water in the water. He was so excited he see the sun"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": " and put her down on the ground. The.\n\nOne day, Tara's mom came to a branch climbing of the tall tree. He was very strong and she wanted something new. He said he could high up the tree."
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " loved to play together in the water. .\n\nOne day, Bob went to his pool and saw him playing. They were sad for Tim, for lunch. But when Tim's mom said, \"I want to behe. It is too cold.\" Tim was happy.\" His mom said, \"Yes,"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " asked the little man to borrow it. Mrs. Lee said: \"Goodmy! Now you can't do anything!\"\n\nThe little boy was so surprised to see her eyes. She said: \"Yes, I'm doing old. What is your name.\"\n\nHe took one of the answer. Everybody smiled"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " big, shiny snake in the garden. It. It looked so happy and couldn't touch it. \n\nHer mommy then said, \"Don't worry scared of that's just, we can hurt us and\n.\" So they went to the snake and got home. They looked at the snake and asked what"
+     }
+    ]
+   },
+   "diffusion, 64 passes": {
+    "passes": 64,
+    "judge_loss": 3.3056,
+    "repeated_4grams": 0.0041,
+    "distinct_2": 0.9464,
+    "length": 62.3125,
+    "seconds": 2.0199,
+    "tokens_per_sec": 30.8,
+    "by_source": {
+     "Mini FineWeb-Edu": {
+      "judge_loss": 3.6696,
+      "repeated_4grams": 0.0081,
+      "distinct_2": 0.9364,
+      "length": 60.625,
+      "seconds": 2.017,
+      "tokens_per_sec": 30.1
+     },
+     "TinyStories": {
+      "judge_loss": 2.9416,
+      "repeated_4grams": 0.0,
+      "distinct_2": 0.9565,
+      "length": 64.0,
+      "seconds": 2.0228,
+      "tokens_per_sec": 31.6
+     }
+    },
+    "examples": [
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "1). Class---->> A Class is a user defined datatype and it is known as refernce type.\n2). Object--->> An",
+      "text": " old, he was holding by the fork in his mouth. He said, \"Oh no! That's mine! I can make something for you!\"\n\nThe little one smiled and replied, \"That's great idea, I'll! I want to be smart too.\"\n\nThe little boy nodded back. \""
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "The right to vote is one of the foundations of democracy, yet in the United States, it has never truly been available to all. Generations have seen different versions",
+      "text": " before. \n\nOne day, it's owner got a deep breath and touched the light. It was so exciting! The owner smiled back and said, \"I know that I just wanted to look inside.\" \n\nThe owner then replied, \"It's okay. You can see if you can watch."
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Walking with the ANZACs\nAdelaide is a city of many firsts. We were the first free state in the colony of Australia, established",
+      "text": " and we can make something special!\"\n\n\"A 3-year-old old man replied, \"My name is what your name?\"\n\nThe park driver smiled and said, \"I don't want to go outside forever.\"\n\nThe little boy said, \"Don't worry, I'm going to get"
+     },
+     {
+      "source": "Mini FineWeb-Edu",
+      "prompt": "Raman spectrography uses the Raman scattering of photons from a laser or other coherent light beam to measure the vibrational state of molecules. In chemistry",
+      "text": ", she was so proud of her and smiled again!\n\nThe little girl had a big pipe in the grass. She even wanted to try it. It took time to go up and it laughed and down.\n\nThe little girl kept on playing until suddenly it reached the house. The pipe was very fast."
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, in a big forest, there lived a rhinoceros named Roxy. Roxy loved to climb. She climbed trees, rocks",
+      "text": " and even when it rolled down on the ground.\n\nOne day, Lola saw a small tree with lots of leaves. Lola wanted to climb it, but she was too high for him. He started to hurt her up. But then he was brave and called for him.\n\nLila was scared"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a big fish named Bob. Bob lived in a pond with many other fish. Bob had a best friend named Tim, who",
+      "text": " loved to play on the raft with his friends.\n\nOne day, Bob found a big rock and wanted to explore it. He swam around, but he could not find out what the water said.\n\nBob asked his mom, \"Mom, where can I go near that rock?\" His mom said,"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was an infant named Josh. He was very happy and successful.\n\nEvery day, Josh would play in his backyard. He",
+      "text": " even said she had so fun to have it. \n\nOne day the girl came to visit him. She said he was her name. The girl smiled and told him that he liked her too.\n\nThe little girl asked him why she wanted to come with him if they could rest. They said yes and"
+     },
+     {
+      "source": "TinyStories",
+      "prompt": "Once upon a time, there was a little girl named Lily. She loved to read the newspaper with her mommy every morning. One day, she saw a",
+      "text": " big, shiny thing on the ground. It looked very pretty and beautiful! They were so happy too! \n\nLily asked her mommy if it was. Mommymy said no, but the paper was not safe. She picked it up and tried to open the box. But then, she wasn't"
+     }
+    ]
+   }
+  },
+  "real continuation": {
+   "judge_loss": 3.1177,
+   "repeated_4grams": 0.0,
+   "distinct_2": 0.9565,
+   "length": 64.0,
+   "seconds": null,
+   "tokens_per_sec": null
+  },
+  "real continuation by source": {
+   "Mini FineWeb-Edu": {
+    "judge_loss": 3.7517,
+    "repeated_4grams": 0.0,
+    "distinct_2": 0.9565,
+    "length": 64.0,
+    "seconds": null,
+    "tokens_per_sec": null
+   },
+   "TinyStories": {
+    "judge_loss": 2.4838,
+    "repeated_4grams": 0.0,
+    "distinct_2": 0.9565,
+    "length": 64.0,
+    "seconds": null,
+    "tokens_per_sec": null
+   }
+  }
+ }
+}
