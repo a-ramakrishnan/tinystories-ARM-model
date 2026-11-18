@@ -446,7 +446,9 @@ the same footing. On the base model: loss 3.481 on the real continuations (GPT-2
 Explorer (the base model's real numbers for three saved prompts) and a Side by side replay, which run in the browser
 from saved data, and **Try it**, which runs the real 124M chat or base model in the browser: it downloads the 8-bit
 GGUF from the Hugging Face repos (174 MB, cached) and generates with [wllama](https://github.com/ngxson/wllama)
-(llama.cpp in WebAssembly). On every push to `main` that changes the docs,
+(llama.cpp in WebAssembly). After each answer it shows llama.cpp's own timings (time to first token, prefill and decode
+speed, compute and memory rates, KV cache reuse), the time of every token, and where the model runs; switch between
+the GPU (WebGPU) and the CPU to compare. On every push to `main` that changes the docs,
 `.github/workflows/pages.yml` builds it and deploys it to GitHub Pages.
 
 ```bash

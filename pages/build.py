@@ -372,6 +372,9 @@ WebAssembly, on the GPU through WebGPU when your browser has it) downloads the 8
     <label>Model <select id="try-model" class="select">
       <option value="chat">Chat (instruction-tuned + DPO): answers questions</option>
       <option value="base">Base: continues your text</option></select></label>
+    <label>Run on <select id="try-device" class="select">
+      <option value="gpu">GPU (WebGPU)</option>
+      <option value="cpu">CPU (WebAssembly)</option></select></label>
     <button id="try-load" class="btn primary">Load the model (174 MB)</button>
     <span id="try-status" class="muted small"></span>
   </div>
@@ -384,7 +387,27 @@ WebAssembly, on the GPU through WebGPU when your browser has it) downloads the 8
     <button id="try-stop" class="btn hidden">Stop</button>
   </div>
   <div id="try-out" class="try-out hidden"></div>
-  <div id="try-stats" class="muted small"></div>
+</div>
+<div id="try-metrics" class="card hidden"><div class="card-head"><h3>Inside this run</h3>
+  <span class="muted small">llama.cpp's own timings, the same numbers llama-server reports</span></div>
+  <div id="try-tiles" class="stats try-stats"></div>
+  <div class="try-chart-head"><b>Time for each token</b>
+    <span class="try-legend"><i class="sw pre"></i>first token (reads the whole prompt: prefill) <i class="sw dec"></i>each next token (decode)</span></div>
+  <div id="try-chart" class="try-chart"></div>
+  <p class="muted small">The first bar is tall because the model reads every prompt token before it can write: that is
+  the time to first token. After that each token costs about the same, because each one is a full pass that reads all
+  the weights from memory for very little arithmetic. That is why decoding is limited by memory bandwidth, and prefill
+  (many tokens per pass) by compute. The bars creep up as the answer grows, because each new token attends to every
+  token before it in the KV cache.</p>
+</div>
+<div id="try-env" class="card hidden"><div class="card-head"><h3>Where the model is running</h3>
+  <span class="muted small">from llama.cpp's load log</span></div>
+  <div id="try-env-tiles" class="stats try-stats"></div>
+</div>
+<div id="try-history" class="card hidden"><div class="card-head"><h3>Your runs</h3>
+  <span class="muted small">switch between GPU and CPU, or change the prompt length, and compare</span></div>
+  <div class="try-table"><table><thead><tr><th>Model</th><th>On</th><th>Prompt tokens</th><th>Reused</th><th>First token</th>
+  <th>Prefill</th><th>Decode</th><th>Tokens</th><th>Ended</th></tr></thead><tbody id="try-runs"></tbody></table></div>
 </div>
 <div class="card"><div class="card-head"><h3>How this works</h3></div><ul class="small-flow">
 <li>The model was exported exactly to the standard Qwen3 format and converted to GGUF (plan steps S1 and S7: the
@@ -393,79 +416,219 @@ same scores as the original on every benchmark). The files are public:
 <a href="https://huggingface.co/aramkris/fineweb-edu-124m-base-qwen3">base</a>.</li>
 <li>The chat model writes in a plain <code>User: …</code> / <code>Assistant: …</code> format; the GGUF carries that chat template, so
 this page sends messages the same way an OpenAI-style client would.</li>
+<li>On the GPU, all 12 blocks and the output layer run as WebGPU shaders (Metal on a Mac, Vulkan or Direct3D elsewhere);
+only the token embedding table (50,257 × 768, 39 MB) stays on the CPU, since each step reads just one row of it. On the
+CPU the WebAssembly build runs on one thread: several threads need the page to be cross-origin isolated, which GitHub
+Pages can't switch on.</li>
 <li>To run it on your own computer instead: <code>ollama run hf.co/aramkris/fineweb-edu-124m-chat-dpo-qwen3:Q8_0</code>, or
 <code>llama-server -hf aramkris/fineweb-edu-124m-chat-dpo-qwen3:Q8_0 --jinja -c 512</code>.</li></ul></div>'''
-    models = json.dumps(TRY_MODELS)
-    scripts = SHIM + f'''<script type="module">
-import {{ Wllama }} from "{WLLAMA}/index.js";
-const MODELS = {models};
-const st = {{ w: null, loaded: null, abort: null }};
+    script = TRY_JS.replace("__WLLAMA__", WLLAMA).replace("__MODELS__", json.dumps(TRY_MODELS))
+    return page("Try it · TinyStories ARM", "try.html", body, scripts=SHIM + script,
+                description="Chat with a 124M GPT trained from scratch, running in your browser with llama.cpp (WebAssembly).")
+
+
+TRY_JS = r'''<script type="module">
+import { Wllama } from "__WLLAMA__/index.js";
+const MODELS = __MODELS__;
+const st = { w: null, loaded: null, abort: null, env: null, runs: [] };
 const $v = (id) => document.getElementById(id);
-const status = (t) => {{ $v("try-status").textContent = t; }};
+const status = (t) => { $v("try-status").textContent = t; };
+const key = () => `${$v("try-model").value}|${$v("try-device").value}`;
+const f1 = (x) => (x == null || !isFinite(x) ? "–" : x >= 100 ? x.toFixed(0) : x.toFixed(1));
+const ms = (x) => (x == null ? "–" : x >= 1000 ? `${(x / 1000).toFixed(2)} s` : `${x.toFixed(0)} ms`);
+const stat = (k, v, d = "") => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
+
+if (!navigator.gpu) {
+  $v("try-device").value = "cpu";
+  $v("try-device").querySelector('[value="gpu"]').disabled = true;
+  $v("try-device").querySelector('[value="gpu"]').textContent = "GPU (no WebGPU in this browser)";
+}
 for (const [id, fmt] of [["try-temp", (v) => (+v).toFixed(1)], ["try-len", (v) => v]])
-  $v(id).addEventListener("input", (e) => {{ $v(id + "-v").textContent = fmt(e.target.value); }});
-$v("try-model").addEventListener("change", () => {{
+  $v(id).addEventListener("input", (e) => { $v(id + "-v").textContent = fmt(e.target.value); });
+const syncButtons = () => {
+  $v("try-run").disabled = st.loaded !== key();
+  $v("try-load").disabled = st.loaded === key();
+  $v("try-load").textContent = st.loaded && st.loaded.split("|")[0] === $v("try-model").value
+    ? "Reload on this device" : "Load the model (174 MB)";
+};
+$v("try-model").addEventListener("change", () => {
   const chat = $v("try-model").value === "chat";
   $v("try-prompt").value = chat ? "What is the water cycle?" : "The water cycle is the process by which";
-  $v("try-run").disabled = st.loaded !== $v("try-model").value;
-  $v("try-load").disabled = st.loaded === $v("try-model").value;
-}});
-$v("try-load").addEventListener("click", async () => {{
-  const which = $v("try-model").value, [repo, file] = MODELS[which];
+  syncButtons();
+});
+$v("try-device").addEventListener("change", syncButtons);
+
+// llama.cpp's load log says where every buffer went; keep it to show the set-up
+function parseEnv(lines, info, device, loadMs) {
+  const e = { device, loadMs, buffers: {}, kv: 0, compute: 0, layers: null, adapter: null };
+  for (const l of lines) {
+    let m;
+    if ((m = l.match(/adapter_info:.*vendor: (\S+) \| architecture: (\S+)/))) e.adapter = `${m[1]} ${m[2]}`;
+    if ((m = l.match(/offloaded (\d+)\/(\d+) layers/))) e.layers = `${m[1]} of ${m[2]}`;
+    if ((m = l.match(/(\S+) model buffer size =\s*([\d.]+) MiB/))) e.buffers[m[1]] = +m[2];
+    if ((m = l.match(/KV buffer size =\s*([\d.]+) MiB/))) e.kv += +m[1];
+    if ((m = l.match(/compute buffer size =\s*([\d.]+) MiB/))) e.compute += +m[1];
+  }
+  const md = info.metadata || {};
+  e.n_layer = info.n_layer; e.n_embd = info.n_embd; e.n_vocab = info.n_vocab; e.n_ctx = info.n_ctx;
+  e.ff = +md["qwen3.feed_forward_length"] || 4 * info.n_embd;
+  // parameters: per block 4·d² (attention) + 3·d·ff (SwiGLU); plus the output layer (vocab × d)
+  e.blockParams = info.n_layer * (4 * e.n_embd ** 2 + 3 * e.n_embd * e.ff);
+  e.flopsPerToken = 2 * (e.blockParams + info.n_vocab * e.n_embd);
+  const total = Object.values(e.buffers).reduce((a, b) => a + b, 0);
+  const embed = info.n_vocab * info.n_embd * 34 / 32 / 2 ** 20;   // Q8_0: 34 bytes per 32 weights
+  e.totalMiB = total; e.readMiB = total - embed;                    // a step reads one row of the embedding table
+  return e;
+}
+
+function showEnv(e) {
+  const gpuMiB = Object.entries(e.buffers).filter(([k]) => k !== "CPU").reduce((a, [, v]) => a + v, 0);
+  const kvFormula = `2 (K and V) × ${e.n_layer} layers × ${e.n_ctx} positions × ${e.n_embd} × 2 bytes`;
+  $v("try-env-tiles").innerHTML = [
+    stat("Runs on", e.device === "gpu" ? "WebGPU" : "CPU", e.device === "gpu" ? (e.adapter || "the browser's GPU") : "WebAssembly, 1 thread"),
+    stat("Layers on the GPU", e.layers || "none", "12 blocks + the output layer"),
+    e.device === "gpu" ? stat("Weights in GPU memory", `${f1(gpuMiB)} MB`, `${f1(e.buffers.CPU || 0)} MB on the CPU: the embedding table`)
+      : stat("Weights in memory", `${f1(e.totalMiB)} MB`, "all on the CPU, in the page's WebAssembly memory"),
+    stat("KV cache", `${f1(e.kv)} MB`, kvFormula),
+    stat("Scratch for one pass", `${f1(e.compute)} MB`, "intermediate activations"),
+    stat("Load time", ms(e.loadMs), "download (or cache) + set-up"),
+    stat("Model", `${e.n_layer} × ${e.n_embd}`, `${e.n_layer} blocks, width ${e.n_embd}, ${e.ff} SwiGLU, ${e.n_ctx}-token context, 8-bit (Q8_0)`),
+    stat("Work per token", `${(e.flopsPerToken / 1e9).toFixed(2)} GFLOP`, `≈ 2 × ${(e.flopsPerToken / 2 / 1e6).toFixed(0)}M parameters; ${f1(e.readMiB)} MB of weights read`),
+  ].join("");
+  $v("try-env").classList.remove("hidden");
+}
+
+$v("try-load").addEventListener("click", async () => {
+  const [which, device] = key().split("|"), [repo, file] = MODELS[which];
   $v("try-load").disabled = true; $v("try-run").disabled = true;
   $v("try-bar").classList.remove("hidden");
-  try {{
-    if (st.w) {{ await st.w.exit(); st.w = null; st.loaded = null; }}
-    st.w = new Wllama({{ default: "{WLLAMA}/wasm/wllama.wasm" }});
+  const lines = [];
+  const keep = (...a) => lines.push(a.join(" "));
+  const logger = { debug: keep, log: keep, warn: (...a) => { keep(...a); console.warn(...a); }, error: (...a) => { keep(...a); console.error(...a); } };
+  try {
+    if (st.w) { await st.w.exit(); st.w = null; st.loaded = null; }
+    st.w = new Wllama({ default: "__WLLAMA__/wasm/wllama.wasm" }, { logger });
     status("Downloading…");
-    await st.w.loadModelFromHF({{ repo, file }}, {{ n_ctx: 512, progressCallback: ({{ loaded, total }}) => {{
-      const p = total ? loaded / total : 0;
-      $v("try-bar").firstElementChild.style.width = `${{Math.round(p * 100)}}%`;
-      status(`Downloading… ${{(loaded / 1e6).toFixed(0)}} of ${{(total / 1e6).toFixed(0)}} MB`);
-    }} }});
-    st.loaded = which;
-    status(`Loaded: ${{which === "chat" ? "the chat model" : "the base model"}}, running in your browser.`);
-    $v("try-run").disabled = false;
-  }} catch (e) {{
-    status(`Couldn't load the model: ${{e.message || e}}`); $v("try-load").disabled = false; console.error(e);
-  }} finally {{ $v("try-bar").classList.add("hidden"); }}
-}});
-$v("try-run").addEventListener("click", async () => {{
-  const chat = st.loaded === "chat", text = $v("try-prompt").value;
-  const opts = {{ max_tokens: +$v("try-len").value, temperature: +$v("try-temp").value, top_p: 0.9,
-    repeat_penalty: 1.1, stream: true }};
+    const t0 = performance.now();
+    await st.w.loadModelFromHF({ repo, file }, { n_ctx: 512, n_gpu_layers: device === "gpu" ? 99999 : 0,
+      progressCallback: ({ loaded, total }) => {
+        const p = total ? loaded / total : 0;
+        $v("try-bar").firstElementChild.style.width = `${Math.round(p * 100)}%`;
+        status(`Downloading… ${(loaded / 1e6).toFixed(0)} of ${(total / 1e6).toFixed(0)} MB`);
+      } });
+    st.env = parseEnv(lines, await st.w.getLoadedContextInfo(), device, performance.now() - t0);
+    st.loaded = key();
+    status(`Loaded: the ${which} model, on the ${device === "gpu" ? "GPU" : "CPU"}.`);
+    showEnv(st.env);
+  } catch (e) {
+    status(`Couldn't load the model: ${e.message || e}`); console.error(e);
+  } finally { $v("try-bar").classList.add("hidden"); syncButtons(); }
+});
+
+function showRun(r, live) {
+  const t = r.timings, e = st.env;
+  const tiles = [stat("Time to first token", ms(r.ttft), live ? "waiting for prefill…" : `${t ? t.prompt_n : "?"} prompt tokens read first`)];
+  if (t) {
+    const bw = e.readMiB * 1.048576 * t.predicted_per_second / 1000;   // GB/s
+    const tok = (k) => `${k} token${k === 1 ? "" : "s"}`, few = t.prompt_n < 8;   // too few new tokens to time prefill
+    const fewNote = `only ${tok(t.prompt_n)} new${t.cache_n ? `, ${t.cache_n} reused from the KV cache` : ""}: too few to measure; try a longer or a new prompt`;
+    tiles[0] = stat("Time to first token", ms(r.ttft), `${tok(t.prompt_n)} of prompt read first`);
+    tiles.push(
+      stat("Prefill", few ? "–" : `${f1(t.prompt_per_second)} tok/s`, few ? fewNote : `${tok(t.prompt_n)} in ${ms(t.prompt_ms)}, ${t.prompt_per_token_ms.toFixed(1)} ms each`),
+      stat("Decode", `${f1(t.predicted_per_second)} tok/s`, `${tok(t.predicted_n)} in ${ms(t.predicted_ms)}, ${t.predicted_per_token_ms.toFixed(1)} ms each`),
+      stat("Prefill vs decode", few ? "–" : `${f1(t.prompt_per_second / t.predicted_per_second)}×`, "faster per token: many tokens share one read of the weights"),
+      stat("Compute rate", few ? `${f1(e.flopsPerToken * t.predicted_per_second / 1e9)} GFLOP/s` : `${f1(e.flopsPerToken * t.prompt_per_second / 1e9)} GFLOP/s`,
+        few ? "while decoding" : `prefill; decode only ${f1(e.flopsPerToken * t.predicted_per_second / 1e9)}`),
+      stat("Memory read while decoding", `${f1(bw)} GB/s`, `${f1(e.readMiB)} MB of weights × ${f1(t.predicted_per_second)} tokens/s`),
+      stat("Context used", `${t.prompt_n + t.predicted_n} / ${e.n_ctx}`, `${Math.round(100 * (t.prompt_n + t.predicted_n) / e.n_ctx)}% of the KV cache`),
+      stat("Reused from the KV cache", `${t.cache_n}`, t.cache_n ? "prompt tokens kept from the last run: not read again" : "nothing in common with the last prompt"),
+      stat("Ended by", r.finish === "stop" ? "end of text" : r.finish === "length" ? "length limit" : (r.finish || "stop button"), `${r.tokens} tokens arrived`));
+  } else {
+    tiles.push(stat("Tokens so far", `${r.tokens}`, live ? "streaming" : "stopped: llama.cpp sends its timings only at the end"));
+  }
+  $v("try-tiles").innerHTML = tiles.join("");
+  drawChart(r.gaps);
+  $v("try-metrics").classList.remove("hidden");
+}
+
+function drawChart(gaps) {
+  const box = $v("try-chart");
+  if (!gaps.length) { box.innerHTML = ""; return; }
+  const W = Math.max(box.clientWidth, 280), H = 150, padL = 44, padB = 18, padT = 8;
+  // the first bar (prefill) can dwarf the rest: cap the scale at 4× the typical decode time and label the cut bar
+  const dec = gaps.slice(1).sort((a, b) => a - b), med = dec.length ? dec[Math.floor(dec.length / 2)] : 0;
+  const n = gaps.length, max = med && Math.max(...gaps) > 5 * med ? 4 * med : Math.max(...gaps), step = (W - padL) / n, bw = Math.max(1, step - (step > 4 ? 2 : 0));
+  const y = (v) => padT + (H - padT - padB) * (1 - v / max);
+  const ticks = [0, max / 2, max];
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Milliseconds for each generated token">`;
+  for (const t of ticks) s += `<line x1="${padL}" x2="${W}" y1="${y(t)}" y2="${y(t)}" class="grid"/><text x="${padL - 6}" y="${y(t) + 4}" text-anchor="end">${t.toFixed(0)} ms</text>`;
+  gaps.forEach((g, i) => {
+    const h = Math.max(1, H - padB - y(Math.min(g, max)));
+    if (g > max) s += `<text x="${padL + i * step + 3}" y="${padT + 10}" class="cut">↑ ${g.toFixed(0)} ms</text>`;
+    s += `<rect x="${padL + i * step}" y="${H - padB - h}" width="${bw}" height="${h}" rx="${bw > 6 ? 2 : 0}" class="${i ? "dec" : "pre"}" data-i="${i}"/>`;
+  });
+  s += `<text x="${padL}" y="${H - 3}">token 1</text><text x="${W}" y="${H - 3}" text-anchor="end">token ${n}</text></svg><div class="try-tip hidden"></div>`;
+  box.innerHTML = s;
+  const tip = box.querySelector(".try-tip"), svg = box.querySelector("svg");
+  svg.addEventListener("mousemove", (ev) => {
+    const r = svg.getBoundingClientRect(), x = (ev.clientX - r.left) * W / r.width;
+    const i = Math.min(n - 1, Math.max(0, Math.floor((x - padL) / step)));
+    if (x < padL) { tip.classList.add("hidden"); return; }
+    tip.innerHTML = `<b>token ${i + 1}</b>: ${gaps[i].toFixed(1)} ms${i ? "" : " (prefill: reading the prompt)"}`;
+    tip.style.left = `${Math.min(ev.clientX - r.left + 10, r.width - 190)}px`; tip.classList.remove("hidden");
+  });
+  svg.addEventListener("mouseleave", () => tip.classList.add("hidden"));
+}
+
+function addHistory(r) {
+  const t = r.timings, short = (x) => (x == null ? "–" : `${f1(x)} tok/s`);
+  st.runs.unshift(`<tr><td>${r.model}</td><td>${r.device === "gpu" ? "GPU" : "CPU"}</td><td>${t ? t.prompt_n : "–"}</td><td>${t ? t.cache_n : "–"}</td>
+    <td>${ms(r.ttft)}</td><td>${t && t.prompt_n < 8 ? "–" : short(t?.prompt_per_second)}</td><td>${short(t?.predicted_per_second)}</td><td>${r.tokens}</td>
+    <td>${r.finish === "stop" ? "end of text" : r.finish === "length" ? "length" : "stopped"}</td></tr>`);
+  st.runs = st.runs.slice(0, 10);
+  $v("try-runs").innerHTML = st.runs.join("");
+  $v("try-history").classList.remove("hidden");
+}
+
+$v("try-run").addEventListener("click", async () => {
+  const [model, device] = st.loaded.split("|"), chat = model === "chat", text = $v("try-prompt").value;
+  const opts = { max_tokens: +$v("try-len").value, temperature: +$v("try-temp").value, top_p: 0.9,
+    repeat_penalty: 1.1, stream: true };
   const out = $v("try-out");
   out.classList.remove("hidden");
-  out.innerHTML = chat ? `<div class="try-q">${{esc(text)}}</div><div class="try-a"></div>` : `<span class="try-p">${{esc(text)}}</span><span class="try-a"></span>`;
+  out.innerHTML = chat ? `<div class="try-q">${esc(text)}</div><div class="try-a"></div>` : `<span class="try-p">${esc(text)}</span><span class="try-a"></span>`;
   const ans = out.querySelector(".try-a");
   $v("try-run").disabled = true; $v("try-stop").classList.remove("hidden");
   st.abort = new AbortController();
-  const t0 = performance.now(); let n = 0, first = null;
-  try {{
+  const r = { model, device, ttft: null, tokens: 0, gaps: [], timings: null, finish: null };
+  const t0 = performance.now(); let prev = t0, lastDraw = 0;
+  showRun(r, true);
+  try {
     const stream = chat
-      ? await st.w.createChatCompletion({{ messages: [{{ role: "user", content: text }}], ...opts, abortSignal: st.abort.signal }})
-      : await st.w.createCompletion({{ prompt: text, ...opts, abortSignal: st.abort.signal }});
-    for await (const ch of stream) {{
+      ? await st.w.createChatCompletion({ messages: [{ role: "user", content: text }], ...opts, abortSignal: st.abort.signal })
+      : await st.w.createCompletion({ prompt: text, ...opts, abortSignal: st.abort.signal });
+    for await (const ch of stream) {
       if (st.abort.signal.aborted) break;
-      const piece = chat ? ch.choices?.[0]?.delta?.content : ch.choices?.[0]?.text;
+      if (ch.timings) r.timings = ch.timings;
+      const c = ch.choices?.[0];
+      if (c?.finish_reason) r.finish = c.finish_reason;
+      const piece = chat ? c?.delta?.content : c?.text;
       if (!piece) continue;
-      first ??= performance.now();
-      n++;
+      const now = performance.now();
+      r.ttft ??= now - t0;
+      r.gaps.push(now - prev); prev = now; r.tokens++;
       ans.textContent = chat && !ans.textContent ? piece.trimStart() : ans.textContent + piece;
-      $v("try-stats").textContent = `${{n}} pieces · first after ${{((first - t0) / 1000).toFixed(2)}} s`;
-    }}
-    const secs = (performance.now() - (first ?? t0)) / 1000;
-    $v("try-stats").textContent = `${{n}} pieces in ${{secs.toFixed(1)}} s (${{(n / Math.max(secs, 1e-3)).toFixed(0)}} per second) · first after ${{((first - t0) / 1000).toFixed(2)}} s`;
-  }} catch (e) {{
-    if (!st.abort.signal.aborted) {{ ans.textContent += ` [error: ${{e.message || e}}]`; console.error(e); }}
-  }} finally {{
+      if (now - lastDraw > 150) { showRun(r, true); lastDraw = now; }
+    }
+  } catch (e) {
+    if (!st.abort.signal.aborted) { ans.textContent += ` [error: ${e.message || e}]`; console.error(e); }
+  } finally {
+    showRun(r, false); addHistory(r);
     $v("try-run").disabled = false; $v("try-stop").classList.add("hidden");
-  }}
-}});
+  }
+});
 $v("try-stop").addEventListener("click", () => st.abort?.abort());
 </script>'''
-    return page("Try it · TinyStories ARM", "try.html", body, scripts=scripts,
-                description="Chat with a 124M GPT trained from scratch, running in your browser with llama.cpp (WebAssembly).")
 
 
 # ---------- build ----------
