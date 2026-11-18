@@ -38,7 +38,7 @@ DOCS = [
     ("docs/model_cards/fineweb-edu-124m-diffusion.md", "card-diffusion.html", "Diffusion model (124M)", "Models"),
     ("docs/model_cards/fineweb-edu-124m-base-gptq-4bit.md", "card-gptq.html", "Base model, GPTQ 4-bit", "Models"),
 ]
-APPS = [("journey.html", "Journey"), ("explorer.html", "Explorer"), ("sidebyside.html", "Side by side")]
+APPS = [("try.html", "Try it"), ("journey.html", "Journey"), ("explorer.html", "Explorer"), ("sidebyside.html", "Side by side")]
 PAGE_OF = {src: page for src, page, _, _ in DOCS}
 TASKS = [("hellaswag", "HellaSwag", "acc_norm"), ("lambada", "LAMBADA", "acc"), ("arc_easy", "ARC-Easy", "acc"),
          ("piqa", "PIQA", "acc"), ("winogrande", "Winogrande", "acc")]
@@ -206,7 +206,8 @@ def landing(numbers):
 <span class="vs level">≈ level</span> within {LEVEL:.0f} point, about each benchmark's margin of error. GPT-2 small is OpenAI's 124M model from 2019, trained on 40 GB of web text;
 our models have the same size. Scored the way EleutherAI's lm-evaluation-harness scores them; the diffusion models score each answer by its likelihood bound.
 All of it: <a href="results.html">Results</a>.</p></div>'''
-    tiles = [("journey.html", "Journey", "Every decision from the first commit to today: what changed, why, what it measured and what it cost."),
+    tiles = [("try.html", "Try it", "Chat with the 124M model, or let the base model continue your text, running in your browser: nothing is sent anywhere."),
+             ("journey.html", "Journey", "Every decision from the first commit to today: what changed, why, what it measured and what it cost."),
              ("explorer.html", "Explorer", "One prompt through the real 124M model: every block's attention, the feed-forward layer and the logit lens."),
              ("sidebyside.html", "Side by side", "The same prompt written left to right by the GPT and all at once by the diffusion model, replayed in your browser."),
              ("story.html", "The story", "From a 356-line training script to a 124M model that beats GPT-2 small on held-out web text."),
@@ -353,6 +354,120 @@ exShow(0);
                 description="One prompt through the real 124M model: embeddings, attention, feed-forward and the logit lens, in the browser.")
 
 
+WLLAMA = "https://cdn.jsdelivr.net/npm/@wllama/wllama@3.8.1/esm"    # llama.cpp compiled to WebAssembly (G3)
+TRY_MODELS = {   # the published GGUF copies (serving/publish.py): 8-bit, 174 MB each
+    "chat": ("aramkris/fineweb-edu-124m-chat-dpo-qwen3", "fineweb-edu-124m-chat-dpo-Q8_0.gguf"),
+    "base": ("aramkris/fineweb-edu-124m-base-qwen3", "fineweb-edu-124m-base-Q8_0.gguf"),
+}
+
+
+def try_page():
+    body = '''<header class="panel-head"><span class="eyebrow">Try it</span><h1>Talk to the model, in your browser</h1>
+<p>The project's 124M model runs right here: <a href="https://github.com/ngxson/wllama">wllama</a> (llama.cpp compiled to
+WebAssembly, on the GPU through WebGPU when your browser has it) downloads the 8-bit copy from Hugging Face once
+(174 MB, then cached) and generates on your own machine. Nothing you type leaves the page. It's a 124M model trained on
+2.5B tokens: it writes fluently and is often wrong on facts, and it repeats itself on long answers.</p></header>
+<div class="card try-card">
+  <div class="try-row">
+    <label>Model <select id="try-model" class="select">
+      <option value="chat">Chat (instruction-tuned + DPO): answers questions</option>
+      <option value="base">Base: continues your text</option></select></label>
+    <button id="try-load" class="btn primary">Load the model (174 MB)</button>
+    <span id="try-status" class="muted small"></span>
+  </div>
+  <div id="try-bar" class="try-bar hidden"><i></i></div>
+  <label class="block">Your text <textarea id="try-prompt" rows="3" spellcheck="false">What is the water cycle?</textarea></label>
+  <div class="try-row">
+    <label>Temperature <output id="try-temp-v">0.7</output><input id="try-temp" type="range" min="0" max="1.5" step="0.1" value="0.7"></label>
+    <label>Length <output id="try-len-v">160</output><input id="try-len" type="range" min="20" max="400" step="20" value="160"></label>
+    <button id="try-run" class="btn primary" disabled>Generate</button>
+    <button id="try-stop" class="btn hidden">Stop</button>
+  </div>
+  <div id="try-out" class="try-out hidden"></div>
+  <div id="try-stats" class="muted small"></div>
+</div>
+<div class="card"><div class="card-head"><h3>How this works</h3></div><ul class="small-flow">
+<li>The model was exported exactly to the standard Qwen3 format and converted to GGUF (plan steps S1 and S7: the
+same scores as the original on every benchmark). The files are public:
+<a href="https://huggingface.co/aramkris/fineweb-edu-124m-chat-dpo-qwen3">chat</a>,
+<a href="https://huggingface.co/aramkris/fineweb-edu-124m-base-qwen3">base</a>.</li>
+<li>The chat model writes in a plain <code>User: …</code> / <code>Assistant: …</code> format; the GGUF carries that chat template, so
+this page sends messages the same way an OpenAI-style client would.</li>
+<li>To run it on your own computer instead: <code>ollama run hf.co/aramkris/fineweb-edu-124m-chat-dpo-qwen3:Q8_0</code>, or
+<code>llama-server -hf aramkris/fineweb-edu-124m-chat-dpo-qwen3:Q8_0 --jinja -c 512</code>.</li></ul></div>'''
+    models = json.dumps(TRY_MODELS)
+    scripts = SHIM + f'''<script type="module">
+import {{ Wllama }} from "{WLLAMA}/index.js";
+const MODELS = {models};
+const st = {{ w: null, loaded: null, abort: null }};
+const $v = (id) => document.getElementById(id);
+const status = (t) => {{ $v("try-status").textContent = t; }};
+for (const [id, fmt] of [["try-temp", (v) => (+v).toFixed(1)], ["try-len", (v) => v]])
+  $v(id).addEventListener("input", (e) => {{ $v(id + "-v").textContent = fmt(e.target.value); }});
+$v("try-model").addEventListener("change", () => {{
+  const chat = $v("try-model").value === "chat";
+  $v("try-prompt").value = chat ? "What is the water cycle?" : "The water cycle is the process by which";
+  $v("try-run").disabled = st.loaded !== $v("try-model").value;
+  $v("try-load").disabled = st.loaded === $v("try-model").value;
+}});
+$v("try-load").addEventListener("click", async () => {{
+  const which = $v("try-model").value, [repo, file] = MODELS[which];
+  $v("try-load").disabled = true; $v("try-run").disabled = true;
+  $v("try-bar").classList.remove("hidden");
+  try {{
+    if (st.w) {{ await st.w.exit(); st.w = null; st.loaded = null; }}
+    st.w = new Wllama({{ default: "{WLLAMA}/wasm/wllama.wasm" }});
+    status("Downloading…");
+    await st.w.loadModelFromHF({{ repo, file }}, {{ n_ctx: 512, progressCallback: ({{ loaded, total }}) => {{
+      const p = total ? loaded / total : 0;
+      $v("try-bar").firstElementChild.style.width = `${{Math.round(p * 100)}}%`;
+      status(`Downloading… ${{(loaded / 1e6).toFixed(0)}} of ${{(total / 1e6).toFixed(0)}} MB`);
+    }} }});
+    st.loaded = which;
+    status(`Loaded: ${{which === "chat" ? "the chat model" : "the base model"}}, running in your browser.`);
+    $v("try-run").disabled = false;
+  }} catch (e) {{
+    status(`Couldn't load the model: ${{e.message || e}}`); $v("try-load").disabled = false; console.error(e);
+  }} finally {{ $v("try-bar").classList.add("hidden"); }}
+}});
+$v("try-run").addEventListener("click", async () => {{
+  const chat = st.loaded === "chat", text = $v("try-prompt").value;
+  const opts = {{ max_tokens: +$v("try-len").value, temperature: +$v("try-temp").value, top_p: 0.9,
+    repeat_penalty: 1.1, stream: true }};
+  const out = $v("try-out");
+  out.classList.remove("hidden");
+  out.innerHTML = chat ? `<div class="try-q">${{esc(text)}}</div><div class="try-a"></div>` : `<span class="try-p">${{esc(text)}}</span><span class="try-a"></span>`;
+  const ans = out.querySelector(".try-a");
+  $v("try-run").disabled = true; $v("try-stop").classList.remove("hidden");
+  st.abort = new AbortController();
+  const t0 = performance.now(); let n = 0, first = null;
+  try {{
+    const stream = chat
+      ? await st.w.createChatCompletion({{ messages: [{{ role: "user", content: text }}], ...opts, abortSignal: st.abort.signal }})
+      : await st.w.createCompletion({{ prompt: text, ...opts, abortSignal: st.abort.signal }});
+    for await (const ch of stream) {{
+      if (st.abort.signal.aborted) break;
+      const piece = chat ? ch.choices?.[0]?.delta?.content : ch.choices?.[0]?.text;
+      if (!piece) continue;
+      first ??= performance.now();
+      n++;
+      ans.textContent = chat && !ans.textContent ? piece.trimStart() : ans.textContent + piece;
+      $v("try-stats").textContent = `${{n}} pieces · first after ${{((first - t0) / 1000).toFixed(2)}} s`;
+    }}
+    const secs = (performance.now() - (first ?? t0)) / 1000;
+    $v("try-stats").textContent = `${{n}} pieces in ${{secs.toFixed(1)}} s (${{(n / Math.max(secs, 1e-3)).toFixed(0)}} per second) · first after ${{((first - t0) / 1000).toFixed(2)}} s`;
+  }} catch (e) {{
+    if (!st.abort.signal.aborted) {{ ans.textContent += ` [error: ${{e.message || e}}]`; console.error(e); }}
+  }} finally {{
+    $v("try-run").disabled = false; $v("try-stop").classList.add("hidden");
+  }}
+}});
+$v("try-stop").addEventListener("click", () => st.abort?.abort());
+</script>'''
+    return page("Try it · TinyStories ARM", "try.html", body, scripts=scripts,
+                description="Chat with a 124M GPT trained from scratch, running in your browser with llama.cpp (WebAssembly).")
+
+
 # ---------- build ----------
 
 def build(out):
@@ -385,6 +500,8 @@ def build(out):
         f.write(page("TinyStories ARM: a GPT and a diffusion model from scratch", "index.html", landing(headline_numbers())))
     with open(os.path.join(out, "journey.html"), "w", encoding="utf-8") as f:
         f.write(journey_page())
+    with open(os.path.join(out, "try.html"), "w", encoding="utf-8") as f:
+        f.write(try_page())
     data_path = os.path.join(HERE, "recorded", "sidebyside.json")
     if os.path.exists(data_path):
         shutil.copy(data_path, os.path.join(out, "assets", "sidebyside.json"))

@@ -443,8 +443,10 @@ the same footing. On the base model: loss 3.481 on the real continuations (GPT-2
 ## The website
 
 `pages/build.py` builds the project's website into `_site/`. It has the docs as pages, the Journey timeline, the
-Explorer (the base model's real numbers for three saved prompts) and a Side by side replay, and it runs in the browser
-from saved data. On every push to `main` that changes the docs,
+Explorer (the base model's real numbers for three saved prompts) and a Side by side replay, which run in the browser
+from saved data, and **Try it**, which runs the real 124M chat or base model in the browser: it downloads the 8-bit
+GGUF from the Hugging Face repos (174 MB, cached) and generates with [wllama](https://github.com/ngxson/wllama)
+(llama.cpp in WebAssembly). On every push to `main` that changes the docs,
 `.github/workflows/pages.yml` builds it and deploys it to GitHub Pages.
 
 ```bash
@@ -489,6 +491,12 @@ curl localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
 
 On the M5 that's about 256 tokens/s in bfloat16 and 377 in 8 bits, with the same greedy text as our own code.
 LM Studio and Ollama load the same GGUF files.
+
+Both are published in these formats: [fineweb-edu-124m-base-qwen3](https://huggingface.co/aramkris/fineweb-edu-124m-base-qwen3)
+and [fineweb-edu-124m-chat-dpo-qwen3](https://huggingface.co/aramkris/fineweb-edu-124m-chat-dpo-qwen3), so no export is
+needed to run them: `llama-server -hf aramkris/fineweb-edu-124m-chat-dpo-qwen3:Q8_0 --jinja -c 512`, or
+`ollama run hf.co/aramkris/fineweb-edu-124m-chat-dpo-qwen3:Q8_0`. `serving/publish.py <export> <gguf name> <repo>`
+uploads a new one (card from `docs/model_cards/<repo>.md`).
 
 `serving/check.py` checks that the served model is the model (S7). `engine` runs our own held-out loss and benchmark
 code with llama.cpp computing the numbers (through llama-cpp-python: `uv pip install --python .venv/bin/python
