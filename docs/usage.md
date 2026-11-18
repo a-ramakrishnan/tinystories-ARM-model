@@ -392,6 +392,34 @@ A 124M model takes about 10 minutes for all five on an M5 (HellaSwag is most of 
 the tests from Hugging Face. Models trained only on TinyStories score at chance: these tests need general
 knowledge. At GPT-2 size, scores sit close to chance, so compare them with the ± (one standard error) shown.
 
+### Facts the model knows: `facts.py`
+
+The benchmarks measure reasoning and common sense; **`facts.py`** asks whether the model still knows simple facts
+it read: 200 closed-book questions in `evals/facts.jsonl` (50 capitals, and science, geography, books and art,
+history, everyday knowledge), each with three wrong answers of the same kind. It scores them two ways: by
+likelihood like the benchmarks (**choice**: is "New Delhi" more likely than Mumbai, Kolkata and Bangalore after
+"The capital of India is"?) and by letting the model answer on its own, greedily (**generated**: does the answer
+appear?). A chat model gets the question in its chat format; a base model gets the plain sentence. Chance on
+choice is 25%.
+
+```bash
+python3 facts.py <model id> [<model id> ...]           # saves models/<id>/facts.json, prints a table
+python3 facts.py <chat model id> --as base             # a chat model on the plain sentences, as a base model
+```
+
+On 18 Nov it showed that instruction tuning had erased knowledge (the same numbers with the chat models on the
+plain sentences: 43% / −10.6 / 14%, so it isn't the format):
+
+| Model | Choice (length-normalized) | Right answer's log prob | Generated |
+|---|---|---|---|
+| Base (stage 2) | **57.5%** (52.5%) | **−5.66** | **24%** |
+| Chat, SFT | 44.0% (45.0%) | −9.58 | 21% |
+| Chat, SFT + DPO | 45.0% (44.0%) | −9.38 | 22% |
+
+`sft.py train` now checks the facts (choice only) at every evaluation, and has two remedies: `--lr` (gentler steps)
+and `--replay 0.2` (a fifth of each batch is plain pre-training text from the base model's own datasets, made once
+with `python3 sft.py prepare-replay`).
+
 ### Everything at once: the evaluation queue
 
 One command evaluates a model end to end. It can be stopped at any point; running it again continues with the

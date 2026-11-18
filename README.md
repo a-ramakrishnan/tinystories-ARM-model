@@ -5,6 +5,9 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/a-ramakrishnan/tinystories-ARM-model/blob/main/train_step_by_step.ipynb)
 
+**▶ Live site: [a-ramakrishnan.github.io/tinystories-ARM-model](https://a-ramakrishnan.github.io/tinystories-ARM-model/)**:
+[chat with the model in your browser](https://a-ramakrishnan.github.io/tinystories-ARM-model/try.html), no install.
+
 **Built for Apple Silicon.** Build a small GPT-style language model from scratch in PyTorch and train it on
 your Mac's own GPU, step by step, in a local web app. See inside the transformer as it works: watch one
 token flow through a block, step by step, with your model's real attention weights, feed-forward layer and
@@ -27,6 +30,10 @@ next-token probabilities. No cloud, no Nvidia card.
 > timeline, and the **Lab** page lets you design, train and compare models with every architecture switch.
 
 ## About
+
+Live site: **[a-ramakrishnan.github.io/tinystories-ARM-model](https://a-ramakrishnan.github.io/tinystories-ARM-model/)**
+(the docs, the Journey, the Explorer and [Try it](https://a-ramakrishnan.github.io/tinystories-ARM-model/try.html), the
+model running in your browser).
 
 **TinyStories ARM** is an open-source, beginner-friendly project for **training a small language model (SLM)
 from scratch on a Mac with Apple Silicon** (M1, M2, M3, M4 and M5). It implements a **GPT-style decoder-only

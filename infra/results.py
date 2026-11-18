@@ -12,7 +12,8 @@
 #    "measured_at": "2026-11-15 16:51", "recorded_at": "...", "commit": "675d4e4", "from": "models/<id>/benchmarks.json"}
 #
 # kinds: heldout (key = dataset), generation, benchmark (key = task), chat (sft.py compare), chat_heldout (dpo.py eval),
-# bound (diffusion training's best likelihood bound), quality (key = sampler config, diffusion_models/quality.py).
+# bound (diffusion training's best likelihood bound), quality (key = sampler config, diffusion_models/quality.py),
+# facts (key = chat / plain, facts.py).
 # Diffusion runs are the models "diffusion:<run folder>". (kind, model, key, measured_at) identifies a measurement, so
 # scanning the same files twice adds nothing; the latest measured_at wins when tables are built.
 #
@@ -176,6 +177,11 @@ def from_file(path, model=None, info=None):
         out.append(_rec("bound", model, {"bound": d["best_bound"]}, d.get("finished_at") or _mtime(path), path, None,
                         {"tokens": d.get("tokens"), "updates": d.get("updates"), "gpu": d.get("gpu"),
                          "seconds": d.get("seconds")}, info))
+    elif name in ("facts.json", "facts_plain.json") and model and "summary" in d:      # facts.py
+        s = d["summary"]
+        out.append(_rec("facts", model, _round({k: s.get(k) for k in ("acc", "acc_norm", "right_lp", "generated")}),
+                        d.get("measured_at") or _mtime(path), path, d.get("format"),
+                        {"n": s.get("n"), "facts_version": d.get("facts_version"), "by_topic": s.get("by_topic")}, info))
     elif "results" in d and isinstance(d["results"], dict):     # chat_eval.json (sft.py) / dpo_eval.json, held_out_eval.json (dpo.py)
         when = d.get("measured_at") or _mtime(path)
         for mid, v in d["results"].items():
@@ -209,7 +215,7 @@ def from_folder(folder):
     info = describe(model, folder) if model else None
     out = []
     for name in ("eval.json", "benchmarks.json", "quality.json", "metrics.json", "chat_eval.json", "dpo_eval.json",
-                 "held_out_eval.json"):
+                 "held_out_eval.json", "facts.json", "facts_plain.json"):
         p = os.path.join(folder, name)
         if os.path.exists(p):
             out += from_file(p, model, info if name not in ("chat_eval.json", "dpo_eval.json", "held_out_eval.json") else None)

@@ -97,11 +97,13 @@ def load_task(name, limit=None):
 @torch.no_grad()
 def score_requests(model, enc, requests, device, batch=16):
     """For each (context, continuation): (sum of log probs of the continuation's tokens, is_greedy, n_tokens).
-    The context and continuation are tokenized separately, as the harness does."""
+    The context and continuation are tokenized separately, as the harness does; a context may also be token ids
+    already (facts.py's chat prompts start with <|endoftext|>, which text encoding can't produce)."""
     block = model.config.block_size
     toks = []
     for ctx, cont in requests:
-        c_ids, k_ids = enc.encode_ordinary(ctx), enc.encode_ordinary(cont)
+        c_ids = list(ctx) if isinstance(ctx, (list, tuple)) else enc.encode_ordinary(ctx)
+        k_ids = enc.encode_ordinary(cont)
         full = (c_ids + k_ids)[-(block + 1):]          # cut from the left if longer than the window
         toks.append((full, min(len(k_ids), len(full) - 1)))
     order = sorted(range(len(toks)), key=lambda i: -len(toks[i][0]))   # similar lengths together
