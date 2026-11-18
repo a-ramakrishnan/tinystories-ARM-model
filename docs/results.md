@@ -24,6 +24,7 @@ Zero-shot, lm-evaluation-harness style, in percent: HellaSwag acc_norm, LAMBADA 
 | Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk + DPO against repetition | 30.1 | 12.9 | 42.0 | 59.0 | 47.9 | 38.4 | 2026-11-15 |
 | Diffusion 124M · FineWeb-Edu full + Cosmopedia · 999M tokens | 27.6 | 11.8 | 30.7 | 54.2 | 49.6 | 34.8 | 2026-11-16 |
 | Diffusion 124M · FineWeb-Edu full + Cosmopedia · 2,500M tokens | 28.0 | 14.4 | 30.1 | 55.4 | 49.1 | 35.4 | 2026-11-17 |
+| Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk, lr 5e-5 + replay 0.2 · 13.888k steps | 32.5 | 16.0 | 47.5 | 62.2 | 48.9 | 41.4 | 2026-11-18 |
 
 ## Held-out loss
 
@@ -107,8 +108,9 @@ Cross-entropy (nats per token) on held-out text from `evaluate.py`; lower is bet
 | outputs/dpo/smoltalk-2000 | 1.617 | 16.1 | 50.0 | 11.2 | 84.0 | 1.399 | 2026-11-14 |
 | Chat Large 124M RoPE SwiGLU no-bias QK-norm · instruction-tuned on smol-smoltalk + DPO against repetition · 11.284k steps |  |  |  | 11.2 | 84.0 | 1.399 | 2026-11-15 |
 | Large 124M best design · stage 2 · FineWeb-Edu full + Cosmopedia · 2.5B tokens · context 512 | 2.329 | 27.8 | 0.0 |  |  |  | 2026-11-15 |
-| Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk · 11.284k steps | 1.406 | 22.3 | 16.7 | 12.4 | 70.0 | 1.156 | 2026-11-15 |
-| Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk + DPO against repetition | 1.459 | 9.9 | 50.0 | 6.5 | 86.0 | 1.196 | 2026-11-15 |
+| Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk · 11.284k steps | 1.406 | 22.3 | 16.7 | 12.4 | 70.0 | 1.156 | 2026-11-18 |
+| Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk + DPO against repetition | 1.459 | 9.9 | 50.0 | 6.5 | 86.0 | 1.196 | 2026-11-18 |
+| Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk, lr 5e-5 + replay 0.2 · 13.888k steps | 1.456 | 20.9 | 8.3 | 15.6 | 73.0 | 1.280 | 2026-11-18 |
 
 ## Diffusion models
 

@@ -132,6 +132,7 @@ outputs/
 tinystories-run-*.zip
 ab-*.zip
 diffusion-run-*.zip
+sft-*.zip
 models/
 _site/
 

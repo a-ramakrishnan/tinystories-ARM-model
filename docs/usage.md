@@ -420,6 +420,17 @@ plain sentences: 43% / −10.6 / 14%, so it isn't the format):
 and `--replay 0.2` (a fifth of each batch is plain pre-training text from the base model's own datasets, made once
 with `python3 sft.py prepare-replay`).
 
+Redone that way (learning rate 5e-5, replay 0.2, 25 min on a Colab A100), instruction tuning keeps most of what the
+base model knew, at a small cost in how closely it matches the reference answers:
+
+| Model | Facts (choice) | Right answer's log prob | Answered right | Benchmark average | Answer loss | Repetition (100 held-out) |
+|---|---|---|---|---|---|---|
+| Base | 57.5% | −5.66 | 24.0% | 41.5 | – | – |
+| Chat, SFT (lr 2e-4) | 44.0% | −9.58 | 21.0% | 37.7 | **1.390** | **12.4%** |
+| Chat, SFT (lr 5e-5 + replay) | **50.0%** | **−7.17** | **25.5%** | **40.3** | 1.448 | 15.6% |
+
+(Benchmark average: length-normalized accuracy where a test has it, over the five.)
+
 ### Everything at once: the evaluation queue
 
 One command evaluates a model end to end. It can be stopped at any point; running it again continues with the
