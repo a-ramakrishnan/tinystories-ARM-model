@@ -453,6 +453,43 @@ python3 pages/record.py                                              # re-record
 python3 pages/record.py --only explorer                              # just the Explorer, on the model in use (pick the base model first)
 ```
 
+## Serving: export as a standard Hugging Face model
+
+`serving/export_hf.py` turns one of our models into a standard Hugging Face **Qwen3** folder, so tools that serve
+Qwen3 (transformers, llama.cpp through GGUF, MLX, LM Studio, Ollama, vLLM) can run it with no code of ours:
+
+```bash
+python3 -m serving.export_hf mini-fineweb-edu-ful-202611151103-bb160c      # the base model → exports/<id>-qwen3/
+python3 -m serving.export_hf chat-mini-fineweb-ed-202611152150-2746ba      # the DPO chat model, with its chat template
+```
+
+It checks the export against our model before saving (largest logit difference, the top token at every position,
+greedy text) and writes the result into `export_info.json`. Our design is Qwen3's except that the block norms are
+LayerNorm; the export centers the residual stream so LayerNorm and RMSNorm give the same result, and scales the query
+and key projections so Qwen3's single epsilon acts like our QK-norm's. Load it like any model:
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+tok = AutoTokenizer.from_pretrained("exports/chat-mini-fineweb-ed-202611152150-2746ba-qwen3")
+model = AutoModelForCausalLM.from_pretrained("exports/chat-mini-fineweb-ed-202611152150-2746ba-qwen3")
+ids = tok.apply_chat_template([{"role": "user", "content": "Why is the sky blue?"}], add_generation_prompt=True, return_tensors="pt")
+print(tok.decode(model.generate(ids, max_new_tokens=80)[0, ids.shape[1]:], skip_special_tokens=True))
+```
+
+To serve it with llama.cpp (Homebrew's `llama.cpp`), make a GGUF file and start `llama-server`, which speaks the
+OpenAI API (`/v1/chat/completions` with the chat template, `/v1/completions`, streaming). The script fetches only
+llama.cpp's converter the first time:
+
+```bash
+serving/gguf.sh exports/chat-mini-fineweb-ed-202611152150-2746ba-qwen3 fineweb-edu-124m-chat-dpo   # → exports/gguf/*-bf16.gguf, *-Q8_0.gguf
+llama-server -m exports/gguf/fineweb-edu-124m-chat-dpo-Q8_0.gguf --jinja -c 512 --port 8080
+curl localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"messages": [{"role": "user", "content": "What is the capital of France?"}], "temperature": 0}'
+```
+
+On the M5 that's about 256 tokens/s in bfloat16 and 377 in 8 bits, with the same greedy text as our own code.
+LM Studio and Ollama load the same GGUF files.
+
 ## Generating text from a trained model
 
 The web app's Generate step does this for you. Its model list also has the masked diffusion runs: pick one and the

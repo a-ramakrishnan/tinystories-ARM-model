@@ -134,3 +134,6 @@ ab-*.zip
 diffusion-run-*.zip
 models/
 _site/
+
+# Hugging Face exports of our models (serving/export_hf.py): big, rebuilt with one command
+exports/
