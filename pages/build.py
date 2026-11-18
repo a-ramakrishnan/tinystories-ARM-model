@@ -150,21 +150,62 @@ def headline_numbers():
     return {k: rows[k] for k in want.values() if k in rows}
 
 
+LEVEL = 1.0      # points: differences this small are within a benchmark's margin of error (±1–1.4 points)
+
+
+def verdict(d):
+    """How a score compares with GPT-2 small's: (css class, label)."""
+    if d is None:
+        return "", ""
+    if abs(d) < LEVEL:
+        return "level", "≈ level"
+    return ("up", f"+{d:.1f}") if d > 0 else ("down", f"−{-d:.1f}")
+
+
 def landing(numbers):
     def cell(v):
         return f"{100 * v:.1f}" if v is not None else "–"
     table = ""
     if numbers:
-        lines = [("GPT-2 small (OpenAI, published)", GPT2)] + list(numbers.items())
+        g = [GPT2[k] for k, _, _ in TASKS]
+        g_avg = sum(g) / len(g)
         head = "".join(f'<th class="num">{t}</th>' for _, t, _ in TASKS)
-        body = ""
-        for name, sc in lines:
+        body = f'<tr class="ref"><td>GPT-2 small (OpenAI, published)<div class="muted small">the yardstick</div></td>' + \
+            "".join(f"<td class=num>{cell(v)}</td>" for v in g) + f'<td class="num"><b>{cell(g_avg)}</b></td></tr>'
+        notes = []
+        for name, sc in numbers.items():
             vals = [sc.get(k) for k, _, _ in TASKS]
-            avg = sum(vals) / len(vals) if all(v is not None for v in vals) else None
-            body += f'<tr><td>{html.escape(name)}</td>{"".join(f"<td class=num>{cell(v)}</td>" for v in vals)}<td class="num"><b>{cell(avg)}</b></td></tr>'
+            full = all(v is not None for v in vals)
+            avg = sum(vals) / len(vals) if full else None
+            cells, ahead, level, behind = "", [], [], []      # (task, difference) in each
+            for (k, title, _), v, ref in zip(TASKS, vals, g):
+                d = None if v is None else 100 * (v - ref)
+                cls, lab = verdict(d)
+                if d is not None:
+                    (ahead if cls == "up" else level if cls == "level" else behind).append((title, lab))
+                cells += f'<td class="num">{cell(v)}<div class="vs {cls}">{lab}</div></td>'
+            da = None if avg is None else 100 * (avg - g_avg)
+            cls, lab = verdict(da)
+            if da is None:
+                summary = "not all five measured yet"
+            elif cls == "level":
+                summary = "<b>level with GPT-2 small</b> on average"
+            else:
+                summary = f"<b class='{cls}'>{abs(da):.1f} points {'ahead of' if da > 0 else 'behind'} GPT-2 small</b> on average"
+            def names(xs, signed=True):
+                return ", ".join(f"{t} ({lab})" if signed else t for t, lab in xs)
+            parts = [f"ahead on {names(ahead)}" if ahead else "", f"level on {names(level, False)}" if level else "",
+                     f"behind on {names(behind)}" if behind else ""]
+            detail = "; ".join(p for p in parts if p)
+            body += f'<tr><td>{html.escape(name)}</td>{cells}<td class="num"><b>{cell(avg)}</b><div class="vs {cls}">{lab}</div></td></tr>'
+            notes.append(f"<li><b>{html.escape(name)}</b>: {summary}. {detail[:1].upper() + detail[1:]}.</li>")
         table = f'''<div class="card"><div class="card-head"><h3>Where the models stand</h3><span class="muted small">zero-shot accuracy, %; from the results store</span></div>
-<div class="ptable-scroll"><table class="ptable"><tr><th></th>{head}<th class="num">Average</th></tr>{body}</table></div>
-<p class="hint">Scored the way EleutherAI's lm-evaluation-harness scores them; the diffusion models score each answer by its likelihood bound. All of it: <a href="results.html">Results</a>.</p></div>'''
+<div class="ptable-scroll"><table class="ptable home-bench"><tr><th></th>{head}<th class="num">Average</th></tr>{body}</table></div>
+<div class="vs-notes"><div class="card-head"><h4>Against GPT-2 small</h4></div><ul>{"".join(notes)}</ul></div>
+<p class="hint">Under each score, the difference from GPT-2 small in points: <span class="vs up">green</span> ahead, <span class="vs down">red</span> behind,
+<span class="vs level">≈ level</span> within {LEVEL:.0f} point, about each benchmark's margin of error. GPT-2 small is OpenAI's 124M model from 2019, trained on 40 GB of web text;
+our models have the same size. Scored the way EleutherAI's lm-evaluation-harness scores them; the diffusion models score each answer by its likelihood bound.
+All of it: <a href="results.html">Results</a>.</p></div>'''
     tiles = [("journey.html", "Journey", "Every decision from the first commit to today: what changed, why, what it measured and what it cost."),
              ("sidebyside.html", "Side by side", "The same prompt written left to right by the GPT and all at once by the diffusion model, replayed in your browser."),
              ("story.html", "The story", "From a 356-line training script to a 124M model that beats GPT-2 small on held-out web text."),
