@@ -428,8 +428,12 @@ base model knew, at a small cost in how closely it matches the reference answers
 | Base | 57.5% | −5.66 | 24.0% | 41.5 | – | – |
 | Chat, SFT (lr 2e-4) | 44.0% | −9.58 | 21.0% | 37.7 | **1.390** | **12.4%** |
 | Chat, SFT (lr 5e-5 + replay) | **50.0%** | **−7.17** | **25.5%** | **40.3** | 1.448 | 15.6% |
+| Chat, SFT (lr 2e-4) + DPO | 45.0% | −9.38 | 22.0% | 37.7 | – | **6.5%** |
+| Chat, SFT (lr 5e-5 + replay) + DPO | **50.5%** | **−7.07** | **30.0%** | **40.5** | – | 8.5% |
 
-(Benchmark average: length-normalized accuracy where a test has it, over the five.)
+(Benchmark average: length-normalized accuracy where a test has it, over the five.) DPO on the new model (2,000 fresh pairs from its own greedy answers, `dpo.py pairs` / `train`, 36 min on the Mac)
+brings repetition down from 15.6% to 8.5% and answers that end from 73% to 82%, while keeping the knowledge: it is the
+best chat model so far, though the old one still repeats a little less (6.5%) and ends more often (86%).
 
 ### Everything at once: the evaluation queue
 

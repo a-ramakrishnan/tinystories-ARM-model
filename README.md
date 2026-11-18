@@ -82,7 +82,7 @@ step by step.
 | DPO against repetition: the reference answer preferred to the chat model's own greedy one, 2,000 pairs (21 min on the Mac) | greedy repetition on held-out questions 20.0% → **11.2%**, answers that end 59% → **84%**; held-out answer loss 1.548 → 1.617 |
 | Instruction tuning redone on the stage 2 base (20 min on an A100) | held-out answer loss **1.390** (was 1.548); greedy repetition on held-out questions **12.4%** (was 20.0%), with no DPO yet |
 | DPO redone on the stage 2 chat model (19 min on the Mac) | greedy repetition on held-out questions 12.4% → **6.5%**, answers that end 70% → **86%**; benchmarks unchanged |
-| Instruction tuning without forgetting: a gentler learning rate and a fifth of each batch from the pre-training data (25 min on an A100) | closed-book facts 44.0% → **50.0%** (base 57.5%), benchmark average 37.7 → **40.3** (base 41.5); answer loss 1.390 → 1.448 |
+| Instruction tuning without forgetting: a gentler learning rate and a fifth of each batch from the pre-training data (25 min on an A100) | closed-book facts 44.0% → **50.0%** (base 57.5%), benchmark average 37.7 → **40.3** (base 41.5); answer loss 1.390 → 1.448; with DPO on top: greedy repetition **8.5%**, answers that end **82%**, benchmark average **40.5** (old chat model: 6.5%, 86%, 37.7) |
 | A yardstick: OpenAI's GPT-2 small (124M) on held-out web text | **3.401**, against **3.549** for our same-size model (500M tokens of training) |
 | Stage 2: five times the data (2.5B tokens of FineWeb-Edu full + Cosmopedia, continued from the base; the last 74K steps on an A100, 5× an L4) | held-out web text 3.549 → **3.296** (GPT-2 small 3.401); benchmark average 40.4 → **42.3** (GPT-2 44.4): HellaSwag **32.3%**, ARC-Easy **46.8%**, LAMBADA 20.3% |
 

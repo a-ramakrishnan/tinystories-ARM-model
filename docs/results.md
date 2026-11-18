@@ -25,6 +25,7 @@ Zero-shot, lm-evaluation-harness style, in percent: HellaSwag acc_norm, LAMBADA 
 | Diffusion 124M · FineWeb-Edu full + Cosmopedia · 999M tokens | 27.6 | 11.8 | 30.7 | 54.2 | 49.6 | 34.8 | 2026-11-16 |
 | Diffusion 124M · FineWeb-Edu full + Cosmopedia · 2,500M tokens | 28.0 | 14.4 | 30.1 | 55.4 | 49.1 | 35.4 | 2026-11-17 |
 | Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk, lr 5e-5 + replay 0.2 · 13.888k steps | 32.5 | 16.0 | 47.5 | 62.2 | 48.9 | 41.4 | 2026-11-18 |
+| Chat Large 124M · stage 2 base · SFT (lr 5e-5 + replay 0.2) + DPO · 948 steps | 32.7 | 15.0 | 47.9 | 62.1 | 49.4 | 41.4 | 2026-11-18 |
 
 ## Held-out loss
 
@@ -111,6 +112,7 @@ Cross-entropy (nats per token) on held-out text from `evaluate.py`; lower is bet
 | Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk · 11.284k steps | 1.406 | 22.3 | 16.7 | 12.4 | 70.0 | 1.156 | 2026-11-18 |
 | Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk + DPO against repetition | 1.459 | 9.9 | 50.0 | 6.5 | 86.0 | 1.196 | 2026-11-18 |
 | Chat Large 124M · stage 2 base · instruction-tuned on smol-smoltalk, lr 5e-5 + replay 0.2 · 13.888k steps | 1.456 | 20.9 | 8.3 | 15.6 | 73.0 | 1.280 | 2026-11-18 |
+| Chat Large 124M · stage 2 base · SFT (lr 5e-5 + replay 0.2) + DPO · 948 steps |  |  |  | 8.5 | 82.0 | 1.358 | 2026-11-18 |
 
 ## Diffusion models
 
