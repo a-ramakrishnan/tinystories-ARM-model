@@ -1,0 +1,39 @@
+{
+ "gguf": "exports/gguf/fineweb-edu-124m-chat-dpo-bf16.gguf",
+ "model": "chat-mini-fineweb-ed-202611152150-2746ba",
+ "api": {
+  "lambada": {
+   "acc": 0.12963322336503008,
+   "n": 5153,
+   "seconds": 85.1,
+   "stored": 0.1288569765185329,
+   "diff": 0.0008
+  },
+  "chat": {
+   "served": {
+    "repeated_4grams": 0.0656,
+    "ended": 0.85,
+    "mean_length": 129.1,
+    "n": 100
+   },
+   "ours": {
+    "repeated_4grams": 0.0647,
+    "ended": 0.86,
+    "mean_length": 129.1,
+    "n": 100
+   },
+   "stored": {
+    "repeated_4grams": 0.065,
+    "ended": 0.86,
+    "mean_length": 129.1
+   },
+   "identical_answers": 70,
+   "prompt_tokens_match": 100,
+   "sample": {
+    "question": "Write a Python function that takes a URL as an input and returns the host name as a string. The function should first split the URL into parts by the forward slash (/) character. Next, it should extract the third part from the list of split parts, which represents the host name. In some cases, the host name may be missing, in which case the function should return an empty string. The function should also check if the third part is a valid IPv4 or IPv6 address, and if so, return it as the host name.",
+    "served": " ```python\nimport re\n\ndef get_host_name(url):\n    parts = re.split(r'\\b\\w+\\b', url)\n    if not parts:\n        return \"\"\n\n    host_name = parts[0].replace('/', '.')\n    return host_name\n```"
+   }
+  }
+ },
+ "api_measured_at": "2026-11-18 13:20"
+}

@@ -1,0 +1,130 @@
+{
+ "gguf": "exports/gguf/fineweb-edu-124m-base-bf16.gguf",
+ "model": "mini-fineweb-edu-ful-202611151103-bb160c",
+ "engine": {
+  "heldout": {
+   "baominhtran__mini-fineweb-edu-small": {
+    "loss": 3.2959,
+    "stored": 3.2957,
+    "diff": 0.0002,
+    "title": "Mini FineWeb-Edu"
+   },
+   "baominhtran__mini-fineweb-edu-tiny": {
+    "loss": 3.3101,
+    "stored": 3.3099,
+    "diff": 0.0002,
+    "title": "baominhtran__mini-fineweb-edu-tiny"
+   },
+   "huggingfacetb__cosmopedia-khanacademy": {
+    "loss": 2.3361,
+    "stored": 2.3359,
+    "diff": 0.0002,
+    "title": "huggingfacetb__cosmopedia-khanacademy"
+   },
+   "huggingfacetb__cosmopedia-openstax": {
+    "loss": 2.7173,
+    "stored": 2.7173,
+    "diff": 0.0,
+    "title": "huggingfacetb__cosmopedia-openstax"
+   },
+   "huggingfacetb__cosmopedia-stanford-first100000": {
+    "loss": 2.6409,
+    "stored": 2.6407,
+    "diff": 0.0002,
+    "title": "huggingfacetb__cosmopedia-stanford-first100000"
+   },
+   "huggingfacetb__cosmopedia-stories-first300000": {
+    "loss": 2.7848,
+    "stored": 2.7846,
+    "diff": 0.0002,
+    "title": "huggingfacetb__cosmopedia-stories-first300000"
+   },
+   "huggingfacetb__cosmopedia-wikihow": {
+    "loss": 2.3425,
+    "stored": 2.3425,
+    "diff": 0.0,
+    "title": "huggingfacetb__cosmopedia-wikihow"
+   },
+   "roneneldan__tinystories": {
+    "loss": 2.7504,
+    "stored": 2.7507,
+    "diff": -0.0003,
+    "title": "TinyStories"
+   },
+   "salesforce__wikitext-wikitext-2-raw-v1": {
+    "loss": 5.0455,
+    "stored": 5.0468,
+    "diff": -0.0013,
+    "title": "WikiText-2"
+   },
+   "url-raw.githubusercontent.com-input.txt-4c649141": {
+    "loss": 5.4461,
+    "stored": 5.4461,
+    "diff": 0.0,
+    "title": "Tiny Shakespeare"
+   }
+  },
+  "benchmarks": {
+   "hellaswag": {
+    "metric": "acc_norm",
+    "score": 0.32264489145588526,
+    "stored": 0.32264489145588526,
+    "stderr": 0.004665095012871466,
+    "n": 10042,
+    "diff": 0.0,
+    "seconds": 980.2
+   },
+   "lambada": {
+    "metric": "acc",
+    "score": 0.20318261207063845,
+    "stored": 0.20337667378226276,
+    "stderr": 0.005605219183272574,
+    "n": 5153,
+    "diff": -0.0002,
+    "seconds": 165.3
+   },
+   "arc_easy": {
+    "metric": "acc",
+    "score": 0.4675925925925926,
+    "stored": 0.4684343434343434,
+    "stderr": 0.010236055636510663,
+    "n": 2376,
+    "diff": -0.0008,
+    "seconds": 166.7
+   },
+   "piqa": {
+    "metric": "acc",
+    "score": 0.6229597388465724,
+    "stored": 0.6240478781284005,
+    "stderr": 0.011304493281325894,
+    "n": 1838,
+    "diff": -0.0011,
+    "seconds": 63.5
+   },
+   "winogrande": {
+    "metric": "acc",
+    "score": 0.500394632991318,
+    "stored": 0.4988161010260458,
+    "stderr": 0.01404693463865135,
+    "n": 1267,
+    "diff": 0.0016,
+    "seconds": 36.5
+   }
+  },
+  "average": {
+   "score": 42.34,
+   "stored": 42.35
+  }
+ },
+ "engine_measured_at": "2026-11-18 12:41",
+ "api": {
+  "lambada": {
+   "acc": 0.20357073549388705,
+   "n": 5153,
+   "seconds": 112.0,
+   "stored": 0.20337667378226276,
+   "diff": 0.0002
+  }
+ },
+ "api_measured_at": "2026-11-18 13:02"
+}

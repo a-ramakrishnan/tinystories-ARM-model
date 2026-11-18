@@ -490,6 +490,22 @@ curl localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
 On the M5 that's about 256 tokens/s in bfloat16 and 377 in 8 bits, with the same greedy text as our own code.
 LM Studio and Ollama load the same GGUF files.
 
+`serving/check.py` checks that the served model is the model (S7). `engine` runs our own held-out loss and benchmark
+code with llama.cpp computing the numbers (through llama-cpp-python: `uv pip install --python .venv/bin/python
+llama-cpp-python`); `api` starts llama-server and sends LAMBADA and, for chat models, `dpo.py eval`'s 100 held-out
+questions over HTTP, next to our own model on the same questions:
+
+```bash
+.venv/bin/python -m serving.check engine exports/gguf/fineweb-edu-124m-base-bf16.gguf --model mini-fineweb-edu-ful-202611151103-bb160c
+.venv/bin/python -m serving.check api exports/gguf/fineweb-edu-124m-chat-dpo-bf16.gguf --model chat-mini-fineweb-ed-202611152150-2746ba
+```
+
+| Served by llama.cpp | Held-out FineWeb-Edu | Benchmark average | LAMBADA over HTTP | Chat: repetition / ended / length |
+|---|---|---|---|---|
+| Our PyTorch model (stored) | 3.2957 | 42.35 | 20.34% | 6.5% / 86% / 129.1 |
+| bfloat16 GGUF | 3.2959 | 42.34 | 20.36% | 6.6% / 85% / 129.1 |
+| 8-bit GGUF (Q8_0) | 3.2963 | 42.22 | – | 6.7% / 82% / 133.2 |
+
 ## Generating text from a trained model
 
 The web app's Generate step does this for you. Its model list also has the masked diffusion runs: pick one and the

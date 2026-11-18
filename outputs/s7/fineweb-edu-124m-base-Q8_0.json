@@ -1,0 +1,120 @@
+{
+ "gguf": "exports/gguf/fineweb-edu-124m-base-Q8_0.gguf",
+ "model": "mini-fineweb-edu-ful-202611151103-bb160c",
+ "engine": {
+  "heldout": {
+   "baominhtran__mini-fineweb-edu-small": {
+    "loss": 3.2963,
+    "stored": 3.2957,
+    "diff": 0.0006,
+    "title": "Mini FineWeb-Edu"
+   },
+   "baominhtran__mini-fineweb-edu-tiny": {
+    "loss": 3.3102,
+    "stored": 3.3099,
+    "diff": 0.0003,
+    "title": "baominhtran__mini-fineweb-edu-tiny"
+   },
+   "huggingfacetb__cosmopedia-khanacademy": {
+    "loss": 2.3365,
+    "stored": 2.3359,
+    "diff": 0.0006,
+    "title": "huggingfacetb__cosmopedia-khanacademy"
+   },
+   "huggingfacetb__cosmopedia-openstax": {
+    "loss": 2.7171,
+    "stored": 2.7173,
+    "diff": -0.0002,
+    "title": "huggingfacetb__cosmopedia-openstax"
+   },
+   "huggingfacetb__cosmopedia-stanford-first100000": {
+    "loss": 2.641,
+    "stored": 2.6407,
+    "diff": 0.0003,
+    "title": "huggingfacetb__cosmopedia-stanford-first100000"
+   },
+   "huggingfacetb__cosmopedia-stories-first300000": {
+    "loss": 2.7849,
+    "stored": 2.7846,
+    "diff": 0.0003,
+    "title": "huggingfacetb__cosmopedia-stories-first300000"
+   },
+   "huggingfacetb__cosmopedia-wikihow": {
+    "loss": 2.343,
+    "stored": 2.3425,
+    "diff": 0.0005,
+    "title": "huggingfacetb__cosmopedia-wikihow"
+   },
+   "roneneldan__tinystories": {
+    "loss": 2.7517,
+    "stored": 2.7507,
+    "diff": 0.001,
+    "title": "TinyStories"
+   },
+   "salesforce__wikitext-wikitext-2-raw-v1": {
+    "loss": 5.0462,
+    "stored": 5.0468,
+    "diff": -0.0006,
+    "title": "WikiText-2"
+   },
+   "url-raw.githubusercontent.com-input.txt-4c649141": {
+    "loss": 5.4471,
+    "stored": 5.4461,
+    "diff": 0.001,
+    "title": "Tiny Shakespeare"
+   }
+  },
+  "benchmarks": {
+   "hellaswag": {
+    "metric": "acc_norm",
+    "score": 0.32224656442939653,
+    "stored": 0.32264489145588526,
+    "stderr": 0.004663585070127723,
+    "n": 10042,
+    "diff": -0.0004,
+    "seconds": 795.4
+   },
+   "lambada": {
+    "metric": "acc",
+    "score": 0.20279448864738986,
+    "stored": 0.20337667378226276,
+    "stderr": 0.005601226682578387,
+    "n": 5153,
+    "diff": -0.0006,
+    "seconds": 82.3
+   },
+   "arc_easy": {
+    "metric": "acc",
+    "score": 0.4671717171717172,
+    "stored": 0.4684343434343434,
+    "stderr": 0.010235491165385985,
+    "n": 2376,
+    "diff": -0.0013,
+    "seconds": 104.5
+   },
+   "piqa": {
+    "metric": "acc",
+    "score": 0.6224156692056583,
+    "stored": 0.6240478781284005,
+    "stderr": 0.011307705441751484,
+    "n": 1838,
+    "diff": -0.0016,
+    "seconds": 40.2
+   },
+   "winogrande": {
+    "metric": "acc",
+    "score": 0.4964483030781373,
+    "stored": 0.4988161010260458,
+    "stderr": 0.014046584617729216,
+    "n": 1267,
+    "diff": -0.0024,
+    "seconds": 24.1
+   }
+  },
+  "average": {
+   "score": 42.22,
+   "stored": 42.35
+  }
+ },
+ "engine_measured_at": "2026-11-18 13:00"
+}
