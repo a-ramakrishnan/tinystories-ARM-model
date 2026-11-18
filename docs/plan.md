@@ -169,7 +169,24 @@ Stage 2 is training again (from step 61,000, done about 21:30 on 15 Nov); everyt
 | J6 | **Evaluation queue on the Mac.** One command evaluates a new model end to end (losses, quality, the five benchmarks), resumable per task, with memory guards (batch size chosen from free GPU memory; today's out-of-memory crashes) and `caffeinate` built in | Claude | ✅ **17 Nov**: `infra/eval_queue.py`. `python3 -m infra.eval_queue <model id or diffusion run>`: autoregressive models get the suite then the five benchmarks; diffusion runs get the bound (into the results store), quality (every sampler setting, as before) and the five benchmarks, quick ones first and HellaSwag last. Each task's state is kept in `<folder>/eval_queue.json`, so the same command picks up after a crash (`--redo` to rerun, `--plan` to see it, `--only` to choose). The scoring batch is chosen from free GPU memory (Metal's working-set size minus the model; 32 on the 16 GB M5 for a 512-token 124M model), and halved and retried on an out-of-memory error. The queue runs under `caffeinate`. `--quick` runs 20 questions per benchmark and saves nothing; it was checked on F6 2.5B and the base. Six tests |
 
 | J7 | **Repository layout.** The training, evaluation and post-training scripts move from the top level into a package (`lm/`, `eval/`, `post/`), with a single command-line entry point; notebooks import from it | Claude | open |
-| J8 | **Serving.** An OpenAI-compatible `/v1/chat/completions` endpoint on the app's server (streaming), so standard clients and evaluation tools can talk to our models; latency numbers feed the prefill vs decode card | Claude | open |
+| J8 | **Serving.** An OpenAI-compatible `/v1/chat/completions` endpoint on the app's server (streaming), so standard clients and evaluation tools can talk to our models; latency numbers feed the prefill vs decode card | Claude | Claude | open: grown into **S** below (S2 is J8) |
+
+### S. Serving the model (added 18 Nov by the author)
+
+From a model in the app to a model that standard clients can call. Serve the **DPO chat model** for chat and the
+**stage 2 base** for plain completions; the diffusion model can come later through the same API, though standard
+serving tools don't support it. Suggested order: S1 (it decides how much of S2–S4 we build), S2, S7, S3, S4, then S5
+and S6.
+
+| Step | What | Who | Status |
+|---|---|---|---|
+| S1 | **Check whether our model maps onto Qwen3's format.** Our design (RMSNorm, SwiGLU, RoPE, QK-norm, no biases, tied output layer) is close to Qwen3's; if the weights convert exactly, export a standard Hugging Face folder with the GPT-2 tokenizer, so vLLM, llama.cpp/GGUF, MLX and Ollama serve it with no code of ours. To check: our QK-norm's details, the RoPE theta, and identical outputs to ours. C2's `TinyGPTForCausalLM` wrapper is the fallback | Claude | open |
+| S2 | **A standalone server (`serve.py`)**, apart from the app's training state (this is J8): load once; `/v1/completions`, `/v1/chat/completions`, `/v1/models`; streaming, stop sequences, `max_tokens`, temperature, top-p; D1's chat format; `finish_reason: "length"` at the 512-token context | Claude | open |
+| S3 | **Several requests at once**: a request queue and batched decoding with one KV cache per sequence (continuous batching); tokens/s against the number of concurrent users (overlaps C4's tokens/s against batch size) | Claude | after S2 |
+| S4 | **Speed**: half-precision weights, `torch.compile`, the existing speculative decoding; make 4-bit GPTQ actually faster (today's layers turn the weights back into floats every token, which is slower); load-test time to first token and tokens/s (C4's prefill vs decode work) | Claude | after S3 |
+| S5 | **Packaging**: the app and scripts on `.venv` (J2's last step), a config file, a health check, logging, an optional API key, a Dockerfile (CUDA or CPU; the Mac's GPU isn't available inside Docker) | Claude | after S2 |
+| S6 | **Where it runs**, the author's choice, possibly several: the Mac on the local network or through a tunnel; a Hugging Face Space or Inference Endpoint; Ollama or LM Studio through GGUF or MLX if S1 works | the author decides | after S5 |
+| S7 | **Check the served model**: lm-evaluation-harness and our chat evaluations through the endpoint; the scores must match our own harness | Claude | after S2 |
 
 **Open choices**
 

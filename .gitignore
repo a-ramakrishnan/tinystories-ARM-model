@@ -131,5 +131,6 @@ docker-compose.override.yml
 outputs/
 tinystories-run-*.zip
 ab-*.zip
+diffusion-run-*.zip
 models/
 _site/
