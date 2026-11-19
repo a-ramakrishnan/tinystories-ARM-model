@@ -23,7 +23,9 @@ project has two 124M models, autoregressive and diffusion, on the same data, and
 1. **A 124M model that matches GPT-2 small across the board, and a chat model built on it.** Already past GPT-2 on
    held-out web text (3.296 vs 3.401) and on HellaSwag and ARC-Easy; still behind on the benchmark average (42.3 vs
    44.4), LAMBADA and WikiText. Done when the average reaches 44.4 and the chat model answers short questions with
-   under 5% greedy repetition and ends 90%+ of its answers (today 6.5% and 86%).
+   under 5% greedy repetition and ends 90%+ of its answers. **The chat half is met (19 Nov, D4):** the served chat
+   model repeats 2.3% and ends 99% on the 100 held-out questions. The benchmark half (42.3 vs 44.4) is open: it needs
+   more or better pre-training.
 2. **A fair, published head-to-head of autoregressive and masked diffusion models at 124M:** the same size, data, tokens
    and tokenizer (F6 extended to 2.5B tokens), compared on loss, benchmarks, text quality, speed and checkable
    reasoning (F4, I7), with the side-by-side visualizations (H1) on a public website (G).
@@ -39,6 +41,10 @@ project has two 124M models, autoregressive and diffusion, on the same data, and
 model's own answers) cuts greedy repetition to 2.3% and lets 99% of answers end, with the knowledge and benchmarks
 unchanged; it is served on Hugging Face and the website's Try it page. D3 (GRPO) and the reasoning work (IA, I)
 remain the author's by hand.
+
+Next, per the goals: publish the 124M AR vs diffusion comparison on the website (goal 2, the last open part on
+Claude's side); then goal 1's benchmark gap (a pre-training plan, the author's call on compute); then goal 4's
+one-command reproduction of the README numbers, J7 and J8. Paused until Sunday 22 Nov.
 
 ### 18 November, morning
 
