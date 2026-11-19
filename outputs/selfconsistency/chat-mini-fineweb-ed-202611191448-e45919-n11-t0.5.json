@@ -1,0 +1,58 @@
+{
+ "model": "chat-mini-fineweb-ed-202611191448-e45919",
+ "n": 11,
+ "temperature": 0.5,
+ "questions": 200,
+ "generation_seconds": 287.2,
+ "measured_at": "2026-11-19 20:25",
+ "right_by_k": {
+  "1": {
+   "greedy": 0.31,
+   "vote": 0.31,
+   "confidence": 0.31,
+   "vote+conf": 0.31,
+   "judge": 0.31,
+   "oracle": 0.31
+  },
+  "3": {
+   "greedy": 0.31,
+   "vote": 0.31,
+   "confidence": 0.315,
+   "vote+conf": 0.305,
+   "judge": 0.345,
+   "oracle": 0.4
+  },
+  "5": {
+   "greedy": 0.31,
+   "vote": 0.315,
+   "confidence": 0.285,
+   "vote+conf": 0.31,
+   "judge": 0.34,
+   "oracle": 0.435
+  },
+  "7": {
+   "greedy": 0.31,
+   "vote": 0.31,
+   "confidence": 0.295,
+   "vote+conf": 0.3,
+   "judge": 0.365,
+   "oracle": 0.46
+  },
+  "9": {
+   "greedy": 0.31,
+   "vote": 0.305,
+   "confidence": 0.29,
+   "vote+conf": 0.295,
+   "judge": 0.37,
+   "oracle": 0.47
+  },
+  "11": {
+   "greedy": 0.31,
+   "vote": 0.3,
+   "confidence": 0.295,
+   "vote+conf": 0.295,
+   "judge": 0.37,
+   "oracle": 0.485
+  }
+ }
+}

@@ -485,6 +485,39 @@ in its own style rather than the dataset's. SimPO cleans up as well but loses a 
 barely moved (its held-out margin stayed below gamma), so it might do better with a larger one. The 37% of the
 best-of-7 pilot didn't carry over into training (31%): the pairs mostly teach style, not facts.
 
+### Asking several times: `selfconsistency.py`
+
+Some answer among seven is right for 43% of the fact questions, against 31% for greedy. **Self-consistency** asks the
+model several times and chooses among its answers, with no training. `selfconsistency.py` takes the greedy answer
+and N − 1 samples (temperature 0.5) per fact question and compares choosers over the first k answers: a **vote** on
+what each answer names (the words after the question's stem, "The capital of India is | New Delhi"), the model's own
+**confidence** (highest mean log probability per token), the vote with confidence as tie-break, the **judge**
+(the reward model's favourite), and the **oracle** (right if any answer is right: the ceiling). The choosers never see
+the right answer.
+
+```bash
+python3 selfconsistency.py --model <chat model id> [--n 11] [--temperature 0.5] [--no-judge]
+```
+
+On the served chat model (e45919, 19 Nov), facts answered right out of 200:
+
+| k answers | Greedy | Vote | Confidence | Vote + confidence | Judge | Oracle |
+|---|---|---|---|---|---|---|
+| 1 | 31.0% | 31.0% | 31.0% | 31.0% | 31.0% | 31.0% |
+| 3 | 31.0% | 31.0% | 31.5% | 30.5% | 34.5% | 40.0% |
+| 5 | 31.0% | 31.5% | 28.5% | 31.0% | 34.0% | 43.5% |
+| 7 | 31.0% | 31.0% | 29.5% | 30.0% | 36.5% | 46.0% |
+| 11 | 31.0% | 30.0% | 29.5% | 29.5% | **37.0%** | 48.5% |
+
+**Voting doesn't help.** It finds the right answer only when that answer is the most common one, and where greedy is
+wrong it rarely is: in the 35 questions with greedy wrong and some answer right, a median of 2 of the 11 answers are
+right (only one in 15 of them), and wrong answers repeat too (India's capital: "Kedarnath" and "New York City" four
+times each, "Delhi" once). The model's confidence doesn't separate right from wrong either. **The judge helps** (+6
+points with 9–11 answers, about 1.4 s per question for 11 answers on the Mac), but Qwen3-0.6B is a much stronger
+model: the gain is its knowledge, not the 124M model's. What the model gets wrong it mostly doesn't know firmly, so
+choosing among its own answers can't fix it; more or better pre-training, or retrieval (the facts in the prompt),
+would.
+
 ### Everything at once: the evaluation queue
 
 One command evaluates a model end to end. It can be stopped at any point; running it again continues with the
