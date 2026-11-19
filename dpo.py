@@ -15,6 +15,7 @@
 #
 #   python3 dpo.py pairs --model <chat model id> [--n 2000]        # generate the rejected answers
 #   python3 dpo.py train --model <chat model id> [--epochs 2] [--out folder]
+#   python3 dpo.py train --model <id> --path data/dpo-pairs-rm.jsonl [--method simpo]   # reward-model pairs (bestofn.py)
 #
 # The result is a normal chat checkpoint (model_config.json with "chat": true and "dpo": {...}).
 
@@ -94,7 +95,10 @@ def load_pairs(path, enc):
     for line in open(path):
         p = json.loads(line)
         prompt = format_prompt([{"role": "user", "content": p["question"]}], enc)
-        chosen = enc.encode_ordinary(" " + p["chosen"]) + [enc.eot_token]
+        if "chosen_ids" in p:      # on-policy pairs (bestofn.py --pairs): both answers are the model's own tokens
+            chosen = list(p["chosen_ids"]) + ([enc.eot_token] if p["chosen_ended"] else [])
+        else:
+            chosen = enc.encode_ordinary(" " + p["chosen"]) + [enc.eot_token]
         rejected = list(p["rejected_ids"]) + ([enc.eot_token] if p["rejected_ended"] else [])
         if chosen == rejected:
             continue
@@ -127,8 +131,16 @@ def seq_logps(model, x, y, ctx):
     return (tok * mask).sum(1), mask.sum(1)
 
 
-def train(model_id, out_dir, path=PAIRS, epochs=2, batch_pairs=4, lr=2e-6, beta=0.1, sft_weight=0.2, warmup=20,
-          held_out=100, say=print):
+def train(model_id, out_dir, path=PAIRS, epochs=2, batch_pairs=4, lr=2e-6, beta=None, sft_weight=0.2, warmup=20,
+          held_out=100, method="dpo", gamma=1.0, say=print):
+    """method "dpo": the loss above, against a frozen reference copy (beta 0.1 by default).
+    method "simpo" (SimPO, Meng et al. 2024): no reference model; the reward of an answer is its mean log probability
+    per token, and the chosen answer must beat the rejected one by a margin gamma:
+        loss = -log sigmoid( beta * logp(chosen)/|chosen| - beta * logp(rejected)/|rejected| - gamma )
+    (beta 2.0 and gamma 1.0 by default, the paper's gamma/beta of about 0.5). Dividing by length removes DPO's pull
+    towards longer answers, and with no reference copy it needs half the memory and no first pass."""
+    simpo = method == "simpo"
+    beta = beta if beta is not None else (2.0 if simpo else 0.1)
     dev = setup_device()
     device = dev.device
     ctx = dev.ctx if device == "cuda" else nullcontext()
@@ -137,11 +149,13 @@ def train(model_id, out_dir, path=PAIRS, epochs=2, batch_pairs=4, lr=2e-6, beta=
     config, info = load_model_config(cp)
     policy = load_model(config, w, device)
     policy.eval()              # no dropout: the policy and reference log probabilities must be comparable
-    ref = load_model(config, w, device)
+    ref = policy if simpo else load_model(config, w, device)   # SimPO: only to see what the starting model prefers
     ref.eval()
-    for p in ref.parameters():
-        p.requires_grad_(False)
+    if not simpo:
+        for p in ref.parameters():
+            p.requires_grad_(False)
     pairs = load_pairs(path, enc)
+    on_policy = "chosen_ids" in pairs[0][3]
     random.Random(0).shuffle(pairs)
     test, pairs = pairs[:held_out], pairs[held_out:]
     block = config.block_size
@@ -153,12 +167,17 @@ def train(model_id, out_dir, path=PAIRS, epochs=2, batch_pairs=4, lr=2e-6, beta=
             chunk = items[i:i + 4]
             xc, yc = batch_tensors([(a[0], a[1]) for a in chunk], device, block)
             xr, yr = batch_tensors([(a[0], a[2]) for a in chunk], device, block)
-            out += list(zip(seq_logps(ref, xc, yc, ctx)[0].tolist(), seq_logps(ref, xr, yr, ctx)[0].tolist()))
+            (lc, nc), (lr_, nr) = seq_logps(ref, xc, yc, ctx), seq_logps(ref, xr, yr, ctx)
+            out += list(zip(lc.tolist(), lr_.tolist(), nc.tolist(), nr.tolist()))
         return out
 
-    say(f"{len(pairs):,} training pairs, {len(test)} held out; the reference model's log probabilities first …")
-    ref_train, ref_test = ref_logps(pairs), ref_logps(test)
-    del ref
+    if simpo:
+        say(f"{len(pairs):,} training pairs, {len(test)} held out; SimPO, no reference model")
+        ref_train, ref_test = [(0.0, 0.0, 1, 1)] * len(pairs), ref_logps(test)
+    else:
+        say(f"{len(pairs):,} training pairs, {len(test)} held out; the reference model's log probabilities first …")
+        ref_train, ref_test = ref_logps(pairs), ref_logps(test)
+        del ref
     if device == "mps":
         torch.mps.empty_cache()
 
@@ -166,12 +185,17 @@ def train(model_id, out_dir, path=PAIRS, epochs=2, batch_pairs=4, lr=2e-6, beta=
         xc, yc = batch_tensors([(a[0], a[1]) for a in items], device, block)
         xr, yr = batch_tensors([(a[0], a[2]) for a in items], device, block)
         lc, nc = seq_logps(policy, xc, yc, ctx)
-        lr_, _ = seq_logps(policy, xr, yr, ctx)
-        rc = torch.tensor([r[0] for r in refs], device=device)
-        rr = torch.tensor([r[1] for r in refs], device=device)
-        margin = beta * ((lc - rc) - (lr_ - rr))
+        lr_, nr = seq_logps(policy, xr, yr, ctx)
+        if simpo:                    # logged as each answer's mean log probability per token
+            dc, dr = lc / nc, lr_ / nr
+            margin = beta * (dc - dr) - gamma
+        else:                        # logged as the change in log probability from the reference
+            rc = torch.tensor([r[0] for r in refs], device=device)
+            rr = torch.tensor([r[1] for r in refs], device=device)
+            dc, dr = lc - rc, lr_ - rr
+            margin = beta * (dc - dr)
         loss = -F.logsigmoid(margin).mean() + sft_weight * (-(lc / nc).mean())
-        return loss, margin.detach(), (lc - rc).detach(), (lr_ - rr).detach()
+        return loss, margin.detach(), dc.detach(), dr.detach()
 
     @torch.no_grad()
     def evaluate():
@@ -187,9 +211,10 @@ def train(model_id, out_dir, path=PAIRS, epochs=2, batch_pairs=4, lr=2e-6, beta=
     opt = torch.optim.AdamW(policy.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=0.0)
     # Before training the margin is exactly 0 (policy = reference); what the starting model prefers is shown by
     # its own log probabilities: how often the reference answer is more likely than its own greedy one.
-    acc0 = sum(rc > rr for rc, rr in ref_test) / max(1, len(ref_test))
-    say(f"{steps:,} updates of {batch_pairs} pairs, lr {lr:g}, beta {beta}; "
-        f"the starting model finds the reference answer more likely than its own on {acc0:.1%} of held-out pairs")
+    # (SimPO compares mean log probabilities per token, so that's what counts as "more likely" there)
+    acc0 = sum((rc / nc > rr / nr) if simpo else (rc > rr) for rc, rr, nc, nr in ref_test) / max(1, len(ref_test))
+    say(f"{steps:,} updates of {batch_pairs} pairs, {method}, lr {lr:g}, beta {beta}" + (f", gamma {gamma}" if simpo else "")
+        + f"; the starting model finds the chosen answer more likely than the rejected one on {acc0:.1%} of held-out pairs")
     history, t0, order = [], time.time(), list(range(len(pairs)))
     step = 0
     for ep in range(epochs):
@@ -219,20 +244,23 @@ def train(model_id, out_dir, path=PAIRS, epochs=2, batch_pairs=4, lr=2e-6, beta=
                     f"rejected {dr.mean().item():+.2f}  ({(time.time() - t0) / 60:.1f} min)")
         acc, m = evaluate()
         history.append([step, "eval", round(acc, 3), round(m, 3)])
-        say(f"  epoch {ep + 1}: held-out preference accuracy {acc:.1%}, mean margin {m:.3f}")
+        say(f"  epoch {ep + 1}: held-out preference accuracy {acc:.1%}, mean margin {m:.3f}"
+            + (" (SimPO: margin > 0 means beaten by more than gamma)" if simpo else ""))
     secs = time.time() - t0
     os.makedirs(out_dir, exist_ok=True)
     torch.save(policy.state_dict(), os.path.join(out_dir, "best_model_params.pt"))
     datasets = list(info.get("datasets") or [])
-    extra = {**{k: v for k, v in info.items() if k != "model"}, "datasets": datasets + ["DPO: smol-smoltalk answers vs own greedy"],
+    what = ("reward-model best vs worst of its own answers" if on_policy else "smol-smoltalk answers vs own greedy")
+    extra = {**{k: v for k, v in info.items() if k != "model"}, "datasets": datasets + [f"{method.upper()}: {what}"],
              "chat": True, "chat_format": CHAT_FORMAT, "base_model": info.get("base_model"), "sft_model": model_id,
-             "dpo": {"pairs": len(pairs), "held_out": len(test), "epochs": epochs, "batch_pairs": batch_pairs, "lr": lr,
-                     "beta": beta, "sft_weight": sft_weight, "steps": steps, "seconds": round(secs),
+             "dpo": {"method": method, "pairs_file": os.path.basename(path), "pairs": len(pairs), "held_out": len(test),
+                     "epochs": epochs, "batch_pairs": batch_pairs, "lr": lr, "beta": beta,
+                     **({"gamma": gamma} if simpo else {}), "sft_weight": sft_weight, "steps": steps, "seconds": round(secs),
                      "start_prefers_chosen": round(acc0, 3), "accuracy_after": round(acc, 3), "history": history},
              "trained_at": time.strftime("%Y-%m-%d %H:%M"), "device": device,
              "platform": "Colab" if os.path.exists("/content") else "local"}
     save_model_config(os.path.join(out_dir, "model_config.json"), config, extra)
-    say(f"Done in {secs / 60:.1f} min: held-out preference accuracy {acc:.1%} (the start preferred the reference on {acc0:.1%}). Saved in {out_dir}")
+    say(f"Done in {secs / 60:.1f} min: held-out preference accuracy {acc:.1%} (at the start the chosen answer was more likely on {acc0:.1%}). Saved in {out_dir}")
     return extra
 
 
@@ -290,7 +318,9 @@ def main():
     t.add_argument("--out", default=None)
     t.add_argument("--epochs", type=int, default=2)
     t.add_argument("--lr", type=float, default=2e-6)
-    t.add_argument("--beta", type=float, default=0.1)
+    t.add_argument("--method", choices=["dpo", "simpo"], default="dpo")
+    t.add_argument("--beta", type=float, default=None, help="default 0.1 (dpo) or 2.0 (simpo)")
+    t.add_argument("--gamma", type=float, default=1.0, help="simpo's target margin")
     t.add_argument("--sft-weight", type=float, default=0.2)
     t.add_argument("--held-out", type=int, default=100)
     e = sub.add_parser("eval", help="greedy answers to the held-out questions: repetition, ended, reference loss")
@@ -304,7 +334,8 @@ def main():
         make_pairs(a.model, a.n, a.path)
     else:
         out = a.out or os.path.join(PROJECT_DIR, "outputs", "dpo", time.strftime("%Y%m%d-%H%M"))
-        train(a.model, out, a.path, a.epochs, lr=a.lr, beta=a.beta, sft_weight=a.sft_weight, held_out=a.held_out)
+        train(a.model, out, a.path, a.epochs, lr=a.lr, beta=a.beta, sft_weight=a.sft_weight, held_out=a.held_out,
+              method=a.method, gamma=a.gamma)
 
 
 if __name__ == "__main__":

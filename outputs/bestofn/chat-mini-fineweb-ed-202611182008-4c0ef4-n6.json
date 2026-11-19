@@ -1,0 +1,101 @@
+{
+ "model": "chat-mini-fineweb-ed-202611182008-4c0ef4",
+ "judge": "Skywork/Skywork-Reward-V2-Qwen3-0.6B",
+ "n": 6,
+ "temperature": 0.8,
+ "questions": 300,
+ "measured_at": "2026-11-19 10:16",
+ "results": {
+  "chat": {
+   "greedy": {
+    "reward": -1.7107,
+    "repeated_4grams": 0.0851,
+    "ended": 0.87,
+    "mean_length": 126.95
+   },
+   "sample": {
+    "reward": -5.0557,
+    "repeated_4grams": 0.0397,
+    "ended": 0.81,
+    "mean_length": 137.19
+   },
+   "best_of_6": {
+    "reward": -2.3651,
+    "repeated_4grams": 0.0322,
+    "ended": 0.85,
+    "mean_length": 129.41
+   },
+   "worst_of_6": {
+    "reward": -7.9191,
+    "repeated_4grams": 0.0487,
+    "ended": 0.78,
+    "mean_length": 140.36
+   },
+   "best_beats_greedy": 0.46
+  },
+  "facts": {
+   "greedy": {
+    "reward": -5.4256,
+    "repeated_4grams": 0.0787,
+    "ended": 0.855,
+    "mean_length": 93.08,
+    "facts_right": 0.3
+   },
+   "sample": {
+    "reward": -9.0078,
+    "repeated_4grams": 0.0108,
+    "ended": 0.92,
+    "mean_length": 91.635,
+    "facts_right": 0.145
+   },
+   "best_of_6": {
+    "reward": -5.9299,
+    "repeated_4grams": 0.0052,
+    "ended": 0.98,
+    "mean_length": 61.735,
+    "facts_right": 0.265
+   },
+   "worst_of_6": {
+    "reward": -11.087,
+    "repeated_4grams": 0.0109,
+    "ended": 0.855,
+    "mean_length": 111.56,
+    "facts_right": 0.105
+   },
+   "best_beats_greedy": 0.455,
+   "any_sample_right": 0.4
+  },
+  "all": {
+   "greedy": {
+    "reward": -4.1873,
+    "repeated_4grams": 0.0808,
+    "ended": 0.86,
+    "mean_length": 104.37,
+    "facts_right": 0.3
+   },
+   "sample": {
+    "reward": -7.6905,
+    "repeated_4grams": 0.0205,
+    "ended": 0.8833,
+    "mean_length": 106.82,
+    "facts_right": 0.145
+   },
+   "best_of_6": {
+    "reward": -4.7416,
+    "repeated_4grams": 0.0142,
+    "ended": 0.9367,
+    "mean_length": 84.2933,
+    "facts_right": 0.265
+   },
+   "worst_of_6": {
+    "reward": -10.031,
+    "repeated_4grams": 0.0235,
+    "ended": 0.83,
+    "mean_length": 121.16,
+    "facts_right": 0.105
+   },
+   "best_beats_greedy": 0.4567,
+   "any_sample_right": 0.4
+  }
+ }
+}

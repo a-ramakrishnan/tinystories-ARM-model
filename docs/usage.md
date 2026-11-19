@@ -433,7 +433,57 @@ base model knew, at a small cost in how closely it matches the reference answers
 
 (Benchmark average: length-normalized accuracy where a test has it, over the five.) DPO on the new model (2,000 fresh pairs from its own greedy answers, `dpo.py pairs` / `train`, 36 min on the Mac)
 brings repetition down from 15.6% to 8.5% and answers that end from 73% to 82%, while keeping the knowledge: it is the
-best chat model so far, though the old one still repeats a little less (6.5%) and ends more often (86%).
+best chat model of 18 Nov.
+
+(Correction, 19 Nov: the held-out repetition and endings above were measured with `dpo.py eval`'s default pairs file,
+`data/dpo-pairs.jsonl`, whose 100 held-out questions are not held out from the D1b DPO pairs: 80 of them were
+training pairs. On the D1b file's own held-out 100, which neither model trained on: SFT (lr 5e-5 + replay)
+repetition 16.0%, ended 69%; with DPO 8.5%, **87%** (answer loss 1.230 → 1.333). The old chat model (2746ba) gets
+7.5% and 85% there, but 48 of those questions were in its own DPO pairs. Pass `--path data/dpo-pairs-d1b.jsonl` to
+`dpo.py eval` from now on.)
+
+### A reward model as the judge: `bestofn.py`
+
+DPO's pairs so far set the dataset's reference answer against the model's own greedy one. A **reward model** can
+instead judge the model's own answers: sample several, keep the best and the worst. `bestofn.py` does this locally
+with [Skywork-Reward-V2-Qwen3-0.6B](https://huggingface.co/Skywork/Skywork-Reward-V2-Qwen3-0.6B) (Apache-2.0,
+1.2 GB): a sequence classifier that gives one score to a (question, answer) pair.
+
+```bash
+python3 bestofn.py --model <chat model id> [--n 6] [--temperature 0.5]   # pilot: judge's pick vs greedy
+python3 bestofn.py --model <chat model id> --pairs 2000 --temperature 0.5 # → data/dpo-pairs-rm.jsonl
+python3 dpo.py train --model <chat model id> --path data/dpo-pairs-rm.jsonl [--method simpo]
+```
+
+**The pilot** (300 questions: the 100 held-out chat questions and the 200 fact questions; greedy and 6 samples each)
+asks whether the judge's pick beats greedy decoding at all. At temperature 0.8 it doesn't: the samples are much
+worse than greedy (facts answered right 14.5% vs 30%) and the best of 6 still loses (26.5%). At 0.5 it does: the
+judge's best of greedy + 6 answers 37% of the fact questions right (greedy 30%; some answer is right for 43%), with a
+higher judge score (−2.87 vs −5.43) and half the repetition. The judge ranks a right answer above a wrong one in 76%
+of pairs and doesn't favour long answers (length and score correlate at −0.2 to −0.4); it does sometimes prefer a
+short confident wrong answer.
+
+**The pairs**: 2,000 new smol-smoltalk questions (none from earlier pair files), greedy + 6 samples at 0.5, the
+judge's best as chosen and its worst as rejected, both the model's own tokens (1,999 pairs; median score gap 5.0;
+the greedy answer was chosen in 20%). Chosen answers repeat less (4.8% vs 9.0%), end more often (93% vs 69%) and
+are shorter (119 vs 140 tokens; the chosen one is the longer in only 30% of pairs).
+
+**Training on them** (2 epochs, lr 2e-6, about 17 minutes each on the Mac), DPO against a frozen reference (beta 0.1)
+and **SimPO** (`--method simpo`: no reference model; each answer's reward is its mean log probability per token,
+and the chosen must win by a margin: beta 2.0, gamma 1.0). On the 100 held-out D1b questions:
+
+| Model | Repetition | Ended | Length | Answer loss | Facts (choice) | Answered right | Benchmark average |
+|---|---|---|---|---|---|---|---|
+| SFT (lr 5e-5 + replay) + DPO (4c0ef4) | 8.5% | 87% | 127 | **1.333** | **50.5%** | 30.0% | **40.5** |
+| + DPO on reward-model pairs (e45919) | 2.3% | **99%** | 99 | 1.425 | **50.5%** | **31.0%** | **40.5** |
+| + SimPO on reward-model pairs (0881b0) | **2.2%** | **99%** | 95 | 1.474 | 49.5% | 27.0% | – |
+
+DPO on the judge's pairs makes the answers clean (a quarter of the repetition, nearly all end) and keeps the
+knowledge and the benchmarks (HellaSwag 33.0, LAMBADA 14.4, ARC-Easy 44.4, PIQA 61.7, Winogrande 48.9): it is the
+best chat model, and the served one since 19 Nov. The answer loss rises because the model now writes shorter answers
+in its own style rather than the dataset's. SimPO cleans up as well but loses a few facts; at this learning rate it
+barely moved (its held-out margin stayed below gamma), so it might do better with a larger one. The 37% of the
+best-of-7 pilot didn't carry over into training (31%): the pairs mostly teach style, not facts.
 
 ### Everything at once: the evaluation queue
 

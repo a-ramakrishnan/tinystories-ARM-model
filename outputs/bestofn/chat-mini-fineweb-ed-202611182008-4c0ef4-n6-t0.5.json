@@ -1,0 +1,121 @@
+{
+ "model": "chat-mini-fineweb-ed-202611182008-4c0ef4",
+ "judge": "Skywork/Skywork-Reward-V2-Qwen3-0.6B",
+ "n": 6,
+ "temperature": 0.5,
+ "questions": 300,
+ "measured_at": "2026-11-19 10:36",
+ "results": {
+  "chat": {
+   "greedy": {
+    "reward": -1.7107,
+    "repeated_4grams": 0.0851,
+    "ended": 0.87,
+    "mean_length": 126.95
+   },
+   "sample": {
+    "reward": -2.714,
+    "repeated_4grams": 0.053,
+    "ended": 0.81,
+    "mean_length": 131.39
+   },
+   "best_of_6": {
+    "reward": 0.0731,
+    "repeated_4grams": 0.0397,
+    "ended": 0.9,
+    "mean_length": 124.48
+   },
+   "worst_of_6": {
+    "reward": -5.0955,
+    "repeated_4grams": 0.0673,
+    "ended": 0.72,
+    "mean_length": 133.92
+   },
+   "best_of_7": {
+    "reward": 0.3724,
+    "repeated_4grams": 0.0444,
+    "ended": 0.91,
+    "mean_length": 123.93
+   },
+   "best_beats_greedy": 0.79
+  },
+  "facts": {
+   "greedy": {
+    "reward": -5.4256,
+    "repeated_4grams": 0.0787,
+    "ended": 0.855,
+    "mean_length": 93.08,
+    "facts_right": 0.3
+   },
+   "sample": {
+    "reward": -5.9454,
+    "repeated_4grams": 0.0292,
+    "ended": 0.95,
+    "mean_length": 83.545,
+    "facts_right": 0.235
+   },
+   "best_of_6": {
+    "reward": -3.1742,
+    "repeated_4grams": 0.0179,
+    "ended": 0.975,
+    "mean_length": 66.905,
+    "facts_right": 0.33
+   },
+   "worst_of_6": {
+    "reward": -8.7823,
+    "repeated_4grams": 0.0659,
+    "ended": 0.77,
+    "mean_length": 117.2,
+    "facts_right": 0.17
+   },
+   "best_of_7": {
+    "reward": -2.87,
+    "repeated_4grams": 0.0216,
+    "ended": 0.985,
+    "mean_length": 66.555,
+    "facts_right": 0.37
+   },
+   "best_beats_greedy": 0.78,
+   "any_sample_right": 0.42
+  },
+  "all": {
+   "greedy": {
+    "reward": -4.1873,
+    "repeated_4grams": 0.0808,
+    "ended": 0.86,
+    "mean_length": 104.37,
+    "facts_right": 0.3
+   },
+   "sample": {
+    "reward": -4.8682,
+    "repeated_4grams": 0.0372,
+    "ended": 0.9033,
+    "mean_length": 99.4933,
+    "facts_right": 0.235
+   },
+   "best_of_6": {
+    "reward": -2.0917,
+    "repeated_4grams": 0.0252,
+    "ended": 0.95,
+    "mean_length": 86.0967,
+    "facts_right": 0.33
+   },
+   "worst_of_6": {
+    "reward": -7.5534,
+    "repeated_4grams": 0.0663,
+    "ended": 0.7533,
+    "mean_length": 122.7733,
+    "facts_right": 0.17
+   },
+   "best_of_7": {
+    "reward": -1.7892,
+    "repeated_4grams": 0.0292,
+    "ended": 0.96,
+    "mean_length": 85.68,
+    "facts_right": 0.37
+   },
+   "best_beats_greedy": 0.7833,
+   "any_sample_right": 0.42
+  }
+ }
+}
