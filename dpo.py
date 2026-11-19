@@ -37,6 +37,10 @@ from train_config import setup_device
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 PAIRS = os.path.join(PROJECT_DIR, "data", "dpo-pairs.jsonl")
+# The held-out questions every chat model is compared on (`dpo.py eval`, serving/check.py): the first 100 of the D1b
+# pairs after the usual shuffle. No training run has used them; the default PAIRS file's first 100 are not held out
+# from the D1b DPO pairs (80 of them were training pairs), which skewed the 18 Nov numbers.
+EVAL_PAIRS = os.path.join(PROJECT_DIR, "data", "dpo-pairs-d1b.jsonl")
 MAX_ANSWER = 200          # tokens: short reference answers only, and the rejected answer's length limit
 
 
@@ -264,7 +268,7 @@ def train(model_id, out_dir, path=PAIRS, epochs=2, batch_pairs=4, lr=2e-6, beta=
     return extra
 
 
-def held_out_eval(models, path=PAIRS, held_out=100, out_path=None, say=print):
+def held_out_eval(models, path=EVAL_PAIRS, held_out=100, out_path=None, say=print):
     """Greedy answers to the held-out pairs' questions (the same 100 that training never saw): repetition, how many
     end by themselves within MAX_ANSWER tokens, length, and the per-token loss on the reference answers."""
     dev = setup_device()
@@ -325,7 +329,7 @@ def main():
     t.add_argument("--held-out", type=int, default=100)
     e = sub.add_parser("eval", help="greedy answers to the held-out questions: repetition, ended, reference loss")
     e.add_argument("models", nargs="+")
-    e.add_argument("--path", default=PAIRS)
+    e.add_argument("--path", default=EVAL_PAIRS)
     e.add_argument("--out", default=None)
     a = ap.parse_args()
     if a.cmd == "eval":

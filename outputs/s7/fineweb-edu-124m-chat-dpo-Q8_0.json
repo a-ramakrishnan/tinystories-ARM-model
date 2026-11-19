@@ -5,25 +5,25 @@
   "lambada": {
    "acc": 0.14302348146710653,
    "n": 5153,
-   "seconds": 53.0,
+   "seconds": 64.9,
    "stored": 0.14360566660197943,
    "diff": -0.0006
   },
   "chat": {
    "served": {
-    "repeated_4grams": 0.0352,
+    "repeated_4grams": 0.0293,
     "ended": 0.98,
-    "mean_length": 104.0,
+    "mean_length": 100.4,
     "n": 100
    },
    "ours": {
-    "repeated_4grams": 0.0315,
+    "repeated_4grams": 0.0232,
     "ended": 0.99,
-    "mean_length": 104.2,
+    "mean_length": 99.0,
     "n": 100
    },
    "stored": null,
-   "identical_answers": 41,
+   "identical_answers": 39,
    "prompt_tokens_match": 100,
    "sample": {
     "question": "Write a Python function that takes a URL as an input and returns the host name as a string. The function should first split the URL into parts by the forward slash (/) character. Next, it should extract the third part from the list of split parts, which represents the host name. In some cases, the host name may be missing, in which case the function should return an empty string. The function should also check if the third part is a valid IPv4 or IPv6 address, and if so, return it as the host name.",
@@ -31,5 +31,5 @@
    }
   }
  },
- "api_measured_at": "2026-11-19 15:50"
+ "api_measured_at": "2026-11-19 20:42"
 }

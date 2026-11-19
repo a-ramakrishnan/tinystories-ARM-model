@@ -155,10 +155,10 @@ def lambada_api(url, limit=None, say=print):
 
 
 def chat_questions(n=100):
-    """The held-out questions of `dpo.py eval` (the same shuffle, the same first n)."""
+    """The held-out questions of `dpo.py eval` (the same file, shuffle and first n: dpo.EVAL_PAIRS)."""
     import dpo
     from tokenization import get_tokenizer
-    pairs = dpo.load_pairs(dpo.PAIRS, get_tokenizer())    # dpo.py eval's default file (it reproduces the stored numbers)
+    pairs = dpo.load_pairs(dpo.EVAL_PAIRS, get_tokenizer())
     random.Random(0).shuffle(pairs)
     return [(prompt, p["question"]) for prompt, _, _, p in pairs[:n]]
 

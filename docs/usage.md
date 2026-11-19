@@ -439,8 +439,8 @@ best chat model of 18 Nov.
 `data/dpo-pairs.jsonl`, whose 100 held-out questions are not held out from the D1b DPO pairs: 80 of them were
 training pairs. On the D1b file's own held-out 100, which neither model trained on: SFT (lr 5e-5 + replay)
 repetition 16.0%, ended 69%; with DPO 8.5%, **87%** (answer loss 1.230 → 1.333). The old chat model (2746ba) gets
-7.5% and 85% there, but 48 of those questions were in its own DPO pairs. Pass `--path data/dpo-pairs-d1b.jsonl` to
-`dpo.py eval` from now on.)
+7.5% and 85% there, but 48 of those questions were in its own DPO pairs. Since 19 Nov this file is
+`dpo.py eval`'s default (`dpo.EVAL_PAIRS`), and `serving/check.py` uses the same 100 questions.)
 
 ### A reward model as the judge: `bestofn.py`
 

@@ -87,17 +87,16 @@ it's the same model. The GGUF files come from llama.cpp's converter
 ([`serving/gguf.sh`](https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main/serving/gguf.sh)).
 
 Checked ([`serving/check.py`](https://github.com/a-ramakrishnan/tinystories-ARM-model/blob/main/serving/check.py),
-plan step S7) against the original PyTorch model, on 100 questions from `dpo.py eval`'s default set (a consistency
-check, so not the same 100 as above):
+plan step S7) against the original PyTorch model, on the same 100 held-out questions as above:
 
 | | Original (PyTorch) | This copy, bfloat16 | This copy, 8-bit GGUF |
 |---|---|---|---|
-| 100 questions, greedy: repeated 4-grams | 3.2% | 3.1% | 3.5% |
+| 100 held-out questions, greedy: repeated 4-grams | 2.3% | 2.3% | 2.9% |
 | answers that end by themselves | 99% | 98% | 98% |
-| mean answer length (tokens) | 104.2 | 104.6 | 104.0 |
+| mean answer length (tokens) | 99.0 | 98.8 | 100.4 |
 | LAMBADA through llama-server | 14.4% | 14.3% | 14.3% |
 
-The prompt tokens are identical on all 100 questions; 72 of the bfloat16 copy's answers (41 of the 8-bit one's) are
+The prompt tokens are identical on all 100 questions; 76 of the bfloat16 copy's answers (39 of the 8-bit one's) are
 identical word for word, and the rest diverge when a near-tie flips at the lower precision and the answer drifts,
 which moves the repetition and length a little either way.
 
