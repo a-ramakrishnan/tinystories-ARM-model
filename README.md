@@ -16,8 +16,9 @@ next-token probabilities. No cloud, no Nvidia card.
 ![Training a language model on an Apple M5 in the TinyStories LM Studio web app](docs/screenshots/train.png)
 
 > **Website:** [a-ramakrishnan.github.io/tinystories-ARM-model](https://a-ramakrishnan.github.io/tinystories-ARM-model/)
-> has the docs, the Journey timeline, a side-by-side replay of the GPT and the diffusion model, and **Try it**: the
-> 124M chat model running in your browser.
+> has the docs, the Journey timeline, a side-by-side replay of the GPT and the diffusion model,
+> [**AR vs diffusion**](https://a-ramakrishnan.github.io/tinystories-ARM-model/compare.html) (the two 124M models
+> compared), and **Try it**: the 124M chat model running in your browser.
 >
 > **Run the models anywhere:** the 124M base and chat models are on Hugging Face in standard formats
 > ([base](https://huggingface.co/aramkris/fineweb-edu-124m-base-qwen3),

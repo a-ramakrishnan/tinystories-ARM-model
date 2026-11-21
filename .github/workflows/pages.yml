@@ -6,7 +6,7 @@ name: website
 on:
   push:
     branches: [main]
-    paths: ["README.md", "docs/**", "diffusion_models/README.md", "results/**", "pages/**",
+    paths: ["README.md", "docs/**", "diffusion_models/README.md", "results/**", "pages/**", "outputs/f4/**",
             "app/static/styles.css", "app/static/journey.js", "app/static/sidebyside.js",
             "app/static/explorer.js", "app/static/flow.js", "app/static/flowplay.js", "app/static/index.html", ".github/workflows/pages.yml"]
   workflow_dispatch:

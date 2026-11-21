@@ -5,7 +5,8 @@
 #
 # Inputs: the Markdown docs (README, docs/, diffusion_models/README.md, the model cards), the results store
 # (results/results.jsonl) for the headline numbers, app/static (styles, journey.js, sidebyside.js) and
-# pages/recorded/sidebyside.json (recorded by pages/record.py). Links between docs become links between pages; links
+# pages/recorded/sidebyside.json (recorded by pages/record.py), and outputs/f4/*.json (diffusion_models/compare.py)
+# for the AR vs diffusion page. Links between docs become links between pages; links
 # to code go to GitHub. .github/workflows/pages.yml builds and deploys it on every push to main.
 import argparse
 import html
@@ -38,7 +39,8 @@ DOCS = [
     ("docs/model_cards/fineweb-edu-124m-diffusion.md", "card-diffusion.html", "Diffusion model (124M)", "Models"),
     ("docs/model_cards/fineweb-edu-124m-base-gptq-4bit.md", "card-gptq.html", "Base model, GPTQ 4-bit", "Models"),
 ]
-APPS = [("try.html", "Try it"), ("journey.html", "Journey"), ("explorer.html", "Explorer"), ("sidebyside.html", "Side by side")]
+APPS = [("try.html", "Try it"), ("journey.html", "Journey"), ("explorer.html", "Explorer"), ("sidebyside.html", "Side by side"),
+        ("compare.html", "AR vs diffusion")]
 PAGE_OF = {src: page for src, page, _, _ in DOCS}
 TASKS = [("hellaswag", "HellaSwag", "acc_norm"), ("lambada", "LAMBADA", "acc"), ("arc_easy", "ARC-Easy", "acc"),
          ("piqa", "PIQA", "acc"), ("winogrande", "Winogrande", "acc")]
@@ -210,6 +212,7 @@ All of it: <a href="results.html">Results</a>.</p></div>'''
              ("journey.html", "Journey", "Every decision from the first commit to today: what changed, why, what it measured and what it cost."),
              ("explorer.html", "Explorer", "One prompt through the real 124M model: every block's attention, the feed-forward layer and the logit lens."),
              ("sidebyside.html", "Side by side", "The same prompt written left to right by the GPT and all at once by the diffusion model, replayed in your browser."),
+             ("compare.html", "AR vs diffusion", "The two 124M models compared on held-out text, benchmarks, text quality and speed: what next-token prediction buys."),
              ("story.html", "The story", "From a 356-line training script to a 124M model that beats GPT-2 small on held-out web text."),
              ("usage.html", "How to use it", "Install, run the local web app, train on your Mac's GPU or on Colab, evaluate and compare."),
              ("components.html", "Understanding the components", "Data, tokenization, batching, the transformer, attention, training and inference, one at a time."),
@@ -633,6 +636,179 @@ $v("try-stop").addEventListener("click", () => st.abort?.abort());
 
 # ---------- build ----------
 
+# ---------- goal 2: the two kinds of model compared (F4) ----------
+
+F4_DIR = os.path.join(ROOT, "outputs", "f4")
+HELDOUT_NAMES = {"baominhtran__mini-fineweb-edu-small": "Mini FineWeb-Edu", "baominhtran__mini-fineweb-edu-tiny": None,
+                 "huggingfacetb__cosmopedia-khanacademy": "Cosmopedia: Khan Academy",
+                 "huggingfacetb__cosmopedia-openstax": "Cosmopedia: OpenStax",
+                 "huggingfacetb__cosmopedia-stanford-first100000": "Cosmopedia: Stanford",
+                 "huggingfacetb__cosmopedia-stories-first300000": "Cosmopedia: stories",
+                 "huggingfacetb__cosmopedia-wikihow": "Cosmopedia: WikiHow", "roneneldan__tinystories": "TinyStories",
+                 "salesforce__wikitext-wikitext-2-raw-v1": "WikiText-2",
+                 "url-raw.githubusercontent.com-input.txt-4c649141": "Tiny Shakespeare"}
+
+
+def bar_rows(rows, lo, hi, fmt, legend):
+    """Horizontal paired bars in plain HTML (they reflow on a phone): rows = [(label, [(value, css class), ...], note)]."""
+    span = hi - lo
+    out = []
+    for label, vals, note in rows:
+        bars = "".join(f'<div class="cmp-bar {c}" style="width:{max(1.5, 100 * (v - lo) / span):.1f}%"><span>{fmt(v)}</span></div>'
+                       for v, c in vals)
+        out.append(f'<div class="cmp-row"><div class="cmp-lab">{label}<span class="muted small">{note}</span></div>'
+                   f'<div class="cmp-bars">{bars}</div></div>')
+    return f'<div class="cmp-legend">{legend}</div><div class="cmp-chart">{"".join(out)}</div>'
+
+
+def speed_quality_svg(settings, real):
+    """GPT-2's judge loss (lower = more like real text) against tokens per second, one point per way of writing."""
+    pts = []
+    for name, v in settings.items():
+        kind = "ar" if name.startswith("AR") else "df"
+        label = {"AR, sampled (top-k 50)": "AR, sampled", "AR, greedy": "AR, greedy"}.get(name, name)
+        pts.append((v["tokens_per_sec"], v["judge_loss"], v["repeated_4grams"], kind, label))
+    W, H, L, R, T, B = 520, 330, 52, 18, 16, 46
+    x0, x1, y0, y1 = 0, 130, 1.0, 5.0
+    X = lambda x: L + (x - x0) / (x1 - x0) * (W - L - R)
+    Y = lambda y: T + (y - y0) / (y1 - y0) * (H - T - B)
+    g = []
+    for yv in (1, 2, 3, 4, 5):
+        g.append(f'<line x1="{L}" x2="{W - R}" y1="{Y(yv):.1f}" y2="{Y(yv):.1f}" class="grid"/>'
+                 f'<text x="{L - 8}" y="{Y(yv) + 4:.1f}" class="tick" text-anchor="end">{yv}</text>')
+    for xv in (0, 25, 50, 75, 100, 125):
+        g.append(f'<text x="{X(xv):.1f}" y="{H - B + 18}" class="tick" text-anchor="middle">{xv}</text>')
+    g.append(f'<line x1="{L}" x2="{W - R}" y1="{Y(real):.1f}" y2="{Y(real):.1f}" class="ref"/>'
+             f'<text x="{W - R}" y="{Y(real) + 17:.1f}" class="tick" text-anchor="end">real text {real:.2f}</text>')
+    df = sorted(p for p in pts if p[3] == "df")
+    g.append('<polyline class="df-line" points="' + " ".join(f"{X(p[0]):.1f},{Y(p[1]):.1f}" for p in df) + '"/>')
+    for x, y, rep, kind, label in pts:
+        anchor, dx, dy = ("end", -10, 4) if x > 90 else ("start", 10, 4)
+        if label == "AR, greedy":
+            dy = 18
+        elif label == "AR, sampled":
+            dy = -11
+        elif label == "diffusion, 64 passes":
+            dy = 22
+        g.append(f'<circle cx="{X(x):.1f}" cy="{Y(y):.1f}" r="6" class="pt {kind}"><title>{label}: {x:.0f} tokens/s, '
+                 f'judge loss {y:.2f}, repetition {100 * rep:.1f}%</title></circle>'
+                 f'<text x="{X(x) + dx:.1f}" y="{Y(y) + dy:.1f}" class="lbl" text-anchor="{anchor}">{label}</text>')
+    mid = (T + H - B) / 2
+    g.append(f'<text x="{(L + W - R) / 2:.0f}" y="{H - 8}" class="axis" text-anchor="middle">tokens per second on an Apple M5 (faster →)</text>'
+             f'<text x="14" y="{mid:.0f}" class="axis" text-anchor="middle" transform="rotate(-90 14 {mid:.0f})">GPT-2 judge loss (better ↓)</text>')
+    return f'<svg class="cmp-svg" viewBox="0 0 {W} {H}" role="img" aria-label="Text quality against writing speed">{"".join(g)}</svg>'
+
+
+CMP_JS = """<script>
+const CMP = __DATA__;
+const cmpShow = (i) => {
+  document.getElementById("cmp-prompt").textContent = CMP[i].prompt;
+  CMP[i].texts.forEach((t, j) => { document.getElementById("cmp-t" + j).textContent = t.trimStart(); });
+};
+document.getElementById("cmp-ex").addEventListener("change", (e) => cmpShow(+e.target.value));
+cmpShow(0);
+</script>"""
+
+
+def compare_page(d, d51):
+    bm = d["benchmarks"]
+    avg = lambda key: 100 * sum(v[key] for v in bm.values()) / len(bm)
+    ar_avg, df_avg, g_avg = avg("ar"), avg("diffusion"), avg("gpt2")
+    ho = d["heldout"]
+    web = ho["baominhtran__mini-fineweb-edu-small"]
+    st = d["writing"]["settings"]
+    ar_s, df16, df64 = st["AR, sampled (top-k 50)"], st["diffusion, 16 passes"], st["diffusion, 64 passes"]
+    real = d["writing"]["real continuation"]["judge_loss"]
+    gap51 = d51["heldout"]["roneneldan__tinystories"]["gap"]
+    slower = ar_s["tokens_per_sec"] / df64["tokens_per_sec"]
+    stats = [("Held-out web text", f"+{web['gap']:.2f} nats",
+              f"per token: {web['ar_loss']:.3f} against a bound of {web['diffusion_bound']:.3f}"),
+             ("Benchmark average", f"{ar_avg:.1f} vs {df_avg:.1f}", f"autoregressive vs diffusion (GPT-2 small {g_avg:.1f})"),
+             ("At the same speed", f"{ar_s['judge_loss']:.2f} vs {df16['judge_loss']:.2f}",
+              f"GPT-2's judge loss at about {ar_s['tokens_per_sec']:.0f} tokens/s each (lower is better)"),
+             ("At the same quality", f"{slower:.1f}× slower", "the diffusion model needs one pass per token to catch up")]
+    tiles = "".join(f'<div class="stat"><div class="k">{k}</div><div class="v">{v}</div><div class="d">{t}</div></div>'
+                    for k, v, t in stats)
+    rows = []
+    for key, v in sorted(ho.items(), key=lambda kv: -kv[1]["gap"]):
+        name = HELDOUT_NAMES.get(key, v["title"])
+        if name:
+            rows.append((html.escape(name), [(v["ar_loss"], "ar"), (v["diffusion_bound"], "df")], f"gap +{v['gap']:.2f}"))
+    held = bar_rows(rows, 0, 6.2, lambda x: f"{x:.2f}",
+                    '<span><i class="sw ar"></i>autoregressive: loss</span><span><i class="sw df"></i>diffusion: likelihood bound</span>'
+                    '<span class="muted">nats per token, lower is better</span>')
+    rows = []
+    for key, title, _ in TASKS:
+        v = bm[key]
+        rows.append((title, [(100 * v["ar"], "ar"), (100 * v["diffusion"], "df"), (100 * v["gpt2"], "g2")],
+                     f"chance {100 * v['chance']:.0f}%" if v["chance"] else "chance 0%"))
+    rows.append(("<b>Average</b>", [(ar_avg, "ar"), (df_avg, "df"), (g_avg, "g2")], ""))
+    bench = bar_rows(rows, 0, 70, lambda x: f"{x:.1f}",
+                     '<span><i class="sw ar"></i>autoregressive 124M</span><span><i class="sw df"></i>diffusion 124M</span>'
+                     '<span><i class="sw g2"></i>GPT-2 small</span><span class="muted">zero-shot accuracy, %</span>')
+    wrows = "".join(f'<tr><td>{html.escape(n)}</td><td class="num">{v["passes"]}</td><td class="num">{v["judge_loss"]:.2f}</td>'
+                    f'<td class="num">{100 * v["repeated_4grams"]:.1f}%</td><td class="num">{v["tokens_per_sec"]:.0f}</td></tr>'
+                    for n, v in st.items())
+    show = [("AR, sampled (top-k 50)", "Autoregressive, sampled"), ("diffusion, 16 passes", "Diffusion, 16 passes: the same speed"),
+            ("diffusion, 64 passes", "Diffusion, 64 passes: one per token")]
+    exs = st[show[0][0]]["examples"]
+    examples = [{"source": exs[i]["source"], "prompt": exs[i]["prompt"],
+                 "texts": [st[k]["examples"][i]["text"] for k, _ in show]} for i in range(0, len(exs), 2)]
+    opts = "".join(f'<option value="{i}">{html.escape(e["source"])}: {html.escape(" ".join(e["prompt"].split())[:60])}…</option>'
+                   for i, e in enumerate(examples))
+    lanes = "".join(f'<div class="cmp-lane"><h4>{t}</h4><p class="cmp-text" id="cmp-t{j}"></p></div>' for j, (_, t) in enumerate(show))
+    body = (
+        '<header class="panel-head"><span class="eyebrow">Goal 2</span><h1>Two ways to write, compared</h1>'
+        '<p>An <b>autoregressive</b> GPT writes one token at a time, left to right. A <b>masked diffusion</b> model starts from a '
+        'continuation that is all blanks and fills in every position over a few passes, the most confident first. Here both have '
+        '124M parameters and were trained on the same 2.5B tokens (FineWeb-Edu and Cosmopedia), with the same tokenizer and the same '
+        'transformer blocks: only the training objective differs. Measured on an Apple M5 '
+        f'({html.escape(d["measured_at"][:10])}); <a href="story.html#38-two-ways-to-write-compared-f4">the full write-up</a>.</p></header>'
+        f'<div class="stats cmp-stats">{tiles}</div>'
+        '<div class="card"><div class="card-head"><h3>Held-out text: how surprised each model is</h3>'
+        '<span class="muted small">64 windows of 256 tokens per set</span></div>'
+        f'{held}'
+        '<p class="hint">The autoregressive number is its exact loss; the diffusion number is its likelihood bound (16 masking levels '
+        'per window), an upper limit on its real loss, so the true gap may be a little smaller. The gap is about the same at both '
+        f'sizes: +{gap51:.2f} on TinyStories for the 51M pair (164M tokens each), +{web["gap"]:.2f} on FineWeb-Edu for this 124M pair. '
+        'It is largest on Cosmopedia\'s synthetic textbooks, which are very predictable from the left, and smallest on text far '
+        'from the training data (WikiText, Shakespeare), where both models are unsure anyway.</p></div>'
+        '<div class="card"><div class="card-head"><h3>Benchmarks</h3>'
+        '<span class="muted small">scored like EleutherAI\'s lm-evaluation-harness</span></div>'
+        f'{bench}'
+        '<p class="hint">The diffusion model scores each answer by its likelihood bound. It is furthest behind on ARC-Easy (science '
+        'facts, barely above chance) and LAMBADA (the last word of a passage), and level on Winogrande, where both models are at '
+        'chance. The autoregressive model is ahead of GPT-2 small on HellaSwag and ARC-Easy.</p></div>'
+        '<div class="card"><div class="card-head"><h3>Writing: quality against speed</h3>'
+        '<span class="muted small">8 held-out prompts × 2 seeds, 64 new tokens each</span></div>'
+        f'{speed_quality_svg(st, real)}'
+        '<p class="hint">The judge is OpenAI\'s GPT-2 small, which neither model was trained on: lower means more like text it would '
+        'write. With 16 passes the diffusion model writes as fast as the autoregressive one, but its text is much less likely; it '
+        f'catches up only with 64 passes, one per token, and is then {slower:.1f}× slower, because every pass re-reads every position '
+        'while the autoregressive model, with its KV cache, reads only the new token. Greedy autoregressive text scores best and reads '
+        'worst: a judge loss rewards repetition, so read it next to the repetition column.</p>'
+        '<div class="ptable-scroll"><table class="ptable"><tr><th>124M, 64 tokens</th><th class="num">Passes</th>'
+        '<th class="num">Judge loss</th><th class="num">Repeated 4-token runs</th><th class="num">Tokens/s</th></tr>'
+        f'{wrows}<tr class="ref"><td>The real continuation</td><td class="num">–</td><td class="num">{real:.2f}</td>'
+        '<td class="num">0%</td><td class="num">–</td></tr></table></div></div>'
+        '<div class="card"><div class="card-head"><h3>Read them yourself</h3><span class="muted small">the same prompt, the first seed</span></div>'
+        f'<label>Prompt <select id="cmp-ex" class="select">{opts}</select></label>'
+        '<p class="cmp-prompt" id="cmp-prompt"></p>'
+        f'<div class="cmp-lanes">{lanes}</div>'
+        '<p class="hint">To watch the two models write step by step, see <a href="sidebyside.html">Side by side</a>.</p></div>'
+        '<div class="card"><div class="card-head"><h3>What it means</h3></div><div class="prose"><ul>'
+        '<li><b>At this size and budget, the masked diffusion objective costs about 0.85 nats per token and 7 benchmark points</b> '
+        'against next-token prediction, and the gap didn\'t shrink from 51M to 124M parameters.</li>'
+        '<li><b>Its promised speed costs quality.</b> Writing many tokens per pass means fewer, less careful decisions; matching the '
+        'autoregressive model\'s text takes as many passes as tokens.</li>'
+        '<li><b>Where it could still win</b> is work that needs the right-hand side of the text: filling a gap, planning, meeting '
+        'constraints, or revising earlier tokens. The reasoning comparison (plan step I7) will test that.</li></ul></div></div>')
+    scripts = CMP_JS.replace("__DATA__", json.dumps(examples).replace("</", "<\\/"))
+    return page("Two ways to write, compared · TinyStories ARM", "compare.html", body, scripts=scripts, wide=True,
+                description="A 124M GPT and a 124M masked diffusion model trained on the same data, compared on loss, "
+                            "benchmarks, text quality and speed.")
+
+
 def build(out):
     if os.path.isdir(out):
         shutil.rmtree(out)
@@ -665,6 +841,10 @@ def build(out):
         f.write(journey_page())
     with open(os.path.join(out, "try.html"), "w", encoding="utf-8") as f:
         f.write(try_page())
+    if os.path.exists(os.path.join(F4_DIR, "124m.json")):
+        with open(os.path.join(out, "compare.html"), "w", encoding="utf-8") as f:
+            f.write(compare_page(json.load(open(os.path.join(F4_DIR, "124m.json"))),
+                                 json.load(open(os.path.join(F4_DIR, "51m-stories.json")))))
     data_path = os.path.join(HERE, "recorded", "sidebyside.json")
     if os.path.exists(data_path):
         shutil.copy(data_path, os.path.join(out, "assets", "sidebyside.json"))
