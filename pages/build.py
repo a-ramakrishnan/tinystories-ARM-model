@@ -137,17 +137,9 @@ THEME_HEAD = '''<script>try{var t=localStorage.getItem("site-theme");if(t)docume
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">'''
 
-# Every page: the theme button and the ⌘K page search (over the side menu's links).
+# Every page: the ⌘K page search (over the side menu's links). The theme switch and the dots are app/static/look.js.
 SITE_JS = r'''<script>
 (() => {
-  const root = document.documentElement;
-  const dark = () => root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  document.getElementById("theme-btn").addEventListener("click", () => {
-    const t = dark() ? "light" : "dark";
-    root.dataset.theme = t;
-    try { localStorage.setItem("site-theme", t); } catch (e) {}
-    window.dispatchEvent(new Event("themechange"));
-  });
   const dlg = document.getElementById("search-dlg"), q = document.getElementById("search-q"), list = document.getElementById("search-list");
   const seen = new Set(), pages = [];
   document.querySelectorAll(".site-nav a").forEach((a) => {
@@ -194,7 +186,7 @@ def page(title, current, body, head="", scripts="", wide=False, description=""):
 <main class="site-main">{body}
 <footer class="site-foot"><span>Built from <a href="{REPO}">the repository</a> on {time.strftime("%d %B %Y")}. MIT licence.</span>
 <span><a href="{REPO}">GitHub</a> · <a href="{HF}">Hugging Face</a></span></footer>
-</main>{SITE_JS}{scripts}</body></html>'''
+</main><script src="assets/look.js"></script>{SITE_JS}{scripts}</body></html>'''
 
 
 def toc_html(tokens):
@@ -299,7 +291,6 @@ All of it: <a href="results.html">Results</a>.</p></div>'''
     questions = ["What is the water cycle?", "Why is the sky blue?", "How do plants make food?", "What causes the seasons?",
                  "Explain gravity to a ten-year-old.", "What is a prime number?", "Give me three tips for studying."]
     body = f'''<section class="home-hero">
-<canvas class="dots" id="hero-dots" aria-hidden="true"></canvas>
 <div class="hero-in">
 <span class="hero-chip">124M parameters · 2.5B tokens · trained from scratch</span>
 <h1>TinyStories ARM</h1>
@@ -337,39 +328,6 @@ All of it: <a href="results.html">Results</a>.</p></div>'''
     e.preventDefault();
     location.href = "try.html?q=" + encodeURIComponent(box.value.trim() || box.placeholder);
   }});
-  // the pattern: a grid of dots, a slow ripple spreading from the middle, clear behind the words
-  const cv = document.getElementById("hero-dots"), ctx = cv.getContext("2d");
-  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let w = 0, h = 0, colour = "", raf = 0, visible = true;
-  const size = () => {{
-    const r = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1);
-    w = r.width; h = r.height; cv.width = w * d; cv.height = h * d; ctx.setTransform(d, 0, 0, d, 0, 0);
-    colour = getComputedStyle(cv).color;
-  }};
-  const frame = (t) => {{
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = colour;
-    const gap = w < 600 ? 18 : 22, cx = w / 2, cy = h * 0.46, clear = Math.min(w, h) * 0.34, edge = Math.hypot(w, h) * 0.5;
-    for (let y = gap / 2; y < h; y += gap) for (let x = gap / 2; x < w; x += gap) {{
-      const d = Math.hypot((x - cx) * 0.8, y - cy);
-      const fade = Math.min(1, Math.max(0, (d - clear) / (clear * 0.9))) * Math.min(1, (edge * 1.1 - d) / (edge * 0.5));
-      if (fade <= 0.01) continue;
-      const wave = 0.5 + 0.5 * Math.sin(d / 26 - t / 900);
-      ctx.globalAlpha = fade * (0.12 + 0.6 * wave * wave);
-      ctx.beginPath(); ctx.arc(x, y, 0.8 + 1.5 * wave * fade, 0, 6.2832); ctx.fill();
-    }}
-    ctx.globalAlpha = 1;
-    if (!still && visible) raf = requestAnimationFrame(frame);
-  }};
-  size(); frame(0);
-  addEventListener("resize", () => {{ size(); if (still) frame(0); }});
-  addEventListener("themechange", () => {{ setTimeout(() => {{ colour = getComputedStyle(cv).color; if (still) frame(0); }}, 30); }});
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {{ colour = getComputedStyle(cv).color; }});
-  new IntersectionObserver(([e]) => {{
-    visible = e.isIntersecting;
-    cancelAnimationFrame(raf);
-    if (visible && !still) raf = requestAnimationFrame(frame);
-  }}).observe(cv);
 }})();
 </script>'''
     return body
@@ -967,14 +925,22 @@ def build(out):
         text = open(path, encoding="utf-8").read()
         body, toc = md_to_html(text)
         body = rewrite_links(body, src, assets)
-        edit = f'<p class="doc-src muted small">From <a href="{REPO}/blob/main/{src}">{src}</a></p>'
-        content = f'<div class="doc-page">{toc_html(toc)}<article class="prose">{edit}{body}</article></div>'
+        edit = f'<p class="doc-src">From <a href="{REPO}/blob/main/{src}">{src}</a></p>'
+        group = dict((p, g) for _, p, _, g in DOCS).get(dst, "Docs")
+        m = re.match(r"\s*(<h1[^>]*>.*?</h1>)\s*(<p>.*?</p>)?", body, re.S)
+        if m:          # the title (and the opening paragraph, if short) into the page head
+            lead = m.group(2) if m.group(2) and len(re.sub("<[^>]+>", "", m.group(2))) < 420 else ""
+            head = f'<header class="panel-head doc-hero"><span class="eyebrow">{group}</span>{m.group(1)}{lead}{edit}</header>'
+            body = body[m.end(1) + (m.end(2) - m.end(1) if lead else 0):]
+        else:
+            head = f'<header class="panel-head doc-hero"><span class="eyebrow">{group}</span><h1>{html.escape(title)}</h1>{edit}</header>'
+        content = f'{head}<div class="doc-page">{toc_html(toc)}<article class="prose">{body}</article></div>'
         with open(os.path.join(out, dst), "w", encoding="utf-8") as f:
             f.write(page(f"{title} · TinyStories ARM", dst, content, wide=True))
     for a in sorted(assets):
         if os.path.exists(os.path.join(ROOT, a)):
             shutil.copy(os.path.join(ROOT, a), os.path.join(out, "assets", a.replace("/", "_")))
-    for name in ("styles.css", "journey.js", "sidebyside.js", "explorer.js", "flow.js", "flowplay.js"):
+    for name in ("styles.css", "look.js", "journey.js", "sidebyside.js", "explorer.js", "flow.js", "flowplay.js"):
         shutil.copy(os.path.join(ROOT, "app", "static", name), os.path.join(out, "assets", name))
     j = os.path.join(out, "assets", "journey.js")          # its "full story" links: the site's own page
     text = open(j, encoding="utf-8").read()
