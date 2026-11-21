@@ -180,6 +180,8 @@ def page(title, current, body, head="", scripts="", wide=False, description=""):
 <title>{html.escape(title)}</title>
 <meta name="description" content="{html.escape(description or 'A GPT language model and a masked diffusion model, built from scratch and trained on Apple Silicon.')}">
 {THEME_HEAD}
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="theme-color" content="#0f7a6c">
 <link rel="stylesheet" href="assets/styles.css"><link rel="stylesheet" href="assets/site.css">{head}</head>
 <body class="{cls}">
 {nav(current)}
@@ -940,7 +942,7 @@ def build(out):
     for a in sorted(assets):
         if os.path.exists(os.path.join(ROOT, a)):
             shutil.copy(os.path.join(ROOT, a), os.path.join(out, "assets", a.replace("/", "_")))
-    for name in ("styles.css", "look.js", "journey.js", "sidebyside.js", "explorer.js", "flow.js", "flowplay.js"):
+    for name in ("styles.css", "look.js", "favicon.svg", "apple-touch-icon.png", "journey.js", "sidebyside.js", "explorer.js", "flow.js", "flowplay.js"):
         shutil.copy(os.path.join(ROOT, "app", "static", name), os.path.join(out, "assets", name))
     j = os.path.join(out, "assets", "journey.js")          # its "full story" links: the site's own page
     text = open(j, encoding="utf-8").read()
