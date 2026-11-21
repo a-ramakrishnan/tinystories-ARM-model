@@ -88,6 +88,18 @@ def md_to_html(text):
 
 # ---------- the page frame ----------
 
+TOP_LINKS = [("try.html", "Try it"), ("compare.html", "AR vs diffusion"), ("journey.html", "Journey"), ("usage.html", "Docs")]
+ICON_SEARCH = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+ICON_THEME = ('<svg class="i-sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="currentColor"/>'
+              '<g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g></svg>'
+              '<svg class="i-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="currentColor"/></svg>')
+ICON_MENU = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+# the mark: a 3 x 3 grid of tokens, the middle one lit (one token, attending to its neighbours)
+LOGO = ('<svg class="logo" viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">' +
+        "".join(f'<circle cx="{6 + 8 * (i % 3)}" cy="{6 + 8 * (i // 3)}" r="{3.4 if i == 4 else 2.2}" class="{"lit" if i == 4 else "dim"}"/>' for i in range(9)) +
+        '</svg>')
+
+
 def nav(current):
     def link(page, title):
         on = ' class="on"' if page == current else ""
@@ -96,28 +108,93 @@ def nav(current):
     cards = "".join(link(p, t) for _, p, t, g in DOCS if g == "Models")
     apps = "".join(link(p, t) for p, t in APPS)
     home_on = ' class="on"' if current == "index.html" else ""
-    return f'''<header class="site-top"><a class="brand" href="index.html"><span class="logo">M</span>TinyStories ARM</a>
-  <button class="site-menu" aria-label="Menu" onclick="document.body.classList.toggle('nav-open')">☰</button></header>
+    doc_pages = {p for _, p, _, g in DOCS if g == "Docs"}
+    top = "".join(f'<a href="{p}"{" class=on" if p == current or (p == "usage.html" and current in doc_pages) else ""}>{t}</a>'
+                  for p, t in TOP_LINKS)
+    return f'''<header class="site-top">
+  <button class="site-menu icon-only" aria-label="Menu" onclick="document.body.classList.toggle('nav-open')">{ICON_MENU}</button>
+  <a class="brand" href="index.html">{LOGO}<span>TinyStories ARM</span></a>
+  <nav class="top-links">{top}</nav>
+  <span class="top-gap"></span>
+  <button class="search-pill" id="search-open" aria-label="Search the pages">{ICON_SEARCH}<span>Search</span><kbd>⌘K</kbd></button>
+  <button class="icon-only theme-btn" id="theme-btn" aria-label="Switch between light and dark">{ICON_THEME}</button>
+  <a class="top-gh" href="{REPO}">GitHub</a>
+</header>
 <nav class="site-nav">
   <div class="grp"><a href="index.html"{home_on}>Home</a></div>
   <div class="grp"><div class="lbl">Explore</div>{apps}</div>
   <div class="grp"><div class="lbl">Docs</div>{docs}</div>
   <div class="grp"><div class="lbl">Models</div>{cards}</div>
   <div class="grp"><div class="lbl">Elsewhere</div><a href="{REPO}">GitHub</a><a href="{HF}">Hugging Face</a></div>
-</nav>'''
+</nav>
+<div class="search-dlg" id="search-dlg" hidden><div class="search-box" role="dialog" aria-label="Search the pages">
+  <div class="search-in">{ICON_SEARCH}<input id="search-q" placeholder="Go to a page…" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div>
+  <div class="search-list" id="search-list"></div></div></div>'''
+
+
+# Before the first paint: the theme the reader chose last time (light or dark; none = follow the system).
+THEME_HEAD = '''<script>try{var t=localStorage.getItem("site-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">'''
+
+# Every page: the theme button and the ⌘K page search (over the side menu's links).
+SITE_JS = r'''<script>
+(() => {
+  const root = document.documentElement;
+  const dark = () => root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.getElementById("theme-btn").addEventListener("click", () => {
+    const t = dark() ? "light" : "dark";
+    root.dataset.theme = t;
+    try { localStorage.setItem("site-theme", t); } catch (e) {}
+    window.dispatchEvent(new Event("themechange"));
+  });
+  const dlg = document.getElementById("search-dlg"), q = document.getElementById("search-q"), list = document.getElementById("search-list");
+  const seen = new Set(), pages = [];
+  document.querySelectorAll(".site-nav a").forEach((a) => {
+    const href = a.getAttribute("href");
+    if (seen.has(href)) return;
+    seen.add(href);
+    pages.push({ href, title: a.textContent, group: a.closest(".grp").querySelector(".lbl")?.textContent || "" });
+  });
+  let sel = 0, shown = [];
+  const draw = () => {
+    const s = q.value.trim().toLowerCase();
+    shown = pages.filter((p) => !s || (p.title + " " + p.group).toLowerCase().includes(s));
+    sel = Math.min(sel, Math.max(0, shown.length - 1));
+    list.innerHTML = shown.map((p, i) => `<a href="${p.href}" class="${i === sel ? "sel" : ""}"><span>${p.title}</span><small>${p.group}</small></a>`).join("")
+      || '<div class="search-none">No page by that name</div>';
+  };
+  const open = () => { dlg.hidden = false; q.value = ""; sel = 0; draw(); q.focus(); };
+  const close = () => { dlg.hidden = true; };
+  document.getElementById("search-open").addEventListener("click", open);
+  dlg.addEventListener("click", (e) => { if (e.target === dlg) close(); });
+  q.addEventListener("input", () => { sel = 0; draw(); });
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); dlg.hidden ? open() : close(); return; }
+    if (dlg.hidden) return;
+    if (e.key === "Escape") close();
+    else if (e.key === "ArrowDown") { sel = Math.min(sel + 1, shown.length - 1); draw(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { sel = Math.max(sel - 1, 0); draw(); e.preventDefault(); }
+    else if (e.key === "Enter" && shown[sel]) location.href = shown[sel].href;
+  });
+})();
+</script>'''
 
 
 def page(title, current, body, head="", scripts="", wide=False, description=""):
+    cls = "site" + (" wide" if wide else "") + (" home" if current == "index.html" else "")
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)}</title>
 <meta name="description" content="{html.escape(description or 'A GPT language model and a masked diffusion model, built from scratch and trained on Apple Silicon.')}">
+{THEME_HEAD}
 <link rel="stylesheet" href="assets/styles.css"><link rel="stylesheet" href="assets/site.css">{head}</head>
-<body class="site{' wide' if wide else ''}">
+<body class="{cls}">
 {nav(current)}
 <main class="site-main">{body}
-<footer class="site-foot">Built from <a href="{REPO}">the repository</a> on {time.strftime("%d %B %Y")}. MIT licence.</footer>
-</main>{scripts}</body></html>'''
+<footer class="site-foot"><span>Built from <a href="{REPO}">the repository</a> on {time.strftime("%d %B %Y")}. MIT licence.</span>
+<span><a href="{REPO}">GitHub</a> · <a href="{HF}">Hugging Face</a></span></footer>
+</main>{SITE_JS}{scripts}</body></html>'''
 
 
 def toc_html(tokens):
@@ -217,19 +294,86 @@ All of it: <a href="results.html">Results</a>.</p></div>'''
              ("usage.html", "How to use it", "Install, run the local web app, train on your Mac's GPU or on Colab, evaluate and compare."),
              ("components.html", "Understanding the components", "Data, tokenization, batching, the transformer, attention, training and inference, one at a time."),
              ("plan.html", "The plan", "The final goals and the roadmap: what's done, what's next and who does it.")]
-    tiles_html = "".join(f'<a class="tile" href="{p}"><b>{t}</b><span>{d}</span></a>' for p, t, d in tiles)
-    body = f'''<section class="hero">
-<span class="eyebrow">Built from scratch, trained on a Mac</span>
-<h1>A GPT and a diffusion language model, from scratch</h1>
-<p>A small GPT-style language model written in PyTorch and trained on Apple Silicon (and on Colab when it gets big), with
-a local web app that shows every stage: data, tokens, attention, training, generation and evaluation. Next to it is a
-masked diffusion language model of the same size, trained on the same 2.5B tokens. The two are compared on the
-same footing.</p>
-<div class="actions"><a class="btn primary" href="{REPO}">Code on GitHub</a><a class="btn" href="usage.html">Get started</a><a class="btn" href="{HF}">Models on Hugging Face</a></div>
+    tiles_html = "".join(f'<a class="tile" href="{p}"><b>{t}</b><span>{d}</span><i class="arr">→</i></a>' for p, t, d in tiles[:5])
+    reads_html = "".join(f'<a class="tile" href="{p}"><b>{t}</b><span>{d}</span><i class="arr">→</i></a>' for p, t, d in tiles[5:])
+    questions = ["What is the water cycle?", "Why is the sky blue?", "How do plants make food?", "What causes the seasons?",
+                 "Explain gravity to a ten-year-old.", "What is a prime number?", "Give me three tips for studying."]
+    body = f'''<section class="home-hero">
+<canvas class="dots" id="hero-dots" aria-hidden="true"></canvas>
+<div class="hero-in">
+<span class="hero-chip">124M parameters · 2.5B tokens · trained from scratch</span>
+<h1>TinyStories ARM</h1>
+<p class="tagline">A GPT and a diffusion language model, built from scratch on a Mac and compared like for like.</p>
+<form class="ask" id="ask" action="try.html">
+  <input id="ask-q" name="q" autocomplete="off" spellcheck="false" aria-label="Ask the chat model" placeholder="{questions[0]}">
+  <button class="ask-go" type="submit">Ask <span aria-hidden="true">↵</span></button>
+</form>
+<p class="ask-note">Runs in your browser: the 174 MB chat model loads once, and nothing you type leaves the page.</p>
+<div class="actions"><a class="btn primary" href="usage.html">Get started <span aria-hidden="true">→</span></a><a class="btn" href="{REPO}">Code on GitHub</a><a class="btn" href="{HF}">Models on Hugging Face</a></div>
+</div>
 </section>
-<div class="tiles">{tiles_html}</div>
-{table}'''
+<div class="home-facts">
+  <div><b>3.296</b><span>loss on held-out web text<br>GPT-2 small: 3.401</span></div>
+  <div><b>42.3</b><span>benchmark average, zero-shot<br>GPT-2 small: 44.4</span></div>
+  <div><b>0.85</b><span>nats between the GPT and<br>the diffusion model</span></div>
+  <div><b>2.3%</b><span>repetition in chat answers,<br>after DPO with a reward model</span></div>
+</div>
+<section class="home-sec"><div class="sec-head"><h2>Explore</h2><p>Interactive pages that run in your browser.</p></div>
+<div class="tiles explore">{tiles_html}</div></section>
+<section class="home-sec"><div class="sec-head"><h2>Read</h2><p>How it was built, how to run it, and what's next.</p></div>
+<div class="tiles">{reads_html}</div></section>
+<section class="home-sec">{table}</section>
+<script>
+(() => {{
+  const qs = {json.dumps(questions)};
+  const box = document.getElementById("ask-q");
+  let i = 0;
+  setInterval(() => {{
+    if (box.value || document.activeElement === box) return;
+    box.classList.add("swap");
+    setTimeout(() => {{ i = (i + 1) % qs.length; box.placeholder = qs[i]; box.classList.remove("swap"); }}, 250);
+  }}, 3200);
+  document.getElementById("ask").addEventListener("submit", (e) => {{
+    e.preventDefault();
+    location.href = "try.html?q=" + encodeURIComponent(box.value.trim() || box.placeholder);
+  }});
+  // the pattern: a grid of dots, a slow ripple spreading from the middle, clear behind the words
+  const cv = document.getElementById("hero-dots"), ctx = cv.getContext("2d");
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let w = 0, h = 0, colour = "", raf = 0, visible = true;
+  const size = () => {{
+    const r = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1);
+    w = r.width; h = r.height; cv.width = w * d; cv.height = h * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+    colour = getComputedStyle(cv).color;
+  }};
+  const frame = (t) => {{
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = colour;
+    const gap = w < 600 ? 18 : 22, cx = w / 2, cy = h * 0.46, clear = Math.min(w, h) * 0.34, edge = Math.hypot(w, h) * 0.5;
+    for (let y = gap / 2; y < h; y += gap) for (let x = gap / 2; x < w; x += gap) {{
+      const d = Math.hypot((x - cx) * 0.8, y - cy);
+      const fade = Math.min(1, Math.max(0, (d - clear) / (clear * 0.9))) * Math.min(1, (edge * 1.1 - d) / (edge * 0.5));
+      if (fade <= 0.01) continue;
+      const wave = 0.5 + 0.5 * Math.sin(d / 26 - t / 900);
+      ctx.globalAlpha = fade * (0.12 + 0.6 * wave * wave);
+      ctx.beginPath(); ctx.arc(x, y, 0.8 + 1.5 * wave * fade, 0, 6.2832); ctx.fill();
+    }}
+    ctx.globalAlpha = 1;
+    if (!still && visible) raf = requestAnimationFrame(frame);
+  }};
+  size(); frame(0);
+  addEventListener("resize", () => {{ size(); if (still) frame(0); }});
+  addEventListener("themechange", () => {{ setTimeout(() => {{ colour = getComputedStyle(cv).color; if (still) frame(0); }}, 30); }});
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {{ colour = getComputedStyle(cv).color; }});
+  new IntersectionObserver(([e]) => {{
+    visible = e.isIntersecting;
+    cancelAnimationFrame(raf);
+    if (visible && !still) raf = requestAnimationFrame(frame);
+  }}).observe(cv);
+}})();
+</script>'''
     return body
+
 
 
 # ---------- the browser-only app pages ----------
@@ -454,6 +598,8 @@ const syncButtons = () => {
   $v("try-load").textContent = st.loaded && st.loaded.split("|")[0] === $v("try-model").value
     ? "Reload on this device" : "Load the model (174 MB)";
 };
+{ const q = new URLSearchParams(location.search).get("q");
+  if (q) { $v("try-model").value = "chat"; $v("try-prompt").value = q.slice(0, 500); } }
 $v("try-model").addEventListener("change", () => {
   const chat = $v("try-model").value === "chat";
   $v("try-prompt").value = chat ? "What is the water cycle?" : "The water cycle is the process by which";
