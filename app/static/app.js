@@ -1,4 +1,4 @@
-// TinyStories LM Studio: front end for app/server.py
+// Tokens to Text: front end for app/server.py
 // Polls /api/status once a second and renders each step from it.
 
 const $ = (s, el = document) => el.querySelector(s);

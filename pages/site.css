@@ -71,7 +71,7 @@ a { color: var(--accent); }
 .home-hero h1 { font-size: clamp(42px, 7.4vw, 84px); line-height: 1; font-weight: 650; letter-spacing: -.045em; margin: 22px 0 16px; }
 .tagline { font-size: clamp(17px, 2vw, 20px); line-height: 1.45; color: var(--muted); margin: 0 auto 30px; max-width: 620px; }
 .ask { display: flex; align-items: center; gap: 8px; max-width: 640px; margin: 0 auto; padding: 7px 7px 7px 22px; border-radius: 999px;
-  background: var(--panel); border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(13, 16, 23, .04), 0 14px 40px rgba(40, 70, 140, .12); }
+  background: var(--panel); border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(13, 16, 23, .04), 0 14px 40px rgba(15, 122, 108, .12); }
 .ask:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .ask input { flex: 1; min-width: 0; border: 0; background: none; padding: 10px 0; font: 16.5px var(--font); color: var(--text); box-shadow: none; }
 .ask input:focus { box-shadow: none; }

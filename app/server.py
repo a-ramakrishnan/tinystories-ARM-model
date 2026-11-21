@@ -92,7 +92,7 @@ class State:
 
 
 S = State()
-app = FastAPI(title="TinyStories LM Studio")
+app = FastAPI(title="Tokens to Text")
 
 
 # ---------- helpers ----------
@@ -2036,7 +2036,7 @@ if __name__ == "__main__":
     ap.add_argument("--no-browser", action="store_true", help="Don't open the browser automatically")
     args = ap.parse_args()
     url = f"http://{args.host}:{args.port}"
-    print(f"\n  TinyStories LM Studio → {url}\n  Device: {S.dev.device} ({S.dev.dtype}) on {S.chip}\n")
+    print(f"\n  Tokens to Text → {url}\n  Device: {S.dev.device} ({S.dev.dtype}) on {S.chip}\n")
     if not args.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
