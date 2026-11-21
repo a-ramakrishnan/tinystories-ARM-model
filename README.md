@@ -13,7 +13,7 @@ your Mac's own GPU, step by step, in a local web app. See inside the transformer
 token flow through a block, step by step, with your model's real attention weights, feed-forward layer and
 next-token probabilities. No cloud, no Nvidia card.
 
-![Training a language model on an Apple M5 in the TinyStories LM Studio web app](docs/screenshots/train.png)
+![The Lab in the TinyStories LM Studio web app: design, train and compare language models on an Apple M5](docs/screenshots/lab.png)
 
 > **Website:** [a-ramakrishnan.github.io/tinystories-ARM-model](https://a-ramakrishnan.github.io/tinystories-ARM-model/)
 > has the docs, the Journey timeline, a side-by-side replay of the GPT and the diffusion model,
