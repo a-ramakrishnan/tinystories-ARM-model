@@ -12,6 +12,7 @@ datasets:
   - HuggingFaceTB/cosmopedia
   - HuggingFaceTB/smol-smoltalk
 base_model: aramkris/fineweb-edu-124m-chat-sft
+base_model_relation: finetune
 ---
 
 # FineWeb-Edu 124M chat (SFT + DPO)

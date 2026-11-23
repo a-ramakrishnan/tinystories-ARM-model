@@ -4,6 +4,7 @@ language: en
 library_name: pytorch
 pipeline_tag: text-generation
 base_model: aramkris/fineweb-edu-124m-base
+base_model_relation: quantized
 tags:
   - tinystories-arm
   - gpt

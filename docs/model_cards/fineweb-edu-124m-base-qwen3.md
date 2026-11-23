@@ -12,6 +12,7 @@ datasets:
   - BaoMinhTran/mini-fineweb-edu
   - HuggingFaceTB/cosmopedia
 base_model: aramkris/fineweb-edu-124m-base
+base_model_relation: quantized
 ---
 
 # FineWeb-Edu 124M base (stage 2): Qwen3 format and GGUF
